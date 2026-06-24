@@ -17,6 +17,9 @@
 
 #define LEDC_CH0_MOTOR_IN1   LEDC_CHANNEL_0
 
+void init_ledc(){
+    printf("Hello");
+}
 
 void init_motor_ledc(void) {
     #if 1
