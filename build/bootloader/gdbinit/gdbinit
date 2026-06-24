@@ -1,0 +1,2 @@
+source C:/esp32/develop/tcp-client/build/bootloader/gdbinit/symbols
+source C:/esp32/develop/tcp-client/build/bootloader/gdbinit/connect
