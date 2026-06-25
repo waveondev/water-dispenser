@@ -1,8 +1,5 @@
 #include "config_cli.h"
-#include "spiffs_util.h"
-#include "ble/ble_util.h"
-#include "wifi_util.h"
-#include "simple_ota_example.h"
+#include "http_ota.h"
 #include "ble/ble_parse.h"
 void myptonx( const char *str, uint8_t *data, int len )
 {
@@ -108,62 +105,7 @@ BaseType_t prvConfigInformationCommand( char *pcWriteBuffer, size_t xWriteBuffer
 			}
 			else if (!strncmp(ag[1], "mem", 3))
 			{
-                if (!strncmp(ag[2], "show", 4))
-                {
-                    spiffs_info();
-					ble_info_print();
-					wifi_info_print();
-                }
-				else if (!strncmp(ag[2], "facto", 5))
-				{
-					spiffs_facto();
-				}
-                else if (!strncmp(ag[2], "format", 6))
-                {
-                    spiffs_format();   
-                }
-				else if (!strncmp(ag[2], "save", 4))
-				{
-					if ((lParameterNumber == 5) && (!strncmp(ag[3], "ethmac", 6))) {
-						if (strlen(ag[4]) != (MAC_ADDRESS_LEN*2)) {
-							offset += sprintf (&pcWriteBuffer[offset], "Configuration Change Fail...invalid Ethernet MAC address length %d\r\n", strlen(ag[3]));
-							lParameterNumber = 0L;
-							return pdFALSE;
-						}
-						myptonx( ag[4], (uint8_t*)buf, MAC_ADDRESS_LEN );
-						offset += sprintf (&pcWriteBuffer[offset], "ETH-MAC Address Save ...\r\n");
-						ble_mac_write((uint8_t*)buf);
-					}
-					else if ((lParameterNumber == 5) && (!strncmp(ag[3], "used", 4))) {
-						uint32_t used = atoi(ag[4]);
-						offset += sprintf (&pcWriteBuffer[offset], "used save %ld\r\n",used);
-						wifi_info_set_used(used);
-					}					
-					else if ((lParameterNumber == 5) && (!strncmp(ag[3], "ssid", 4))) {
-						offset += sprintf (&pcWriteBuffer[offset], "ssid save %s\r\n",ag[4]);
-						wifi_info_set_ssid((uint8_t*)ag[4]);
-					}
-					else if ((lParameterNumber == 5) && (!strncmp(ag[3], "pass", 4))) {
-						offset += sprintf (&pcWriteBuffer[offset], "pass save %s\r\n",ag[4]);
-						wifi_info_set_passward((uint8_t*)ag[4]);
-					}     
-					else if ((lParameterNumber == 5) && (!strncmp(ag[3], "addr", 4))) {
-						offset += sprintf (&pcWriteBuffer[offset], "addr save %s\r\n",ag[4]);
-						wifi_info_set_hostip((uint8_t*)ag[4]);
-					}  
-					else if ((lParameterNumber == 5) && (!strncmp(ag[3], "port", 4))) {
-						unsigned short port = atoi(ag[4]);
-						offset += sprintf (&pcWriteBuffer[offset], "port save %d\r\n",port);
-						wifi_info_set_hostport(port);
-					}                
-				}
-				else if (!strncmp(ag[2], "del", 3))
-				{
-					if(!strncmp(ag[3], "ethmac", 6)) {
-						ble_mac_clear();
-					}
-				}
-				else if (!strncmp(ag[2], "fw", 2))
+				if (!strncmp(ag[2], "fw", 2))
 				{
 					if(!strncmp(ag[3], "URL", 3)) {
 						APP_String_printf("URL = %s",ag[4]);

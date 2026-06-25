@@ -667,6 +667,59 @@ static BaseType_t prvLogoutCommand( char *pcWriteBuffer, size_t xWriteBufferLen,
 	vRegisterDefaultCLICommands(ALL_MODE);
 	return pdFALSE;
 }
+static void vTaskListCustom(void)
+{
+    // 1. 현재 시스템의 총 태스크 개수 확인
+    UBaseType_t uxArraySize = uxTaskGetNumberOfTasks();
+    
+    // 구조체 배열 동적 할당
+    TaskStatus_t *pxTaskStatusArray = (TaskStatus_t *)malloc(uxArraySize * sizeof(TaskStatus_t));
+
+    if (pxTaskStatusArray != NULL) {
+        // 2. 모든 태스크의 시스템 상태 정보 가져오기
+        uxArraySize = uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, NULL);
+
+        // 헤더 출력 (요청하신 양식 오른쪽에 Core 추가)
+        printf("\nTask            State  Priority  Stack    #    Core\n");
+        printf("====================================================\n");
+
+        for (UBaseType_t x = 0; x < uxArraySize; x++) {
+            // 상태(State) 문자 변환
+            char state_char = '?';
+            switch (pxTaskStatusArray[x].eCurrentState) {
+                case eRunning:   state_char = 'R'; break;
+                case eReady:     state_char = 'Y'; break;
+                case eBlocked:   state_char = 'B'; break;
+                case eSuspended: state_char = 'S'; break;
+                case eDeleted:   state_char = 'D'; break;
+                default: break;
+            }
+
+            // Core ID 문자열 변환 (고정 안 됨 = Any, 고정됨 = Core 0 또는 1)
+            char core_str[32]; // 32바이트로 넉넉하게 변경
+
+			if (pxTaskStatusArray[x].xCoreID == tskNO_AFFINITY) {
+				snprintf(core_str, sizeof(core_str), "Any (0/1)");
+			} else {
+				// 이제 컴파일러가 32바이트 공간을 보고 안심하고 통과시킵니다.
+				snprintf(core_str, sizeof(core_str), "Core %d", (int)pxTaskStatusArray[x].xCoreID);
+			}
+
+            // 기존 vTaskList와 완전히 동일한 너비와 정렬을 유지하며 출력
+            printf("%-15s  %c       %u         %-7u  %-3u  %s\n",
+                   pxTaskStatusArray[x].pcTaskName,
+                   state_char,
+                   (unsigned int)pxTaskStatusArray[x].uxCurrentPriority,
+                   (unsigned int)pxTaskStatusArray[x].usStackHighWaterMark,
+                   (unsigned int)pxTaskStatusArray[x].xTaskNumber,
+                   core_str);
+        }
+        printf("====================================================\n\n");
+
+        // 메모리 해제
+        free(pxTaskStatusArray);
+    }
+}
 static BaseType_t prvTaskStatsCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
 	const char *const pcHeader = "Task          State  Priority  Stack	#\r\n================================================\r\n";
@@ -679,9 +732,9 @@ static BaseType_t prvTaskStatsCommand( char *pcWriteBuffer, size_t xWriteBufferL
 	configASSERT( pcWriteBuffer );
 
 	/* Generate a table of task stats. */
-	strcpy( pcWriteBuffer, pcHeader );
-	vTaskList( pcWriteBuffer + strlen( pcHeader ) );
-
+	//strcpy( pcWriteBuffer, pcHeader );
+	//vTaskList( pcWriteBuffer + strlen( pcHeader ) );
+	vTaskListCustom();
 	/* There is no more data to return after this single string, so return
 	pdFALSE. */
 	return pdFALSE;

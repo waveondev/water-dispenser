@@ -1,4 +1,4 @@
-# Install script for directory: C:/esp32/develop/tcp-client/managed_components/espressif__mqtt
+# Install script for directory: C:/esp32/develop/water-dispenser/managed_components/espressif__mqtt
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -40,6 +40,6 @@ endif()
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
 if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/esp32/develop/tcp-client/build/esp-idf/espressif__mqtt/install_local_manifest.txt"
+  file(WRITE "C:/esp32/develop/water-dispenser/build/esp-idf/espressif__mqtt/install_local_manifest.txt"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")
 endif()

@@ -51,7 +51,7 @@ static void writeReg32Bit(VL53L0X_t *dev, uint8_t reg, uint32_t value) {
     dev->last_status = i2c_master_cmd_begin(dev->i2c_port, cmd, pdMS_TO_TICKS(10));
     i2c_cmd_link_delete(cmd);
 }
-
+#if 0
 static uint8_t readReg(VL53L0X_t *dev, uint8_t reg) {
     uint8_t value = 0;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -66,7 +66,49 @@ static uint8_t readReg(VL53L0X_t *dev, uint8_t reg) {
     i2c_cmd_link_delete(cmd);
     return value;
 }
+#else
+static uint8_t readReg(VL53L0X_t *dev, uint8_t reg)
+{
+     uint8_t value = 0;
 
+    esp_err_t ret;
+
+    ret = i2c_master_write_to_device(
+        dev->i2c_port,
+        dev->address,
+        &reg,
+        1,
+        pdMS_TO_TICKS(100)
+    );
+
+    if(ret != ESP_OK)
+    {
+        printf("write reg fail %s",
+                 esp_err_to_name(ret));
+        return 0;
+    }
+
+
+    ret = i2c_master_read_from_device(
+        dev->i2c_port,
+        dev->address,
+        &value,
+        1,
+        pdMS_TO_TICKS(100)
+    );
+
+
+    if(ret != ESP_OK)
+    {
+        printf("read fail %s",
+                 esp_err_to_name(ret));
+        return 0;
+    }
+
+
+    return value;
+}
+#endif
 static uint16_t readReg16Bit(VL53L0X_t *dev, uint8_t reg) {
     uint8_t data[2] = {0};
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -207,6 +249,49 @@ void VL53L0X_setBus(VL53L0X_t *dev, i2c_port_t port, uint8_t addr) {
     dev->address = (addr == 0) ? ADDRESS_DEFAULT : addr;
     dev->io_timeout = 0;
     dev->did_timeout = false;
+    #if 0
+    vTaskDelay(pdMS_TO_TICKS(100));
+     esp_err_t ret;
+    for(uint8_t r=0xC0; r<0xC5; r++)
+    {
+        printf("REG 0x%02X = 0x%02X\r\n",
+            r,
+            readReg(dev,r));
+    }
+    for(uint8_t addr=1; addr<127; addr++)
+    {
+       i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+        i2c_master_start(cmd);
+
+        i2c_master_write_byte(
+            cmd,
+            (addr << 1) | I2C_MASTER_WRITE,
+            true
+        );
+
+        i2c_master_stop(cmd);
+
+         ret = i2c_master_cmd_begin(
+            port,
+            cmd,
+            pdMS_TO_TICKS(50)
+        );
+
+        i2c_cmd_link_delete(cmd);
+
+
+        if(ret == ESP_OK)
+        {
+            printf("FOUND DEVICE 0x%02X\r\n", addr);
+        }
+        }
+
+    if(ret == ESP_OK)
+    {
+        printf("FOUND 0x%02X\r\n", addr);
+    }
+    #endif
 }
 
 void VL53L0X_setAddress(VL53L0X_t *dev, uint8_t new_addr) {
@@ -215,9 +300,21 @@ void VL53L0X_setAddress(VL53L0X_t *dev, uint8_t new_addr) {
 }
 
 bool VL53L0X_init(VL53L0X_t *dev, bool io_2v8) {
-    if (readReg(dev, IDENTIFICATION_MODEL_ID) != 0xEE) { return false; }
+
+    uint8_t id = readReg(dev, IDENTIFICATION_MODEL_ID);
+
+    printf("MODEL_ID=0x%02X status=%s\r\n",
+        id,
+        esp_err_to_name(dev->last_status));
+
+    if(id != 0xEE)
+    {
+        printf("error1\r\n");
+        return false;
+    }
 
     if (io_2v8) {
+        
         writeReg(dev, VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV, readReg(dev, VHV_CONFIG_PAD_SCL_SDA__EXTSUP_HV) | 0x01);
     }
 
@@ -236,7 +333,9 @@ bool VL53L0X_init(VL53L0X_t *dev, bool io_2v8) {
 
     uint8_t spad_count;
     bool spad_type_is_aperture;
-    if (!getSpadInfo(dev, &spad_count, &spad_type_is_aperture)) { return false; }
+    if (!getSpadInfo(dev, &spad_count, &spad_type_is_aperture)) { 
+        printf("error2");
+        return false; }
 
     uint8_t ref_spad_map[6];
     readMulti(dev, GLOBAL_CONFIG_SPAD_ENABLES_REF_0, ref_spad_map, 6);
@@ -314,9 +413,13 @@ bool VL53L0X_init(VL53L0X_t *dev, bool io_2v8) {
     VL53L0X_setMeasurementTimingBudget(dev, dev->measurement_timing_budget_us);
 
     writeReg(dev, SYSTEM_SEQUENCE_CONFIG, 0x01);
-    if (!performSingleRefCalibration(dev, 0x40)) { return false; }
+    if (!performSingleRefCalibration(dev, 0x40)) { 
+                printf("error3");
+        return false; }
     writeReg(dev, SYSTEM_SEQUENCE_CONFIG, 0x02);
-    if (!performSingleRefCalibration(dev, 0x00)) { return false; }
+    if (!performSingleRefCalibration(dev, 0x00)) { 
+                printf("error4");
+        return false; }
     writeReg(dev, SYSTEM_SEQUENCE_CONFIG, 0xE8);
 
     return true;

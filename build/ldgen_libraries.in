@@ -218,7 +218,6 @@ $<TARGET_FILE:idf::protocol_examples_common>
 $<TARGET_FILE:__idf_espressif__ethernet_init>
 $<TARGET_FILE:idf::main>
 $<TARGET_FILE:__idf_driver>
-$<TARGET_FILE:__idf_spiffs>
 $<TARGET_FILE:__idf_esp_driver_ledc>
 $<TARGET_FILE:__idf_espressif__led_strip>
 $<TARGET_FILE:__idf_espressif__mqtt>

@@ -1,4 +1,4 @@
-"-specs=C:/esp32/develop/tcp-client/build/bootloader/specs/picolibc.specs"
+"-specs=C:/esp32/develop/water-dispenser/build/bootloader/specs/picolibc.specs"
 -mlongcalls
 -fno-builtin-memcpy
 -fno-builtin-memset

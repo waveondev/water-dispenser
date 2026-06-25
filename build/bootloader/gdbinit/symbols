@@ -17,4 +17,4 @@ set confirm off
 set confirm on
 
 # Load application symbols
-file C:/esp32/develop/tcp-client/build/bootloader/bootloader.elf
+file C:/esp32/develop/water-dispenser/build/bootloader/bootloader.elf

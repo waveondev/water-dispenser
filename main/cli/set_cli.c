@@ -1,7 +1,7 @@
 #include "set_cli.h"
 #include "app_moter.h"
 #include "app_led.h"
-
+#include "wifi_task.h"
 
 BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
@@ -93,7 +93,12 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
                 val32 = atoi(ag[2]);
 				set_rgb_led(0,0,0,val32);
-            }			
+            }		
+			else if (!strncmp(ag[1], "scan", 4))
+			{
+                wifi_scan_start();
+            }		
+				
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

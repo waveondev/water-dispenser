@@ -28,7 +28,7 @@
 #if CONFIG_EXAMPLE_CONNECT_WIFI
 #include "esp_wifi.h"
 #endif
-#include "simple_ota_example.h"
+#include "http_ota.h"
 #include "mqtt_main.h"
 #include "mqtt_parse.h"
 TaskHandle_t xOTA_Handle = NULL;
@@ -186,8 +186,23 @@ static void get_sha256_of_partitions(void)
 #define CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL "http://192.168.0.50:8070/tcp-client.bin"
 void ota_main(const char* URL)
 {
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) != ESP_OK) {
+        ESP_LOGE(TAG, "Wi-Fi가 연결되어 있지 않습니다! OTA를 시작할 수 없습니다.");
+        return;
+    }
+    esp_netif_ip_info_t ip_info;
+    // 기본 Station 인터페이스의 IP 정보를 가져옵니다.
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    
+    if (netif == NULL || esp_netif_get_ip_info(netif, &ip_info) != ESP_OK || ip_info.ip.addr == 0) {
+        ESP_LOGE(TAG, "Wi-Fi는 연결되었으나, 아직 IP 주소를 할당받지 못했습니다!");
+        return;
+    }
+
     static char URL_Buffer[200];
-    memcpy(URL_Buffer,URL,strlen(URL));
+    memset(URL_Buffer, 0, sizeof(URL_Buffer));
+    strncpy(URL_Buffer, URL, sizeof(URL_Buffer) - 1);
     get_sha256_of_partitions();
 #if CONFIG_EXAMPLE_CONNECT_WIFI
     /* Ensure to disable any WiFi power save mode, this allows best throughput

@@ -1,8 +1,8 @@
 #ifndef __APP_SENSOR_H__
 #define __APP_SENSOR_H__
 
-
-void sensor_init(void);
+#include "esp_log.h"
+bool sensor_init(void);
 typedef enum 
     {
       SYSRANGE_START                              = 0x00,

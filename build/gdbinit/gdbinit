@@ -1,2 +1,2 @@
-source C:/esp32/develop/tcp-client/build/gdbinit/symbols
-source C:/esp32/develop/tcp-client/build/gdbinit/connect
+source C:/esp32/develop/water-dispenser/build/gdbinit/symbols
+source C:/esp32/develop/water-dispenser/build/gdbinit/connect

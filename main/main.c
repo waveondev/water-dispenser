@@ -10,11 +10,7 @@
 #include "ble/ble_task.h"
 #include "wifi_task.h"
 #include "FreeRTOS_CLI.h"
-#include "spiffs_util.h"
 #include "gpio_util.h"
-#include "ble/ble_util.h"
-#include "wifi_util.h"
-
 #include "lwip/apps/mqtt.h"
 #include "app_moter.h"
 #include "app_button.h"
@@ -24,6 +20,7 @@ extern void tcp_client(void);
 
 #include "esp_vfs_dev.h"
 #include "app_sensor.h"
+#include "app_config_flash.h"
 void app_main(void)
 {
     esp_err_t ret;
@@ -41,24 +38,19 @@ void app_main(void)
     esp_vfs_dev_uart_set_rx_line_endings(ESP_LINE_ENDINGS_LF);
     ESP_ERROR_CHECK( ret );
 #endif
-    spiffs_init();
-
-    
-    //gpio_init(18,GPIO_MODE_INPUT, 0, NULL);
-    ble_info_init();
-    wifi_info_init();
+    NVS_Flash_init();
 
     console_task_init();
     init_motor_ledc();
     button_task_init();
     init_led_strip();
     sensor_init();
-    adc_init();
+  
     ble_task_init();
 
     //charge_init();
 
     //mqtt_client_connect()
     //if(wifi_info_get_used())
-       // wifi_task_init();
+        wifi_init();
 }
