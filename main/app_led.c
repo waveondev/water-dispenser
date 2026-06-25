@@ -3,8 +3,32 @@
 
 #define BLINK_GPIO   14   // 네오픽셀 데이터 선이 연결된 GPIO 핀 번호
 #define LED_NUMBERS  3   // 연결된 네오픽셀 LED 총 개수 (예: 3개)
+#define LED_BRIGHTNESS_MAX    250
+#define LED_BRIGHTNESS_CENTER 100
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "app_config_flash.h"
+#include "opmode_task.h"
+
+#include "app_TOF.h"
 static led_strip_handle_t led_strip;
+static const char *TAG = __FILE__;
+
+#define LED_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
+
+static uint16_t led_status_resister = 0;
+void led_bit_enable(uint16_t enable)
+{
+    led_status_resister |= enable;
+}
+
+void led_bit_disable(uint16_t disable)
+{
+    led_status_resister &= (~disable);
+}
+
 
 void init_led_strip(void) {
     // 1. 네오픽셀 기본 설정 (v3.x 최신 규격)
@@ -57,4 +81,90 @@ void set_rgb_led(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
     // 실제 SK6812 칩들로 32비트 정밀 신호 전송
     led_strip_refresh(led_strip); 
 }
+
+
+
+
+static void LED_task(void *pvParameter)
+{
+
+    app_config_t* app_config = get_app_config();
+    set_rgb_led(0,0,0,LED_BRIGHTNESS_MAX);
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
+   // ⭐️ [이전 모드를 기억할 변수 추가]
+    int last_op_mode = -1; 
+    ESP_LOGI(TAG, "Starting Opmode_task");
+    while (1) {
+        // ⭐️ 현재 모드가 이전 모드와 다를 때만(실제 변경 시에만) switch-case 문을 실행합니다.
+        if(VL53L0X_Detect())
+        {
+            led_bit_enable(TOF_DETECT_BIT);
+        }
+        else
+        {
+            led_bit_disable(TOF_DETECT_BIT);
+        }
+        if(led_status_resister)
+        {
+            last_op_mode = -1;
+        }
+        else
+        {
+
+            if (app_config->op_mode != last_op_mode) {
+                last_op_mode = app_config->op_mode; // 새로운 모드 저장
+
+                switch(app_config->op_mode)
+                {
+                    case OP_MODE_NORMAL:
+                        set_rgb_led(0, LED_BRIGHTNESS_MAX, LED_BRIGHTNESS_MAX, 0);
+                        break;
+                    case OP_MODE_NIGHT:
+                        set_rgb_led(LED_BRIGHTNESS_MAX, 0, LED_BRIGHTNESS_MAX, 0);
+                        break;
+                    case OP_MODE_SMART:
+                        set_rgb_led(LED_BRIGHTNESS_MAX, LED_BRIGHTNESS_MAX, 0, 0);
+                        break;
+                    case OP_MODE_SLEEP:
+                        set_led_clear();
+                        break;
+                    default:
+                        break;
+                }
+            }
+            
+        }
+
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+    
+}
+
+
+
+
+
+
+void LED_task_init(void)
+{
+    TaskHandle_t xHandle = NULL;
+    static uint8_t ucParameterToPass;
+
+    // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
+    if (xTaskCreatePinnedToCore(
+            LED_task,                  // 태스크 함수
+            "LED_task",                // 태스크 이름
+            LED_TASK_STACK_SIZE,       // 스택 크기
+            &ucParameterToPass,        // 파라미터
+            tskIDLE_PRIORITY + 1,      // 우선순위
+            &xHandle,                  // 태스크 핸들
+            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+        ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
+        
+        ESP_LOGE(TAG, "Error creating Button_task on Core 1");
+    }
+}
+
+
+
 

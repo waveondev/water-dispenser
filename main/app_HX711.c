@@ -8,25 +8,15 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_timer.h"
-// cal
-typedef struct  {
-  float hx1_scale;                 // counts per gram
-  int32_t hx1_offset;              // tare offset
- 
-}cal_t;
+#include "app_config_flash.h"
 
-typedef struct  {
-
-  cal_t  cal;
-
-}settings_t;
 
 typedef struct  { uint32_t t; float w; }WSample;
-settings_t g_settings;
+
 static WSample g_wbuf[32];
 static uint8_t g_wbuf_n = 0;
 static uint8_t g_wbuf_i = 0;
-
+static bool hx711_cal_enable = false;
 
 static unsigned long millis() {
   return (unsigned long)(esp_timer_get_time() / 1000ULL);
@@ -70,9 +60,9 @@ static bool hx711_read_raw(int32_t* out_raw) {
   //out_raw = -out_raw; // Invert to make positive weight positive value
   return true;
 }
-static bool calc_weight_g(const settings_t* s, int32_t raw, float* out_g) {
-  if (s->cal.hx1_scale == 0.0f) return false;
-  *out_g = ((float)raw - (float)s->cal.hx1_offset) / s->cal.hx1_scale;
+static bool calc_weight_g(const app_config_t* s, int32_t raw, float* out_g) {
+  if (s->hx1_scale == 0.0f) return false;
+  *out_g = ((float)raw - (float)s->hx1_offset) / s->hx1_scale;
   return true;
 }
 
@@ -83,19 +73,19 @@ static void push_weight_sample(float w) {
   if (g_wbuf_n < max_samples) g_wbuf_n++;
 }
 
-void HX711_cal_init(void)
+static void HX711_cal_process(void)
 {
     float w = 0.0f;
     bool ok_raw;
     bool ok_w;
-    const settings_t* cfg = &g_settings;
 
     int32_t raw = 0;
     int32_t raw_sum = 0;
     uint8_t count = 0;
+    app_config_t* app_config = get_app_config();
     for(int k = 0; k < 10; ++k) {
         ok_raw = hx711_read_raw(&raw);
-        ok_w = ok_raw && calc_weight_g(cfg, raw, &w);
+        ok_w = ok_raw && calc_weight_g(app_config, raw, &w);
         APP_String_printf("[SENSOR][Offset Calc-%d] Weight: %.2f g (raw: %d)\r\n", k, ok_w ? w : 0.0f, raw);
         if (ok_w) {
             raw_sum += raw;
@@ -103,36 +93,45 @@ void HX711_cal_init(void)
         }
         vTaskDelay(500 / portTICK_PERIOD_MS);    
     }
-    g_settings.cal.hx1_offset = count > 0 ? (raw_sum / count) : 0;
-    APP_String_printf("[SENSOR] Tare offset set to %d\r\n", g_settings.cal.hx1_offset);
+    app_config->hx1_offset = count > 0 ? (raw_sum / count) : 0;
+    APP_String_printf("[SENSOR] Tare offset set to %d\r\n", app_config->hx1_offset);
+}
+void HX711_cal_init(void)
+{
+    hx711_cal_enable = true;
 }
 
 void HX711_Sensing(void)
 {
-    const settings_t* cfg = &g_settings;
-    float w = 0.0f;
-    bool ok_raw;
-    bool ok_w;
-    int32_t raw = 0;
-    int32_t raw_sum = 0;
-    uint8_t count = 0;
-    // HX711 weight
-    ok_raw = hx711_read_raw(&raw);
-    ok_w = ok_raw && calc_weight_g(cfg, raw, &w);
-
-    if (ok_w) 
+    app_config_t* app_config = get_app_config();
+    if(hx711_cal_enable == true)
     {
-        push_weight_sample(w);
-        APP_String_printf("[SENSOR] Weight: %.2f g (raw: %d)\r\n", w, raw);
+      hx711_cal_enable = false;
+      HX711_cal_process();
     }
+    else{
+        float w = 0.0f;
+        bool ok_raw;
+        bool ok_w;
+        int32_t raw = 0;
+        int32_t raw_sum = 0;
+        uint8_t count = 0;
+        // HX711 weight
+        ok_raw = hx711_read_raw(&raw);
+        ok_w = ok_raw && calc_weight_g(app_config, raw, &w);
+
+        if (ok_w) 
+        {
+            push_weight_sample(w);
+            APP_String_printf("[SENSOR] Weight: %.2f g (raw: %d)\r\n", w, raw);
+        }
+    }
+
 }
 
 
 bool HX711_init(void)
 {
-
-    const settings_t* cfg = &g_settings;
-    g_settings.cal.hx1_scale = 1000.0f;
     float w = 0.0f;
     bool ok_raw;
     bool ok_w;
@@ -160,6 +159,7 @@ bool HX711_init(void)
     // 초기 시작 시 클럭 핀을 0(LOW) 상태로 안전하게 내려둡니다.
     gpio_set_level(PIN_HX711_SCK, 0);
     int32_t raw = 0;
+    vTaskDelay(pdMS_TO_TICKS(500));
     return hx711_read_raw(&raw);
 }
 

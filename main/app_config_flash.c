@@ -1,5 +1,6 @@
 #include "app_config_flash.h"
 #include "esp_log.h"
+#include "opmode_task.h"
 static const char *TAG = __FILE__;
 
 app_config_t app_config = 
@@ -10,7 +11,9 @@ app_config_t app_config =
     .splash_delta_g = 50,
     .gate_way_rssi_th = -55,
     .hx1_scale = 1000.0f,
-    .hx1_offset = 0
+    .hx1_offset = 0,
+    .tof_sense_threshold_l = 250,
+    .tof_sense_threshold_r = 250
 };
 
 wifi_config_t wifi_config = 

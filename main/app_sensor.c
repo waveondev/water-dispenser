@@ -11,6 +11,8 @@
 #include "app_HX711.h"
 #include "app_TOF.h"
 #include "app_adc.h"
+
+
 #define SENSOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
 #define TASK_DELAY_MS(x) (x/portTICK_PERIOD_MS)
 static const char *TAG = __FILE__;
@@ -45,10 +47,16 @@ bool sensor_init(void)
     adc_init();
     ret = HX711_init();
     if(ret == false)
+    {
+        ESP_LOGE(TAG, "HX711 Error\r\n");
         return ret;
+    }
     ret = TOF_VL53L0X_init();
     if(ret == false)
+    {
+        ESP_LOGE(TAG, "TOF Error\r\n");
         return ret;
+    }
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
     if (xTaskCreatePinnedToCore(
             Sensor_task,                  // 태스크 함수

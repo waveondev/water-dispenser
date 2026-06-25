@@ -13,7 +13,7 @@
 #include "example_common_private.h"
 #include "mqtt_main.h"
 
-static const char* TAG = "wifi_task";
+static const char* TAG = "__FILE__";
 
 #define USER_CONFIG_EXAMPLE_WIFI_SSID "iptime_lab0"
 #define USER_CONFIG_EXAMPLE_WIFI_PASSWORD "gunpo!0929"

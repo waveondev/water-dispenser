@@ -16,6 +16,7 @@
 #include "app_button.h"
 #include "app_led.h"
 #include "app_adc.h"
+#include "opmode_task.h"
 extern void tcp_client(void);
 
 #include "esp_vfs_dev.h"
@@ -45,12 +46,13 @@ void app_main(void)
     button_task_init();
     init_led_strip();
     sensor_init();
-  
+    opmode_task_init();
+    LED_task_init();
     ble_task_init();
 
     //charge_init();
 
     //mqtt_client_connect()
     //if(wifi_info_get_used())
-        wifi_init();
+    wifi_init();
 }

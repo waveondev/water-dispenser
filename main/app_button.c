@@ -7,7 +7,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "gpio_util.h"
-
+#include "app_moter.h"
+#include "opmode_task.h"
+#include "app_config_flash.h"
 #define BUTTON_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
 #define WIFI_TASK_DELAY_MS(x) (x/portTICK_PERIOD_MS)
 static const char *TAG = __FILE__;
@@ -116,6 +118,10 @@ void Button_task(void *pvParameter)
                     pressDuration = releaseTime - button_press_start_time;
                     setButtonStatus(BUTTON_STATUS_RELEASED);
                     //APP_String_printf("Button Released at %u ms, Duration: %u ms\r\n", releaseTime, pressDuration);
+                    if (pressDuration < 100) {
+                        APP_String_printf("[BUTTON] ⚠️ 가짜 신호(노이즈) 무시 처리: %u ms\r\n", pressDuration);
+                        break; // switch 문을 바로 빠져나가서 아래 Action들을 통째로 스킵합니다.
+                    }
 
                     if (pressDuration >= BUTTON_LONG_PRESS_10_SEC) {
                         bf_LongPress10SecAction();
@@ -147,14 +153,16 @@ void Button_task(void *pvParameter)
 // Button actions
 
 void bf_SingleClickAction(void) {
-    //sendOpModeCmdEvent(OP_MODE_CMD_SHORT_PRESS);
+    Opmode_Set();
     APP_String_printf("Single Click Action executed \r\n");
 }
 
 void bf_DoubleClickAction(void) {
+    app_config_t* app_config = get_app_config();
     APP_String_printf("Double Click Action executed\r\n");
+    start_motor_with_boost(40,app_config->pump_clean_duration);
     // Add your double click action code here
-    APP_String_printf("Performing double click specific operation...");
+    //APP_String_printf("Performing double click specific operation...");
     // Example: Trigger OTA update or toggle a feature
 }
 
@@ -218,6 +226,4 @@ void button_task_init(void)
         
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");
     }
-
-
 }

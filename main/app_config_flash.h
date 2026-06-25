@@ -14,14 +14,11 @@ typedef struct{
     int32_t gate_way_rssi_th;
     float hx1_scale;                 // counts per gram
     int32_t hx1_offset;              // tare offset
+    uint32_t tof_sense_threshold_l;
+    uint32_t tof_sense_threshold_r;
 }app_config_t;
 
-typedef enum {
-    OP_MODE_NORMAL = 0,
-    OP_MODE_NIGHT,
-    OP_MODE_SMART,
-    OP_MODE_SLEEP,
-} op_mode_t;
+
 
 typedef struct{
     uint8_t conn_ssid[BLE_DEVICENAME_LEN];

@@ -2,6 +2,8 @@
 #include "app_moter.h"
 #include "app_led.h"
 #include "wifi_task.h"
+#include "app_HX711.h"
+#include "opmode_task.h"
 
 BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
@@ -71,8 +73,11 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 
 			else if (!strncmp(ag[1], "moter", 5))
 			{
-                val32 = atoi(ag[2]);
-                set_motor_speed_percent(val32);
+                start_motor_with_boost(atoi(ag[2]),atoi(ag[3]));
+            }
+			else if (!strncmp(ag[1], "duty", 4))
+			{
+				set_motor_speed_percent(atoi(ag[2]));
             }
 			else if (!strncmp(ag[1], "ledr", 4))
 			{
@@ -97,6 +102,14 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			else if (!strncmp(ag[1], "scan", 4))
 			{
                 wifi_scan_start();
+            }	
+			else if (!strncmp(ag[1], "cal", 3))
+			{
+                HX711_cal_init();
+            }		
+			else if (!strncmp(ag[1], "testmode", 8))
+			{
+                Opmode_test_mode();
             }		
 				
 			/* There are more parameters to return after this one. */

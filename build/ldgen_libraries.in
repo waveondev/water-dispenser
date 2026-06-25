@@ -211,14 +211,16 @@ $<TARGET_FILE:idf::rt>
 $<TARGET_FILE:idf::spiffs>
 $<TARGET_FILE:idf::espressif__led_strip>
 $<TARGET_FILE:__idf_esp_driver_rmt>
+$<TARGET_FILE:idf::espressif__i2c_bus>
+$<TARGET_FILE:__idf_driver>
 $<TARGET_FILE:idf::espressif__mqtt>
 $<TARGET_FILE:idf::espressif__ethernet_init>
 $<TARGET_FILE:__idf_esp_eth>
 $<TARGET_FILE:idf::protocol_examples_common>
 $<TARGET_FILE:__idf_espressif__ethernet_init>
 $<TARGET_FILE:idf::main>
-$<TARGET_FILE:__idf_driver>
 $<TARGET_FILE:__idf_esp_driver_ledc>
 $<TARGET_FILE:__idf_espressif__led_strip>
+$<TARGET_FILE:__idf_espressif__i2c_bus>
 $<TARGET_FILE:__idf_espressif__mqtt>
 $<TARGET_FILE:__idf_protocol_examples_common>

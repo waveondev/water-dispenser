@@ -15,7 +15,7 @@
 #include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-
+#include "app_config_flash.h"
 static const char *TAG = "BLE_ONLY";
 
 #define DEVICE_NAME "Wave_Peri3"
@@ -180,16 +180,29 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             char name[32];
             int8_t rssi;
         } dev_info_t;
-        
+        app_config_t* app_config = get_app_config();
         static dev_info_t dev_list[20];
         static int dev_count = 0;
 
-        rc = ble_hs_adv_parse_fields(&fields, event->disc.data, event->disc.length_data);
+       rc = ble_hs_adv_parse_fields(&fields, event->disc.data, event->disc.length_data);
         if (rc != 0) {
             return 0;
         }
 
-        // 1. MAC 주소 기준으로 기존 리스트 검색 및 등록 (이름 캐싱용)
+        // -----------------------------------------------------------------
+        // 1. ⚡️ [새로운 필터] RSSI 조건 검사 (간혹 부호가 헷갈릴 수 있으니 주의)
+        //    * 수신 감도가 -55 dBm 이하(예: -56, -60, -70 dBm처럼 멀리 있는 기기)인 경우만 통과
+        //    * 만약 -55보다 신호가 쌘 것(-50, -40 dBm 등)을 원하신 거라면 `>`로 부호를 바꿔주세요.
+        // -----------------------------------------------------------------
+        if (event->disc.rssi < app_config->gate_way_rssi_th) {
+            return 0; // -55보다 큰 신호는 여기서 즉시 차단
+        }
+
+        // -----------------------------------------------------------------
+        // 2. ⚡️ 임시 이름 확인 및 캐시 검색을 위한 준비
+        //    * BLE 스캔 패킷 특성상 이름이 항상 들어오지 않으므로, 
+        //      먼저 현재 패킷에 이름이 있거나 혹은 기존 캐시에 등록되어 있는지 찾아야 합니다.
+        // -----------------------------------------------------------------
         int idx = -1;
         for (int i = 0; i < dev_count; i++) {
             if (memcmp(dev_list[i].addr, event->disc.addr.val, 6) == 0) {
@@ -198,7 +211,39 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             }
         }
 
+        // 현재 패킷에서 이름을 추출해 봅니다.
+        char current_packet_name[32] = "";
+        if (fields.name != NULL && fields.name_len > 0) {
+            int len = (fields.name_len > 31) ? 31 : fields.name_len;
+            memcpy(current_packet_name, fields.name, len);
+            current_packet_name[len] = '\0';
+        } else if (idx != -1) {
+            // 이번 패킷에 이름은 없지만 기존 캐시 리스트에 저장된 이름이 있다면 가져옵니다.
+            strcpy(current_packet_name, dev_list[idx].name);
+        }
+
+        // ⚡️ 이름이 "Wave_Tracker"인지 검사
+        if (strcmp(current_packet_name, "Wave_Tracker") != 0) {
+            return 0; // Wave_Tracker가 아니면 즉시 차단
+        }
+
+        // -----------------------------------------------------------------
+        // 3. ⚡️ Service UUID 16-bit 검사 (0x1234 인지 확인)
+        // -----------------------------------------------------------------
+        if (fields.svc_data_uuid16 == NULL || fields.svc_data_uuid16_len <= 0) {
+            return 0; // 서비스 데이터가 아예 없으면 차단
+        }
+
+        uint16_t svc_uuid = (fields.svc_data_uuid16[1] << 8) | fields.svc_data_uuid16[0];
+        if (svc_uuid != 0x1234) {
+            return 0; // 우리가 찾는 0x1234 서비스가 아니면 차단
+        }
+
+        // -----------------------------------------------------------------
+        // 4. 🎉 모든 방어벽 통과! 이제야 안심하고 `dev_list`에 저장/업데이트 진행
+        // -----------------------------------------------------------------
         if (idx == -1) {
+            // 기존 리스트에 없던 신규 기기라면 새로 빈 공간 확보
             if (dev_count < 20) {
                 idx = dev_count++;
             } else {
@@ -208,61 +253,42 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             }
             memset(&dev_list[idx], 0, sizeof(dev_info_t));
             memcpy(dev_list[idx].addr, event->disc.addr.val, 6);
-            strcpy(dev_list[idx].name, "Unknown (No Name)");
         }
 
-        // 이름 패킷이 들어왔을 때만 캐시 업데이트
-        if (fields.name != NULL && fields.name_len > 0) {
-            int len = (fields.name_len > 31) ? 31 : fields.name_len;
-            memcpy(dev_list[idx].name, fields.name, len);
-            dev_list[idx].name[len] = '\0';
-        }
+        // 최신 이름과 RSSI 데이터 업데이트 저장
+        strcpy(dev_list[idx].name, current_packet_name);
+        dev_list[idx].rssi = event->disc.rssi;
 
-        // 2. ⭐️ [핵심 필터] 캐시된 이름이 "Wave_Tracker"인 기기만 처리
-        if (strcmp(dev_list[idx].name, "Wave_Tracker") == 0) {
-            
-            // 💡 16-bit Service Data가 들어왔는지 확인
-            if (fields.svc_data_uuid16 != NULL && fields.svc_data_uuid16_len > 0) {
-                
-                // 패킷 구조상 앞의 2바이트는 서비스 UUID(0x1234) 자체를 나타냅니다.
-                // 리틀 엔디안 형태이므로 [0]=0x34, [1]=0x12 구조를 띱니다.
-                uint16_t svc_uuid = (fields.svc_data_uuid16[1] << 8) | fields.svc_data_uuid16[0];
-                
-                // 우리가 찾는 0x1234 서비스 데이터가 맞는지 검증합니다.
-                if (svc_uuid == 0x1234) {
-                    
-                    // 실제 데이터는 서비스 UUID(2바이트)를 제외한 그 뒤 영역입니다.
-                    const uint8_t *actual_data = fields.svc_data_uuid16 + 2;
-                    int actual_data_len = fields.svc_data_uuid16_len - 2;
 
-                    printf("\n🎯 [Wave_Tracker] Service Data (0x1234) 포착 🎯\n");
-                    printf("MAC  : %02X:%02X:%02X:%02X:%02X:%02X (%d dBm)\n",
-                           event->disc.addr.val[5], event->disc.addr.val[4], event->disc.addr.val[3],
-                           event->disc.addr.val[2], event->disc.addr.val[1], event->disc.addr.val[0],
-                           event->disc.rssi);
+        // -----------------------------------------------------------------
+        // 5. 🎯 최종 결과 콘솔 출력 (페이로드 파싱)
+        // -----------------------------------------------------------------
+        const uint8_t *actual_data = fields.svc_data_uuid16 + 2;
+        int actual_data_len = fields.svc_data_uuid16_len - 2;
 
-                    // 16진수 바이트 출력
-                    if (actual_data_len > 0) {
-                        printf("HEX  : ");
-                        for (int i = 0; i < actual_data_len; i++) {
-                            printf("%02X ", actual_data[i]);
-                        }
-                        printf("\n");
+        printf("\n🎯 [Wave_Tracker] 조건 만족 기기 dev_list 저장 완료 🎯\n");
+        printf("MAC  : %02X:%02X:%02X:%02X:%02X:%02X (%d dBm)\n",
+               event->disc.addr.val[5], event->disc.addr.val[4], event->disc.addr.val[3],
+               event->disc.addr.val[2], event->disc.addr.val[1], event->disc.addr.val[0],
+               dev_list[idx].rssi);
 
-                        // 아스키 문자열 출력
-                        printf("STR  : ");
-                        for (int i = 0; i < actual_data_len; i++) {
-                            char c = actual_data[i];
-                            printf("%c", (c >= 32 && c <= 126) ? c : '.');
-                        }
-                        printf("\n");
-                    } else {
-                        printf("HEX  : 서비스 데이터 페이로드가 비어있음\n");
-                    }
-                    printf("-------------------------------------\n");
-                }
+        if (actual_data_len > 0) {
+            printf("HEX  : ");
+            for (int i = 0; i < actual_data_len; i++) {
+                printf("%02X ", actual_data[i]);
             }
+            printf("\n");
+
+            printf("STR  : ");
+            for (int i = 0; i < actual_data_len; i++) {
+                char c = actual_data[i];
+                printf("%c", (c >= 32 && c <= 126) ? c : '.');
+            }
+            printf("\n");
+        } else {
+            printf("HEX  : 서비스 데이터 페이로드가 비어있음\n");
         }
+        printf("-------------------------------------\n");
 
         return 0;
     }

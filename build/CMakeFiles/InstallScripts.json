@@ -159,6 +159,8 @@
 		"C:/esp32/develop/water-dispenser/build/esp-idf/spiffs/cmake_install.cmake",
 		"C:/esp32/develop/water-dispenser/build/esp-idf/ulp/cmake_install.cmake",
 		"C:/esp32/develop/water-dispenser/build/esp-idf/espressif__led_strip/cmake_install.cmake",
+		"C:/esp32/develop/water-dispenser/build/esp-idf/espressif__cmake_utilities/cmake_install.cmake",
+		"C:/esp32/develop/water-dispenser/build/esp-idf/espressif__i2c_bus/cmake_install.cmake",
 		"C:/esp32/develop/water-dispenser/build/esp-idf/espressif__mqtt/cmake_install.cmake",
 		"C:/esp32/develop/water-dispenser/build/esp-idf/espressif__ethernet_init/cmake_install.cmake",
 		"C:/esp32/develop/water-dispenser/build/esp-idf/protocol_examples_common/cmake_install.cmake",
