@@ -4,7 +4,7 @@
 #include "wifi_task.h"
 #include "app_HX711.h"
 #include "opmode_task.h"
-
+void send_mac(void);
 BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
     const char *pcParameter;
@@ -111,7 +111,17 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
                 Opmode_test_mode();
             }		
-				
+			else if (!strncmp(ag[1], "send", 4))
+			{
+                send_mac();
+            }
+			else if (!strncmp(ag[1], "discon", 6))
+			{
+
+				Wifi_Disconnect();
+			}
+
+		
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

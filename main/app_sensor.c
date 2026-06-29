@@ -46,17 +46,21 @@ bool sensor_init(void)
     bool ret = false;
     adc_init();
     ret = HX711_init();
+    #if 0
     if(ret == false)
     {
         ESP_LOGE(TAG, "HX711 Error\r\n");
         return ret;
     }
+    #endif
     ret = TOF_VL53L0X_init();
+    #if 0
     if(ret == false)
     {
         ESP_LOGE(TAG, "TOF Error\r\n");
         return ret;
     }
+    #endif
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
     if (xTaskCreatePinnedToCore(
             Sensor_task,                  // 태스크 함수

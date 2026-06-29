@@ -6,7 +6,7 @@
 #define TOF_DETECT_BIT (1<<14)
 
 
-
+bool led_moter_enable(void);
 void led_bit_disable(uint16_t disable);
 void led_bit_enable(uint16_t enable);
 void init_led_strip(void);

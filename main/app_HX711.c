@@ -10,7 +10,13 @@
 #include "esp_timer.h"
 #include "app_config_flash.h"
 
+#if 0 
+[SENSOR] Weight: 251.93 g (raw: 251934) 없을때
+[SENSOR] Weight: 314.22 g (raw: 314222) 물통만 
+[SENSOR] Weight: 346.72 g (raw: 346721) 접시+물통
+[SENSOR] Weight: 363.90 g (raw: 366308) 전체
 
+#endif
 typedef struct  { uint32_t t; float w; }WSample;
 
 static WSample g_wbuf[32];

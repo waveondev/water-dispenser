@@ -6,6 +6,7 @@
 #include "esp_timer.h"
 #include "app_moter.h"
 #include "app_TOF.h"
+#include "app_led.h"
 static QueueHandle_t opModeQueue = NULL;
 
 static const char* TAG = __FILE__;
@@ -69,7 +70,7 @@ void Opmode_Set(void)
 
 }
 
-
+#if 0
 
 static void Opmode_task(void *pvParameter)
 {
@@ -103,7 +104,85 @@ static void Opmode_task(void *pvParameter)
     }
     
 }
+#else
 
+static void Opmode_task(void *pvParameter)
+{
+    ESP_LOGI(TAG, "Starting Opmode_task");
+    while (1) {
+        switch(current_opmode)
+        {
+            case OP_MODE_NORMAL:
+                start_motor_with_boost(40,0);
+            break;
+            case OP_MODE_NIGHT:
+                start_motor_with_boost(100,0);
+            break;
+            case OP_MODE_SMART:
+            {
+                bool sensor_detected = VL53L0X_Detect();
+                uint32_t current_tick = xTaskGetTickCount();
+                
+                // 💡 20초 최소 보장 마감 시한을 기록할 static 변수
+                static uint32_t motor_must_run_until = 0;
+                static bool is_running = false;
+
+                // 1. 센서가 새로 감지되었고, 현재 모터가 꺼져 있는 상태라면 -> 20초 타이머 시작!
+                if (sensor_detected && !is_running) 
+                {
+                    // 지금 시점으로부터 딱 20초(20000ms) 뒤의 틱 값을 마감 시한으로 설정
+                    motor_must_run_until = current_tick + (20000 / portTICK_PERIOD_MS);
+                    is_running = true;
+                    ESP_LOGI(TAG, "SMART Mode: Motor started. Minimum 20 seconds guaranteed.");
+                }
+
+                // 2. 현재 모터가 켜져 있는 상태일 때
+                if (is_running) 
+                {
+                    // 틱 카운트 오버플로우를 고려하여 안전하게 잔여 시간 계산
+                    int32_t remaining_ticks = (int32_t)(motor_must_run_until - current_tick);
+
+                    // 20초가 지난 시점이라면 (잔여 틱이 0 이하)
+                    if (remaining_ticks <= 0) 
+                    {
+                        // ⭐️ 20초가 지났을 때의 센서 상태를 체크합니다.
+                        if (sensor_detected) 
+                        {
+                            // 센서가 여전히 들어와 있다면 꺼지지 않고 계속 유지 (타이머는 끝남)
+                            start_motor_with_boost(40, 0);
+                        } 
+                        else 
+                        {
+                            // 20초도 지났고 센서도 꺼져 있다면 그제서야 모터 정지!
+                            start_motor_with_boost(0, 0);
+                            is_running = false; // 다시 처음 상태로 복귀
+                            ESP_LOGI(TAG, "SMART Mode: 20s passed & No sensor. Motor stopped.");
+                        }
+                    } 
+                    else 
+                    {
+                        // 아직 20초가 지나지 않았다면 센서가 있든 없든 무조건 True(구동)
+                        start_motor_with_boost(40, 0);
+                    }
+                } 
+                else 
+                {
+                    // 아예 처음부터 아무것도 감지 안 된 상태
+                    start_motor_with_boost(0, 0);
+                }
+                break;
+            }
+            case OP_MODE_SLEEP:
+               // start_motor_with_boost(0,0);
+            break;
+            default:
+            break;
+        }
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+    
+}
+#endif
 
 
 
