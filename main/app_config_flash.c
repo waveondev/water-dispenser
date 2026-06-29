@@ -13,7 +13,8 @@ app_config_t app_config =
     .hx1_scale = 1000.0f,
     .hx1_offset = 0,
     .tof_sense_threshold_l = 250,
-    .tof_sense_threshold_r = 250
+    .tof_sense_threshold_r = 250,
+    .motion_data_time = 1800,
 };
 
 wifi_config_t wifi_config = 
@@ -43,6 +44,9 @@ void dump_all_configurations(void)
     ESP_LOGI(TAG, "  - Gateway RSSI Thr     : %ld dBm", app_config.gate_way_rssi_th);
     ESP_LOGI(TAG, "  - HX1 Scale Factor     : %.2f", app_config.hx1_scale);
     ESP_LOGI(TAG, "  - HX1 Tare Offset      : %ld", app_config.hx1_offset);
+    ESP_LOGI(TAG, "  - tof_sense_threshold_l: %ld", app_config.tof_sense_threshold_l);
+    ESP_LOGI(TAG, "  - tof_sense_threshold_r: %ld", app_config.tof_sense_threshold_r);
+    ESP_LOGI(TAG, "  - motion_data_time     : %ld", app_config.motion_data_time);
     ESP_LOGI(TAG, "--------------------------------------------------");
 
     // 2. Wi-Fi 설정 출력

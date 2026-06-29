@@ -151,7 +151,7 @@ void VL53L0X_Sensing(void)
     }
     // ⭐️ [0.5초마다 터미널에 보정된 센서값 출력] ⭐️
 
-        
+        #if 0
     ESP_LOGI(TAG, "========================================");
     if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm", tof0_mm);
     else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
@@ -159,7 +159,7 @@ void VL53L0X_Sensing(void)
     if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm", tof1_mm);
     else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
     ESP_LOGI(TAG, "========================================");
-
+    #endif
 }
 
 bool TOF_VL53L0X_init(void)

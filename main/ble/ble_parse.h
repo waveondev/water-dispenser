@@ -3,6 +3,17 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#define MOTION_START_RESPONSE 0x10
+#define MOTION_DATA           0x11
+
+
+#define MOTION_START_REQUEST  0x20
+#define MOTION_DATA_ACK       0x21
+
+#define OTA_MODE_REQUEST      0x30
+#define OTA_MODE_RESPONSE     0x31
+
 typedef union {
     struct {
         uint16_t data : 14;  
