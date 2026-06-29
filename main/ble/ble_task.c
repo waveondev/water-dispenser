@@ -17,7 +17,8 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "app_config_flash.h"
 #include "ble_parse.h"
-static const char *TAG = "BLE_ONLY";
+#include "motion_task.h"
+static const char *TAG = __FILE__;
 
 #define DEVICE_NAME "Wave_Peri3"
 #define MY_UUID128_BASE(XX, YY) \
@@ -147,6 +148,10 @@ void send_mac(void)
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
         ble_send_data_to_queue((const uint8_t*)Str, strlen((const char*)Str));
 }
+void send_motion(void)
+{
+    MotionGetTimer(is_phone_connected);
+}
 /**
  * NimBLE GAP 이벤트 콜백 핸들러 (연결 상태 감시 + [추가] 비콘 스캔 처리)
  */
@@ -164,6 +169,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         is_phone_connected = true;
         ESP_ERROR_CHECK(esp_timer_start_periodic(Mac_sending_timer, 1000000));
         ESP_LOGE(TAG, "BLE_GAP_EVENT_CONNECT");
+        
         current_conn_handle = event->connect.conn_handle;
         if (event->connect.status == 0) {
 
@@ -182,6 +188,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         MODLOG_DFLT(INFO, "disconnect; reason=%d \n", event->disconnect.reason);
         current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         is_phone_connected = false;
+        MotionGetTimer(is_phone_connected);
         if (event->disconnect.conn.conn_handle <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
             conn_handle_subs[event->disconnect.conn.conn_handle] = false;
         }
@@ -532,6 +539,20 @@ static void mac_send_timer_callback(void* arg)
 
     esp_timer_stop(Mac_sending_timer);
 }
+
+void motion_msg_send(uint8_t cmd)
+{
+    Motion_Packet_t Motion_Packet;
+
+    memset(&Motion_Packet,0,sizeof(Motion_Packet));
+        
+    Motion_Packet.event_code = cmd;
+    Motion_Packet.motion_res.req_type = 1;
+
+    ble_send_data_to_queue((uint8_t*)&Motion_Packet,sizeof(Motion_Packet));
+    // 설정값이 0보다 클 때만 타이머 실행 (안전성 강화)
+}
+
 void ble_task_init(void)
 {
     esp_err_t ret;

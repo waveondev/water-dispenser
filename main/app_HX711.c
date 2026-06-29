@@ -9,7 +9,7 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "app_config_flash.h"
-
+static const char *TAG = __FILE__;
 #if 0 
 [SENSOR] Weight: 251.93 g (raw: 251934) 없을때
 [SENSOR] Weight: 314.22 g (raw: 314222) 물통만 
@@ -92,7 +92,7 @@ static void HX711_cal_process(void)
     for(int k = 0; k < 10; ++k) {
         ok_raw = hx711_read_raw(&raw);
         ok_w = ok_raw && calc_weight_g(app_config, raw, &w);
-        APP_String_printf("[SENSOR][Offset Calc-%d] Weight: %.2f g (raw: %d)\r\n", k, ok_w ? w : 0.0f, raw);
+        ESP_LOGI(TAG,"[Offset Calc-%d] Weight: %.2f g (raw: %d)\r\n", k, ok_w ? w : 0.0f, raw);
         if (ok_w) {
             raw_sum += raw;
             count++;
@@ -100,7 +100,7 @@ static void HX711_cal_process(void)
         vTaskDelay(500 / portTICK_PERIOD_MS);    
     }
     app_config->hx1_offset = count > 0 ? (raw_sum / count) : 0;
-    APP_String_printf("[SENSOR] Tare offset set to %d\r\n", app_config->hx1_offset);
+     ESP_LOGI(TAG, "Tare offset set to %d\r\n", app_config->hx1_offset);
 }
 void HX711_cal_init(void)
 {
@@ -129,7 +129,7 @@ void HX711_Sensing(void)
         if (ok_w) 
         {
             push_weight_sample(w);
-            APP_String_printf("[SENSOR] Weight: %.2f g (raw: %d)\r\n", w, raw);
+            ESP_LOGI(TAG," Weight: %.2f g (raw: %d)\r\n", w, raw);
         }
     }
 

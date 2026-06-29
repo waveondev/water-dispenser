@@ -16,6 +16,7 @@ typedef struct{
     int32_t hx1_offset;              // tare offset
     uint32_t tof_sense_threshold_l;
     uint32_t tof_sense_threshold_r;
+    uint32_t motion_data_time;
 }app_config_t;
 
 

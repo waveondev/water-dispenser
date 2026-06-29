@@ -2,12 +2,21 @@
     "version":            "1.2",
     "project_name":       "tcp-client",
     "project_version":    "f77c38f-dirty",
+<<<<<<< HEAD
     "project_path":       "/Users/Yuna/Documents/Dev/fw/water-dispenser",
     "idf_path":           "/Users/Yuna/.espressif/v5.5.4/esp-idf",
     "build_dir":          "/Users/Yuna/Documents/Dev/fw/water-dispenser/build",
     "config_file":        "/Users/Yuna/Documents/Dev/fw/water-dispenser/sdkconfig",
     "config_defaults":    "/Users/Yuna/Documents/Dev/fw/water-dispenser/sdkconfig.defaults",
     "bootloader_elf":     "/Users/Yuna/Documents/Dev/fw/water-dispenser/build/bootloader/bootloader.elf",
+=======
+    "project_path":       "C:/esp32/develop/water-dispenser",
+    "idf_path":           "C:/esp/v6.0.1/esp-idf",
+    "build_dir":          "C:/esp32/develop/water-dispenser/build",
+    "config_file":        "C:/esp32/develop/water-dispenser/sdkconfig",
+    "config_defaults":    "C:/esp32/develop/water-dispenser/sdkconfig.defaults",
+    "bootloader_elf":     "C:/esp32/develop/water-dispenser/build/bootloader/bootloader.elf",
+>>>>>>> f5ea3cc3184dc82310e210aa18902e9cd6044d65
     "app_elf":            "tcp-client.elf",
     "app_bin":            "tcp-client.bin",
     "build_type":         "flash_app",
@@ -1786,7 +1795,26 @@
             "dir": "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/cxx",
             "lib": "__idf_cxx",
             "reqs": [],
+<<<<<<< HEAD
             "priv_reqs": [ "esp_system", "pthread" ],
+=======
+            "priv_reqs": [ "bt", "esp_https_ota", "nvs_flash", "app_update", "bootloader_support", "driver", "esp_driver_gpio", "vfs", "esp_driver_ledc", "espressif__led_strip", "esp_adc", "espressif__i2c_bus", "espressif__mqtt", "protocol_examples_common" ],
+            "managed_reqs": [],
+            "managed_priv_reqs": [ "espressif__i2c_bus", "espressif__led_strip", "espressif__mqtt", "protocol_examples_common" ],
+            "file": "C:/esp32/develop/water-dispenser/build/esp-idf/main/libmain.a",
+            "sources": [ "C:/esp32/develop/water-dispenser/main/opmode_task.c", "C:/esp32/develop/water-dispenser/main/app_button.c", "C:/esp32/develop/water-dispenser/main/wifi/http_ota.c", "C:/esp32/develop/water-dispenser/main/wifi/wifi_task.c", "C:/esp32/develop/water-dispenser/main/gpio_util.c", "C:/esp32/develop/water-dispenser/main/cli/config_cli.c", "C:/esp32/develop/water-dispenser/main/cli/FreeRTOS_CLI.c", "C:/esp32/develop/water-dispenser/main/cli/set_cli.c", "C:/esp32/develop/water-dispenser/main/main.c", "C:/esp32/develop/water-dispenser/main/app_moter.c", "C:/esp32/develop/water-dispenser/main/mqtt/mqtt_parse.c", "C:/esp32/develop/water-dispenser/main/mqtt/mqtt_main.c", "C:/esp32/develop/water-dispenser/main/jbx-list.c", "C:/esp32/develop/water-dispenser/main/ble/ble_parse.c", "C:/esp32/develop/water-dispenser/main/ble/ble_task.c", "C:/esp32/develop/water-dispenser/main/app_led.c", "C:/esp32/develop/water-dispenser/main/app_sensor.c", "C:/esp32/develop/water-dispenser/main/app_adc.c", "C:/esp32/develop/water-dispenser/main/app_HX711.c", "C:/esp32/develop/water-dispenser/main/app_TOF.c", "C:/esp32/develop/water-dispenser/main/app_nvs.c", "C:/esp32/develop/water-dispenser/main/app_config_flash.c", "C:/esp32/develop/water-dispenser/main/motion_task.c", "C:/esp32/develop/water-dispenser/main/vl53l0x/core/src/vl53l0x_api.c", "C:/esp32/develop/water-dispenser/main/vl53l0x/core/src/vl53l0x_api_calibration.c", "C:/esp32/develop/water-dispenser/main/vl53l0x/core/src/vl53l0x_api_core.c", "C:/esp32/develop/water-dispenser/main/vl53l0x/core/src/vl53l0x_api_ranging.c", "C:/esp32/develop/water-dispenser/main/vl53l0x/platform/src/vl53l0x_platform.c" ],
+            "include_dirs": [ ".", "ble", "wifi", "cli", "mqtt", "vl53l0x/core/inc", "vl53l0x/platform/inc" ]
+        },
+        "mbedtls": {
+            "alias": "idf::mbedtls",
+            "target": "___idf_mbedtls",
+            "prefix": "idf",
+            "dir": "C:/esp/v6.0.1/esp-idf/components/mbedtls",
+            "type": "LIBRARY",
+            "lib": "__idf_mbedtls",
+            "reqs": [ "esp_security" ],
+            "priv_reqs": [ "soc", "esp_hw_support", "esp_pm", "esp_driver_dma" ],
+>>>>>>> f5ea3cc3184dc82310e210aa18902e9cd6044d65
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "include_dirs": []

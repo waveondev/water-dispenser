@@ -27,17 +27,29 @@ static const char* TAG = __FILE__;
 
 void Wifi_Disconnect(void)
 {
-    ESP_LOGI("WIFI_CHG", "기존 Wi-Fi 세션 연결 해제 프로세스 시작...");
+    wifi_ap_record_t ap_info;
+    esp_err_t status = esp_wifi_sta_get_ap_info(&ap_info);
 
-    // 1. 기존 연결 명시적으로 끊기
-    esp_err_t err = esp_wifi_disconnect();
-    if (err == ESP_OK) {
-        ESP_LOGI("WIFI_CHG", "기존 AP와 디스커넥트 성공.");
+    // 1. Wi-Fi가 아예 초기화 안 되었거나 꺼져(Stop) 있다면 함수 즉시 종료
+    if (status == ESP_ERR_WIFI_NOT_INIT || status == ESP_ERR_WIFI_NOT_STARTED) {
+        ESP_LOGI("WIFI_CHG", "Wi-Fi가 이미 정지 상태이므로 해제 프로세스를 생략합니다.");
+        return;
     }
 
-    // 2. Wi-Fi 드라이버 잠시 정지 (내부 상태 머신 초기화 효과)
+    ESP_LOGI("WIFI_CHG", "기존 Wi-Fi 세션 연결 해제 프로세스 시작...");
+
+    // 2. 현재 AP에 "연결되어 있는 경우(ESP_OK)"에만 명시적으로 끊기
+    if (status == ESP_OK) {
+        esp_err_t err = esp_wifi_disconnect();
+        if (err == ESP_OK) {
+            ESP_LOGI("WIFI_CHG", "기존 AP와 디스커넥트 성공.");
+        }
+    } else {
+        ESP_LOGI("WIFI_CHG", "Wi-Fi 드라이버는 실행 중이나, 현재 연결된 AP는 없습니다.");
+    }
+
+    // 3. Wi-Fi 드라이버 잠시 정지 (내부 상태 머신 초기화 효과)
     esp_wifi_stop();
-    
     // 잠시 태스크 유예를 주어 하드웨어 드라이버가 완전히 내려가도록 유도 (필수)
     vTaskDelay(pdMS_TO_TICKS(500)); 
 
@@ -278,6 +290,7 @@ uint16_t wifi_scan_start(void)
 #endif
 void Wifi_Connect(uint8_t* target_ssid, uint8_t* target_password)
 {
+    led_bit_enable(PAIRING_BIT);
     uint8_t ssid[32];
     uint8_t passward[64];
     memset(ssid,0,sizeof(ssid));
@@ -298,6 +311,7 @@ void Wifi_Connect(uint8_t* target_ssid, uint8_t* target_password)
     {
          ble_send_data_to_queue((uint8_t*)"CONNECT_AP FAIL",strlen("CONNECT_AP FAIL"));
     }
+        led_bit_disable(PAIRING_BIT);
     //mqtt_main();
 }
 

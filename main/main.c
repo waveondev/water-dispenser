@@ -22,6 +22,7 @@ extern void tcp_client(void);
 #include "esp_vfs_dev.h"
 #include "app_sensor.h"
 #include "app_config_flash.h"
+#include "motion_task.h"
 void app_main(void)
 {
     esp_err_t ret;
@@ -49,7 +50,7 @@ void app_main(void)
     opmode_task_init();
     LED_task_init();
     ble_task_init();
-
+    MotionTaskInit();
     //charge_init();
 
     //mqtt_client_connect()

@@ -14,12 +14,15 @@
 # EXTERNAL cache entries
 ########################
 
+<<<<<<< HEAD
 //No help, variable specified on the command line.
 CCACHE_ENABLE:UNINITIALIZED=0
 
 //Path to a program.
 CMAKE_ADDR2LINE:FILEPATH=/Users/Yuna/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20260121/xtensa-esp-elf/bin/xtensa-esp32s3-elf-addr2line
 
+=======
+>>>>>>> f5ea3cc3184dc82310e210aa18902e9cd6044d65
 //Path to a program.
 CMAKE_AR:FILEPATH=/Users/Yuna/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20260121/xtensa-esp-elf/bin/xtensa-esp32s3-elf-ar
 
@@ -354,9 +357,12 @@ Mbed TLS_IS_TOP_LEVEL:STATIC=OFF
 Mbed TLS_SOURCE_DIR:STATIC=/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls
 
 //No help, variable specified on the command line.
+<<<<<<< HEAD
 PYTHON:UNINITIALIZED=/Users/Yuna/.espressif/tools/python/v5.5.4/venv/bin/python
 
 //No help, variable specified on the command line.
+=======
+>>>>>>> f5ea3cc3184dc82310e210aa18902e9cd6044d65
 PYTHON_DEPS_CHECKED:UNINITIALIZED=1
 
 //Allow unsafe builds. These builds ARE NOT SECURE.

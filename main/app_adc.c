@@ -75,6 +75,7 @@ void ADC_Sensing(void)
 
         // --- 채널 0 (GPIO 6 - ADC1) 읽기 ---
         err_ch0 = adc_oneshot_read(adc0_handle, CH0_ADC_CHANNEL, &raw_ch0);
+        #if 0
         if (err_ch0 == ESP_OK) {
             if (do_cali_ch0) {
                 adc_cali_raw_to_voltage(cali_ch0_handle, raw_ch0, &mv_ch0);
@@ -85,6 +86,7 @@ void ADC_Sensing(void)
         } else {
             ESP_LOGE(TAG, "Failed to read GPIO 6 (%s)", esp_err_to_name(err_ch0));
         }
+            #endif
 }
 void adc_init(void) {
 
