@@ -1,4 +1,5 @@
 #include "string.h"
+#include "wifi_task.h"
 #include "esp_netif.h"
 
 #include "protocol_examples_common.h"
@@ -7,17 +8,14 @@
 #include "freertos/task.h"
 
 #include "esp_log.h"
-#include "spiffs_util.h"
+
 #include "protocol_examples_common.h"
 #include "example_common_private.h"
-#include "wifi_util.h"
 #include "mqtt_main.h"
-#define WIFI_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
-#define WIFI_TASK_DELAY_MS(x) (x/portTICK_PERIOD_MS)
+#include "app_led.h"
+#include "ble_task.h"
+static const char* TAG = __FILE__;
 
-static const char* TAG = "wifi_task";
-extern void tcp_client(char* addr, unsigned short port);
-extern void tcp_server(void);
 #define USER_CONFIG_EXAMPLE_WIFI_SSID "iptime_lab0"
 #define USER_CONFIG_EXAMPLE_WIFI_PASSWORD "gunpo!0929"
 //#define USER_CONFIG_EXAMPLE_HOST_IP_ADDR CONFIG_EXAMPLE_IPV4_ADDR
@@ -26,6 +24,26 @@ extern void tcp_server(void);
 #include <esp_https_ota.h>
 
 #include <esp_ota_ops.h>
+
+void Wifi_Disconnect(void)
+{
+    ESP_LOGI("WIFI_CHG", "기존 Wi-Fi 세션 연결 해제 프로세스 시작...");
+
+    // 1. 기존 연결 명시적으로 끊기
+    esp_err_t err = esp_wifi_disconnect();
+    if (err == ESP_OK) {
+        ESP_LOGI("WIFI_CHG", "기존 AP와 디스커넥트 성공.");
+    }
+
+    // 2. Wi-Fi 드라이버 잠시 정지 (내부 상태 머신 초기화 효과)
+    esp_wifi_stop();
+    
+    // 잠시 태스크 유예를 주어 하드웨어 드라이버가 완전히 내려가도록 유도 (필수)
+    vTaskDelay(pdMS_TO_TICKS(500)); 
+
+    // 4. 다시 Wi-Fi 드라이버를 시작하고 새 환경설정 적용
+    esp_wifi_start();
+}
 /*
 void wifi_init_sta_static_ip(char* WIFI_SSID, char* WIFI_PASS)
 {
@@ -61,71 +79,228 @@ void wifi_init_sta_static_ip(char* WIFI_SSID, char* WIFI_PASS)
     ESP_LOGI(TAG, "Wi-Fi STA static IP setup done");
 }*/
 
+#define WIFI_MAX_VALUE 30
+static wifi_ap_record_t ap_list[WIFI_MAX_VALUE];
 
-static void wifi_main(void* arg)
+
+uint16_t remove_duplicate_best_rssi(wifi_ap_record_t *list, uint16_t count)
 {
-    char ssid[32];
-    char passward[64];
-    memset(ssid,0,sizeof(ssid));
-    memset(passward,0,sizeof(passward));
-    const wifi_info_t* wifi_info = wifi_Info_get();
+    uint16_t new_count = 0;
+
+    for(int i=0; i<count; i++)
+    {
+        int found = -1;
+
+        for(int j=0; j<new_count; j++)
+        {
+            if(strcmp((char*)list[i].ssid,
+                      (char*)list[j].ssid)==0)
+            {
+                found = j;
+                break;
+            }
+        }
 
 
+        if(found >= 0)
+        {
+            // 더 강한 신호로 교체
+            if(list[i].rssi > list[found].rssi)
+            {
+                memcpy(&list[found],
+                       &list[i],
+                       sizeof(wifi_ap_record_t));
+            }
+        }
+        else
+        {
+            memcpy(&list[new_count],
+                   &list[i],
+                   sizeof(wifi_ap_record_t));
+
+            new_count++;
+        }
+    }
+
+    return new_count;
+}
 #if 0
-    if(spiffs_str_read(WIFI_SSID_PATH, ssid, sizeof(ssid)) != 0)
-    {
-        ESP_LOGE(TAG,"empty ssid block default ssid set= %s", USER_CONFIG_EXAMPLE_WIFI_SSID);
-        memcpy(ssid,USER_CONFIG_EXAMPLE_WIFI_SSID,sizeof(USER_CONFIG_EXAMPLE_WIFI_SSID));
+uint16_t wifi_scan_start(void)
+{
+// 3. Wi-Fi 스캔 설정 및 시작
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = false, // 숨겨진 SSID도 스캔
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time.active.min = 0,
+        .scan_time.active.max = 0
+    };
+
+    memset(ap_list,0,sizeof(ap_list));
+    ap_count = 0;
+
+    ESP_LOGI(TAG, "Wi-Fi 스캔 시작...");
+    // true로 설정하면 스캔이 완료될 때까지 블로킹(대기)합니다.
+    ESP_ERROR_CHECK(esp_wifi_scan_start(&scan_config, true)); 
+
+    // 4. 스캔된 AP 개수 확인 및 리스트 가져오기
+    uint16_t number = WIFI_MAX_VALUE; // 최대 가져올 AP 개수
+
+
+
+
+    // ⭐ 순서 변경: 실제 발견된 총 개수를 먼저 확인합니다.
+    ESP_ERROR_CHECK(esp_wifi_scan_get_ap_num(&ap_count));
+
+
+    // 발견된 게 있다면 버퍼 크기(20) 내에서 레코드를 가져옵니다.
+    if (ap_count > 0) {
+        if (ap_count < number) {
+            number = ap_count; // 실제 개수만큼만 가져오도록 제한
+        }
+        ESP_ERROR_CHECK(esp_wifi_scan_get_ap_records(&number, ap_list));
+        number = remove_duplicate_best_rssi(ap_list, number);
+        for (int i = 0; i < number; i++) {
+            ESP_LOGI(TAG, "SSID: %s | RSSI: %d | 채널: %d", 
+                    ap_list[i].ssid, ap_list[i].rssi, ap_list[i].primary);
+        }
+        ESP_LOGI(TAG, "총 %d 개의 AP를 찾았습니다.", number);
     }
-    if(spiffs_str_read(WIFI_PASSWARD_PATH, passward, sizeof(passward)) != 0)
-    {
-        ESP_LOGE(TAG,"empty pass block default pass set= %s", USER_CONFIG_EXAMPLE_WIFI_PASSWORD);
-        memcpy(passward,USER_CONFIG_EXAMPLE_WIFI_PASSWORD,sizeof(USER_CONFIG_EXAMPLE_WIFI_PASSWORD));
-    }
-    if(spiffs_str_read(WIFI_IPV4_SERVER_ADDR_PATH, addr, sizeof(addr)) != 0)
-    {
-        ESP_LOGE(TAG,"empty addr block default addr set= %s", USER_CONFIG_EXAMPLE_HOST_IP_ADDR);
-        memcpy(addr,USER_CONFIG_EXAMPLE_HOST_IP_ADDR,sizeof(USER_CONFIG_EXAMPLE_HOST_IP_ADDR));
-    }
-    port = wifi_info_get_hostport();
+    return number;
+}
 #else
-        ESP_LOGD(TAG,"empty ssid block default ssid set= %s", wifi_info->ssid);
-        memcpy(ssid,wifi_info->ssid,sizeof(ssid));
-        ESP_LOGD(TAG,"empty pass block default pass set= %s", wifi_info->password);
-       memcpy(passward,wifi_info->password,sizeof(passward));
-  //      ESP_LOGE(TAG,"empty addr block default addr set= %s", USER_CONFIG_EXAMPLE_HOST_IP_ADDR);
+uint16_t wifi_scan_start(void)
+{
+    // 스캔 설정
+    wifi_scan_config_t scan_config = {
+        .ssid = NULL,
+        .bssid = NULL,
+        .channel = 0,
+        .show_hidden = false,
+        .scan_type = WIFI_SCAN_TYPE_ACTIVE,
+        .scan_time.active.min = 0,
+        .scan_time.active.max = 0
+    };
+    led_bit_enable(PAIRING_BIT);
+    // 전역/기존 버퍼 초기화
+    memset(ap_list, 0, sizeof(ap_list));
+    uint16_t total_found_count = 0; // 중복 제거 후 최종적으로 모은 AP 개수
+
+    // ⭐️ [반복문 도입] 최대 3번 스캔 시도
+    for (int scan_iter = 1; scan_iter <= 3; scan_iter++) {
+        ESP_LOGI(TAG, "[스캔 %d회차] Wi-Fi 스캔 시작...", scan_iter);
+        
+        // 스캔 수행 (완료될 때까지 블로킹)
+        esp_err_t ret = esp_wifi_scan_start(&scan_config, true);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "esp_wifi_scan_start 실패: %d", ret);
+            continue; // 실패 시 다음 회차 시도
+        }
+
+        // 이번 회차에 발견된 AP 총 개수 확인
+        uint16_t current_scan_num = 0;
+        esp_wifi_scan_get_ap_num(&current_scan_num);
+        
+        if (current_scan_num > 0) {
+            // 이번 회차 데이터를 임시로 받아올 버퍼 선언
+            wifi_ap_record_t *temp_records = malloc(sizeof(wifi_ap_record_t) * current_scan_num);
+            if (temp_records == NULL) {
+                ESP_LOGE(TAG, "메모리 할당 실패");
+                break;
+            }
+
+            // 임시 버퍼에 이번 스캔 결과 채우기
+            uint16_t fetch_num = current_scan_num;
+            esp_wifi_scan_get_ap_records(&fetch_num, temp_records);
+
+            // ⭐️ 기존에 이미 모아둔 ap_list 뒤에 새로 찾은 데이터 이어 붙이기
+            // ap_list 버퍼가 넘치지 않도록 방어벽 설정 (WIFI_MAX_VALUE 이하로 제한)
+            for (int i = 0; i < fetch_num; i++) {
+                if (total_found_count < WIFI_MAX_VALUE) {
+                    ap_list[total_found_count] = temp_records[i];
+                    total_found_count++;
+                } else {
+                    break;
+                }
+            }
+
+            // 임시 버퍼 해제
+            free(temp_records);
+
+            // ⭐️ 이어 붙인 전체 리스트에서 중복 제거 및 정렬 수행
+            total_found_count = remove_duplicate_best_rssi(ap_list, total_found_count);
+        }
+
+        ESP_LOGI(TAG, "[스캔 %d회차 결과] 현재까지 중복 제거 후 수집된 AP: %d개 / 목표: %d개", 
+                 scan_iter, total_found_count, WIFI_MAX_VALUE);
+
+        // ⭐️ [조기 탈출 조건] 목표한 개수(WIFI_MAX_VALUE)를 다 채웠다면 3번 다 안 돌고 즉시 탈출!
+        if (total_found_count >= WIFI_MAX_VALUE) {
+            ESP_LOGI(TAG, "🎯 목표한 개수(%d개)를 모두 채워 스캔을 조기 종료합니다.", WIFI_MAX_VALUE);
+            break; 
+        }
+
+        // 연속 스캔 시 칩과 환경에 무리가 안 가도록 잠시 쉬어줍니다 (예: 200ms)
+        if (scan_iter < 3) {
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
+    }
+    char strbuf[100];
+    
+    ble_send_data_to_queue((uint8_t*)strbuf,sprintf((char*)strbuf,"SCAN %d",total_found_count));
+    vTaskDelay(pdMS_TO_TICKS(200));
+    
+    // 🏁 최종 수집된 결과 로그 출력
+    for (int i = 0; i < total_found_count; i++) {
+        ESP_LOGI(TAG, "-> 최종 리스트 [%d] SSID: %s | RSSI: %d | 채널: %d", 
+                 i, ap_list[i].ssid, ap_list[i].rssi, ap_list[i].primary);
+
+            int len = snprintf(
+                strbuf,
+                sizeof(strbuf),
+                "%d %s %d",
+                i,
+                ap_list[i].ssid,
+                ap_list[i].rssi
+            );
+
+            ble_send_data_to_queue(
+                (uint8_t*)strbuf,
+                len
+            );
+    }
+    ESP_LOGI(TAG, "최종 스캔 종료: 총 %d 개의 AP 확정", total_found_count);
+    led_bit_disable(PAIRING_BIT);
+    return total_found_count;
+}
 #endif
-    
+void Wifi_Connect(uint8_t* target_ssid, uint8_t* target_password)
+{
+    uint8_t ssid[32];
+    uint8_t passward[64];
+    memset(ssid,0,sizeof(ssid));
+    memset(passward,0,sizeof(passward));    
+    memcpy(ssid,target_ssid,strlen((char*)target_ssid));
+    memcpy(passward,target_password,strlen((char*)target_password));
 
+    ESP_LOGD(TAG,"empty ssid block default ssid set= %s", ssid);
+    ESP_LOGD(TAG,"empty pass block default pass set= %s", passward);
 
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-
-    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
-     * Read "Establishing Wi-Fi or Ethernet Connection" section in
-     * examples/protocols/README.md for more information about this function.
-     */
-    //wifi_scan();
-    //wifi_init_sta_static_ip(ssid,passward);
-    ESP_ERROR_CHECK(example_connect());
-    
-
-
-
-
-
-   // printf("tcp_start");
-   mqtt_main();
-    //tcp_server();
-   // tcp_client(wifi_info->host_ip,wifi_info->host_port);
-   while(1)
-   {
-     vTaskDelay(1000 / portTICK_PERIOD_MS);
-   }
+    esp_err_t ret = example_connect(ssid, passward);
+    if(ret == ESP_OK)
+    {
+         ble_send_data_to_queue((uint8_t*)"CONNECT_AP SUCCESS",strlen("CONNECT_AP SUCCESS"));
+    }
+    else
+    {
+         ble_send_data_to_queue((uint8_t*)"CONNECT_AP FAIL",strlen("CONNECT_AP FAIL"));
+    }
+    //mqtt_main();
 }
 
-
-void wifi_task_init(void)
+void wifi_init(void)
 {
     static uint8_t ucParameterToPass;
     TaskHandle_t xHandle = NULL;
@@ -136,17 +311,7 @@ void wifi_task_init(void)
     ESP_LOGD("partition","type = %d", run_parti->type);
     ESP_LOGD("partition","subtype = %d", run_parti->subtype);
 
-    ESP_LOGI(TAG,"wifi_main task_start");
-    if (xTaskCreatePinnedToCore(
-            wifi_main,                  // 태스크 함수
-            "Wifi_Main",                // 태스크 이름
-            WIFI_TASK_STACK_SIZE,       // 스택 크기
-            &ucParameterToPass,        // 파라미터
-            tskIDLE_PRIORITY + 3,      // 우선순위
-            &xHandle,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
-        ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
-                  ESP_LOGE(TAG, "Error creating Wifi_Main on Core 1");
-    }
-
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    example_wifi_start();
 }

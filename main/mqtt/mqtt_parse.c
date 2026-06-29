@@ -15,8 +15,7 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "ble/ble_parse.h"
-#include "simple_ota_example.h"
-#include "spiffs_util.h"
+#include "http_ota.h"
 
 #define MQTT_PARSE_TAG "MQTT_PARSE"
 esp_err_t esp_read_mac(uint8_t *mac, esp_mac_type_t type);

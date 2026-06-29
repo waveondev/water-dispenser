@@ -1,4 +1,14 @@
 dependencies:
+  espressif/cmake_utilities:
+    component_hash: 05165f30922b422b4b90c08845e6d449329b97370fbd06309803d8cb539d79e3
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.1'
+    source:
+      registry_url: https://components.espressif.com
+      type: service
+    version: 1.1.1
   espressif/ethernet_init:
     component_hash: b7303f1482091766b9b653ec8332775a9485f4df3c69141577de82847c4d2adf
     dependencies:
@@ -111,6 +121,20 @@ dependencies:
       registry_url: https://components.espressif.com/
       type: service
     version: 1.2.0
+  espressif/i2c_bus:
+    component_hash: 483112c1619c54c38d0b734fb25f1678733267858a77b7af2f48cc7db6dbbd84
+    dependencies:
+    - name: espressif/cmake_utilities
+      registry_url: https://components.espressif.com
+      require: private
+      version: '*'
+    - name: idf
+      require: private
+      version: '>=4.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.5.2
   espressif/led_strip:
     component_hash: 28621486f77229aaf81c71f5e15d6fbf36c2949cf11094e07090593e659e7639
     dependencies:
@@ -146,9 +170,10 @@ dependencies:
       type: local
     version: '*'
 direct_dependencies:
+- espressif/i2c_bus
 - espressif/led_strip
 - espressif/mqtt
 - protocol_examples_common
-manifest_hash: 2a2903100c29f91cd740dfbb463332f8b3079095a21502a43ca9179c4b9f6c98
+manifest_hash: c170ba19dcfe7700faa07389efd82fe2d050cf67533e9d0717f4467ee68ed636
 target: esp32s3
 version: 3.0.0

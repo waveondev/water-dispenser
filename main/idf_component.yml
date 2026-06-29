@@ -7,3 +7,4 @@ dependencies:
     - if: target in [linux]
   espressif/mqtt: '*'
   espressif/led_strip: ^3.0.0
+  espressif/i2c_bus: '*'

@@ -1,8 +1,10 @@
 #include "set_cli.h"
 #include "app_moter.h"
 #include "app_led.h"
-
-
+#include "wifi_task.h"
+#include "app_HX711.h"
+#include "opmode_task.h"
+void send_mac(void);
 BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
     const char *pcParameter;
@@ -71,8 +73,11 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 
 			else if (!strncmp(ag[1], "moter", 5))
 			{
-                val32 = atoi(ag[2]);
-                set_motor_speed_percent(val32);
+                start_motor_with_boost(atoi(ag[2]),atoi(ag[3]));
+            }
+			else if (!strncmp(ag[1], "duty", 4))
+			{
+				set_motor_speed_percent(atoi(ag[2]));
             }
 			else if (!strncmp(ag[1], "ledr", 4))
 			{
@@ -93,7 +98,30 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
                 val32 = atoi(ag[2]);
 				set_rgb_led(0,0,0,val32);
-            }			
+            }		
+			else if (!strncmp(ag[1], "scan", 4))
+			{
+                wifi_scan_start();
+            }	
+			else if (!strncmp(ag[1], "cal", 3))
+			{
+                HX711_cal_init();
+            }		
+			else if (!strncmp(ag[1], "testmode", 8))
+			{
+                Opmode_test_mode();
+            }		
+			else if (!strncmp(ag[1], "send", 4))
+			{
+                send_mac();
+            }
+			else if (!strncmp(ag[1], "discon", 6))
+			{
+
+				Wifi_Disconnect();
+			}
+
+		
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

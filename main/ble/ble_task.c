@@ -6,7 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
-
+#include "ble_task.h"
 /* NimBLE 필수 헤더 */
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
@@ -15,21 +15,29 @@
 #include "console/console.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
-
+#include "app_config_flash.h"
+#include "ble_parse.h"
 static const char *TAG = "BLE_ONLY";
 
-#define DEVICE_NAME "Wave_test"
+#define DEVICE_NAME "Wave_Peri3"
 #define MY_UUID128_BASE(XX, YY) \
     BLE_UUID128_DECLARE(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, \
                         0xF3, 0x93, 0xB5, 0xA3, YY, XX, 0x40, 0x6E)
+// 1. 전형적인 Nordic UART 서비스(NUS) UUID 배열 구조로 재정의 (엔디안 주의)
+// BLE 128비트 UUID는 역순(Little Endian)으로 배치됩니다.
+// 중괄호 { } 를 제거하고 알맹이 데이터만 남겨둡니다.
+#define BLE_SVC_UUID128_ARR   0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,  0x93,0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E
+#define BLE_CHR_1_UUID128_ARR 0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,  0x93,0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E
+#define BLE_CHR_2_UUID128_ARR 0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,  0x93,0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E
 
-#define BLE_SVC_UUID128   MY_UUID128_BASE(0x00, 0x01) // 서비스 UUID (0x0001)
-#define BLE_CHR_1_UUID128 MY_UUID128_BASE(0x00, 0x03) // CH_APPLY (0x0003)
-#define BLE_CHR_2_UUID128 MY_UUID128_BASE(0x00, 0x02) // CH_RESULT (0x0002)
+static const ble_uuid128_t nus_svc_uuid = BLE_UUID128_INIT(BLE_SVC_UUID128_ARR);
+static const ble_uuid128_t nus_rx_uuid  = BLE_UUID128_INIT(BLE_CHR_1_UUID128_ARR);
+static const ble_uuid128_t nus_tx_uuid  = BLE_UUID128_INIT(BLE_CHR_2_UUID128_ARR);
 
 static uint8_t own_addr_type;
 static uint16_t ble_spp_svc_gatt_notify_val_handle;
 static bool conn_handle_subs[CONFIG_BT_NIMBLE_MAX_CONNECTIONS + 1];
+static esp_timer_handle_t Mac_sending_timer;
 
 extern void ble_store_config_init(void);
 static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg);
@@ -74,56 +82,71 @@ static void ble_spp_client_scan(void)
         MODLOG_DFLT(ERROR, "Error discovering peers; rc=%d\n", rc);
     }
 }
-
-/**
- * BLE Advertising(신호 브로드캐스팅) 시작 함수
- */
 static void ble_spp_server_advertise(void)
 {
     struct ble_gap_adv_params adv_params;
     struct ble_hs_adv_fields fields;
-    struct ble_hs_adv_fields rsp_fields; 
+    struct ble_hs_adv_fields rsp_fields;
     int rc;
 
-    // 1. 기본 어드버타이징 패킷 설정 (Flags + UUID)
+    // Advertising packet
     memset(&fields, 0, sizeof fields);
-    fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
-    
-    ble_uuid128_t adv_uuid = *(ble_uuid128_t *)BLE_SVC_UUID128;
-    fields.uuids128 = &adv_uuid;
+
+    fields.flags =
+        BLE_HS_ADV_F_DISC_GEN |
+        BLE_HS_ADV_F_BREDR_UNSUP;
+
+    // ⭐ NUS 서비스 UUID 광고
+    fields.uuids128 = &nus_svc_uuid;
     fields.num_uuids128 = 1;
     fields.uuids128_is_complete = 1;
 
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error setting advertisement data; rc=%d\n", rc);
         return;
     }
 
-    // 2. 스캔 응답 패킷 설정 (기기 이름 격리)
+
+    // Scan Response packet
     memset(&rsp_fields, 0, sizeof rsp_fields);
+
     const char *name = ble_svc_gap_device_name();
+
     rsp_fields.name = (uint8_t *)name;
     rsp_fields.name_len = strlen(name);
     rsp_fields.name_is_complete = 1;
 
-    rc = ble_gap_adv_rsp_set_fields(&rsp_fields); 
+
+    rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
     if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error setting scan response data; rc=%d\n", rc);
         return;
     }
 
-    // 3. 광고 시작
+
     memset(&adv_params, 0, sizeof adv_params);
+
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    
-    rc = ble_gap_adv_start(own_addr_type, NULL, BLE_HS_FOREVER, &adv_params, ble_spp_server_gap_event, NULL);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "error enabling advertisement; rc=%d\n", rc);
-    }
-}
 
+
+    rc = ble_gap_adv_start(
+        own_addr_type,
+        NULL,
+        BLE_HS_FOREVER,
+        &adv_params,
+        ble_spp_server_gap_event,
+        NULL
+    );
+}
+void send_mac(void)
+{
+        uint8_t mac[6];
+        uint8_t Str[40];
+        esp_read_mac(mac,ESP_MAC_WIFI_STA);
+        sprintf((char*)Str, "Wifi MAC %02X%02X%02X%02X%02X%02X", 
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        ble_send_data_to_queue((const uint8_t*)Str, strlen((const char*)Str));
+}
 /**
  * NimBLE GAP 이벤트 콜백 핸들러 (연결 상태 감시 + [추가] 비콘 스캔 처리)
  */
@@ -133,23 +156,29 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
     struct ble_hs_adv_fields fields;
     int rc;
 
+
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
         MODLOG_DFLT(INFO, "connection %s; status=%d \n",
                     event->connect.status == 0 ? "established" : "failed", event->connect.status);
+        is_phone_connected = true;
+        ESP_ERROR_CHECK(esp_timer_start_periodic(Mac_sending_timer, 1000000));
+        ESP_LOGE(TAG, "BLE_GAP_EVENT_CONNECT");
+        current_conn_handle = event->connect.conn_handle;
         if (event->connect.status == 0) {
-            current_conn_handle = event->connect.conn_handle;
-            is_phone_connected = true;
+
+
             if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
                 ble_spp_server_print_conn_desc(&desc);
             }
-        }
-        if (event->connect.status != 0 || CONFIG_BT_NIMBLE_MAX_CONNECTIONS > 1) {
-            ble_spp_server_advertise();
+        } else {
+            // 🔴 중요: 연결 실패(status != 0)일 때는 절대 바로 광고를 켜면 안 됩니다!
+            MODLOG_DFLT(WARN, "Connection failed. Do not restart ADV immediately.\n");
         }
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
+            ESP_LOGE(TAG, "BLE_GAP_EVENT_DISCONNECT");
         MODLOG_DFLT(INFO, "disconnect; reason=%d \n", event->disconnect.reason);
         current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         is_phone_connected = false;
@@ -170,7 +199,20 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_ADV_COMPLETE:
         ble_spp_server_advertise();
         return 0;
-
+    case BLE_GAP_EVENT_CONN_UPDATE:
+            MODLOG_DFLT(INFO, "Connection updated; status=%d\n", event->conn_update.status);
+            
+            // 현재 커넥션 핸들의 세부 정보를 가져옵니다.
+            if (ble_gap_conn_find(event->conn_update.conn_handle, &desc) == 0) {
+                MODLOG_DFLT(INFO, "--- BLE Conn Parameters ---\n");
+                MODLOG_DFLT(INFO, "Conn Interval: %d (%.2f ms)\n", desc.conn_itvl, desc.conn_itvl * 1.25);
+                MODLOG_DFLT(INFO, "Slave Latency: %d\n", desc.conn_latency);
+                MODLOG_DFLT(INFO, "Supervision Timeout: %d (%d ms)\n", desc.supervision_timeout, desc.supervision_timeout * 10);
+                
+                // 💡 NimBLE 버전에 따라 desc 구조체 내부에 sec_state나 다른 멤버로 PHY가 찍히기도 하지만,
+                // 가장 확실한 방법은 연결 직후 nRF52나 폰이 2Mbps를 지원하는지 '조회'하는 기능을 넣는 것입니다.
+            }
+            return 0;
     // 🔴 [추가] 주변에서 비콘 패킷을 가로챘을 때 일어나는 이벤트
     case BLE_GAP_EVENT_DISC:
     {
@@ -180,16 +222,29 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             char name[32];
             int8_t rssi;
         } dev_info_t;
-        
+        app_config_t* app_config = get_app_config();
         static dev_info_t dev_list[20];
         static int dev_count = 0;
 
-        rc = ble_hs_adv_parse_fields(&fields, event->disc.data, event->disc.length_data);
+       rc = ble_hs_adv_parse_fields(&fields, event->disc.data, event->disc.length_data);
         if (rc != 0) {
             return 0;
         }
 
-        // 1. MAC 주소 기준으로 기존 리스트 검색 및 등록 (이름 캐싱용)
+        // -----------------------------------------------------------------
+        // 1. ⚡️ [새로운 필터] RSSI 조건 검사 (간혹 부호가 헷갈릴 수 있으니 주의)
+        //    * 수신 감도가 -55 dBm 이하(예: -56, -60, -70 dBm처럼 멀리 있는 기기)인 경우만 통과
+        //    * 만약 -55보다 신호가 쌘 것(-50, -40 dBm 등)을 원하신 거라면 `>`로 부호를 바꿔주세요.
+        // -----------------------------------------------------------------
+        if (event->disc.rssi < app_config->gate_way_rssi_th) {
+     //       return 0; // -55보다 큰 신호는 여기서 즉시 차단
+        }
+
+        // -----------------------------------------------------------------
+        // 2. ⚡️ 임시 이름 확인 및 캐시 검색을 위한 준비
+        //    * BLE 스캔 패킷 특성상 이름이 항상 들어오지 않으므로, 
+        //      먼저 현재 패킷에 이름이 있거나 혹은 기존 캐시에 등록되어 있는지 찾아야 합니다.
+        // -----------------------------------------------------------------
         int idx = -1;
         for (int i = 0; i < dev_count; i++) {
             if (memcmp(dev_list[i].addr, event->disc.addr.val, 6) == 0) {
@@ -198,7 +253,39 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             }
         }
 
+        // 현재 패킷에서 이름을 추출해 봅니다.
+        char current_packet_name[32] = "";
+        if (fields.name != NULL && fields.name_len > 0) {
+            int len = (fields.name_len > 31) ? 31 : fields.name_len;
+            memcpy(current_packet_name, fields.name, len);
+            current_packet_name[len] = '\0';
+        } else if (idx != -1) {
+            // 이번 패킷에 이름은 없지만 기존 캐시 리스트에 저장된 이름이 있다면 가져옵니다.
+            strcpy(current_packet_name, dev_list[idx].name);
+        }
+
+        // ⚡️ 이름이 "Wave_Tracker"인지 검사
+        if (strcmp(current_packet_name, "Wave_Tracker") != 0) {
+            return 0; // Wave_Tracker가 아니면 즉시 차단
+        }
+
+        // -----------------------------------------------------------------
+        // 3. ⚡️ Service UUID 16-bit 검사 (0x1234 인지 확인)
+        // -----------------------------------------------------------------
+        if (fields.svc_data_uuid16 == NULL || fields.svc_data_uuid16_len <= 0) {
+            return 0; // 서비스 데이터가 아예 없으면 차단
+        }
+
+        uint16_t svc_uuid = (fields.svc_data_uuid16[1] << 8) | fields.svc_data_uuid16[0];
+        if (svc_uuid != 0x1234) {
+            return 0; // 우리가 찾는 0x1234 서비스가 아니면 차단
+        }
+
+        // -----------------------------------------------------------------
+        // 4. 🎉 모든 방어벽 통과! 이제야 안심하고 `dev_list`에 저장/업데이트 진행
+        // -----------------------------------------------------------------
         if (idx == -1) {
+            // 기존 리스트에 없던 신규 기기라면 새로 빈 공간 확보
             if (dev_count < 20) {
                 idx = dev_count++;
             } else {
@@ -208,61 +295,42 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             }
             memset(&dev_list[idx], 0, sizeof(dev_info_t));
             memcpy(dev_list[idx].addr, event->disc.addr.val, 6);
-            strcpy(dev_list[idx].name, "Unknown (No Name)");
         }
 
-        // 이름 패킷이 들어왔을 때만 캐시 업데이트
-        if (fields.name != NULL && fields.name_len > 0) {
-            int len = (fields.name_len > 31) ? 31 : fields.name_len;
-            memcpy(dev_list[idx].name, fields.name, len);
-            dev_list[idx].name[len] = '\0';
-        }
+        // 최신 이름과 RSSI 데이터 업데이트 저장
+        strcpy(dev_list[idx].name, current_packet_name);
+        dev_list[idx].rssi = event->disc.rssi;
 
-        // 2. ⭐️ [핵심 필터] 캐시된 이름이 "Wave_Tracker"인 기기만 처리
-        if (strcmp(dev_list[idx].name, "Wave_Tracker") == 0) {
-            
-            // 💡 16-bit Service Data가 들어왔는지 확인
-            if (fields.svc_data_uuid16 != NULL && fields.svc_data_uuid16_len > 0) {
-                
-                // 패킷 구조상 앞의 2바이트는 서비스 UUID(0x1234) 자체를 나타냅니다.
-                // 리틀 엔디안 형태이므로 [0]=0x34, [1]=0x12 구조를 띱니다.
-                uint16_t svc_uuid = (fields.svc_data_uuid16[1] << 8) | fields.svc_data_uuid16[0];
-                
-                // 우리가 찾는 0x1234 서비스 데이터가 맞는지 검증합니다.
-                if (svc_uuid == 0x1234) {
-                    
-                    // 실제 데이터는 서비스 UUID(2바이트)를 제외한 그 뒤 영역입니다.
-                    const uint8_t *actual_data = fields.svc_data_uuid16 + 2;
-                    int actual_data_len = fields.svc_data_uuid16_len - 2;
 
-                    printf("\n🎯 [Wave_Tracker] Service Data (0x1234) 포착 🎯\n");
-                    printf("MAC  : %02X:%02X:%02X:%02X:%02X:%02X (%d dBm)\n",
-                           event->disc.addr.val[5], event->disc.addr.val[4], event->disc.addr.val[3],
-                           event->disc.addr.val[2], event->disc.addr.val[1], event->disc.addr.val[0],
-                           event->disc.rssi);
+        // -----------------------------------------------------------------
+        // 5. 🎯 최종 결과 콘솔 출력 (페이로드 파싱)
+        // -----------------------------------------------------------------
+        const uint8_t *actual_data = fields.svc_data_uuid16 + 2;
+        int actual_data_len = fields.svc_data_uuid16_len - 2;
 
-                    // 16진수 바이트 출력
-                    if (actual_data_len > 0) {
-                        printf("HEX  : ");
-                        for (int i = 0; i < actual_data_len; i++) {
-                            printf("%02X ", actual_data[i]);
-                        }
-                        printf("\n");
+        printf("\n🎯 [Wave_Tracker] 조건 만족 기기 dev_list 저장 완료 🎯\n");
+        printf("MAC  : %02X:%02X:%02X:%02X:%02X:%02X (%d dBm)\n",
+               event->disc.addr.val[5], event->disc.addr.val[4], event->disc.addr.val[3],
+               event->disc.addr.val[2], event->disc.addr.val[1], event->disc.addr.val[0],
+               dev_list[idx].rssi);
 
-                        // 아스키 문자열 출력
-                        printf("STR  : ");
-                        for (int i = 0; i < actual_data_len; i++) {
-                            char c = actual_data[i];
-                            printf("%c", (c >= 32 && c <= 126) ? c : '.');
-                        }
-                        printf("\n");
-                    } else {
-                        printf("HEX  : 서비스 데이터 페이로드가 비어있음\n");
-                    }
-                    printf("-------------------------------------\n");
-                }
+        if (actual_data_len > 0) {
+            printf("HEX  : ");
+            for (int i = 0; i < actual_data_len; i++) {
+                printf("%02X ", actual_data[i]);
             }
+            printf("\n");
+
+            printf("STR  : ");
+            for (int i = 0; i < actual_data_len; i++) {
+                char c = actual_data[i];
+                printf("%c", (c >= 32 && c <= 126) ? c : '.');
+            }
+            printf("\n");
+        } else {
+            printf("HEX  : 서비스 데이터 페이로드가 비어있음\n");
         }
+        printf("-------------------------------------\n");
 
         return 0;
     }
@@ -327,22 +395,23 @@ static int ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, stru
     }
     return 0;
 }
-
+// 2. GATT 정의부 수정
 static const struct ble_gatt_svc_def new_ble_svc_gatt_defs[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
-        .uuid = BLE_SVC_UUID128,
+        .uuid = &nus_svc_uuid.u, // 캐스팅 대신 구조체 주소 전달
         .characteristics = (struct ble_gatt_chr_def[]) {
             {
-                .uuid = BLE_CHR_1_UUID128,
+                .uuid = &nus_rx_uuid.u,
                 .access_cb = ble_svc_gatt_handler,
-                .flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_NO_RSP,
+                // 시리얼 통신 특성상 Write 응답 없는 편이 속도와 안정성에 좋습니다.
+                .flags = BLE_GATT_CHR_F_WRITE_NO_RSP |BLE_GATT_CHR_F_WRITE, 
             },
             {
-                .uuid = BLE_CHR_2_UUID128,
+                .uuid = &nus_tx_uuid.u,
                 .access_cb = ble_svc_gatt_handler,
                 .val_handle = &ble_spp_svc_gatt_notify_val_handle, 
-                .flags = BLE_GATT_CHR_F_NOTIFY,
+                .flags = BLE_GATT_CHR_F_NOTIFY ,
             },
             { 0 } 
         },
@@ -434,11 +503,8 @@ static void ble_rx_processing_task(void *pvParameters)
 
     while (1) {
         if (xQueueReceive(ble_rx_queue, &msg, portMAX_DELAY) == pdTRUE) {
-            printf("[새 태스크] %d 바이트 데이터 처리 중: ", msg.len);
-            for (int i = 0; i < msg.len; i++) {
-                printf("%02X ", msg.data[i]);
-            }
-            printf("\n");
+
+            BLE_Receive_data(msg.data, msg.len);
         }
     }
 }
@@ -459,6 +525,13 @@ static void ble_tx_processing_task(void *pvParameters)
         }
     }
 }
+
+static void mac_send_timer_callback(void* arg)
+{
+    send_mac();
+
+    esp_timer_stop(Mac_sending_timer);
+}
 void ble_task_init(void)
 {
     esp_err_t ret;
@@ -468,7 +541,7 @@ void ble_task_init(void)
         return;
     }
 
-    for (int i = 0; i <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
+    for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
         conn_handle_subs[i] = false;
     }
 
@@ -487,6 +560,14 @@ void ble_task_init(void)
 
     ble_store_config_init();
 
+
+    const esp_timer_create_args_t pairing_timer_args = {
+        .callback = &mac_send_timer_callback,
+        .name = "mac_sending_timer"
+    };
+
+    // 타이머 생성
+    ESP_ERROR_CHECK(esp_timer_create(&pairing_timer_args, &Mac_sending_timer));
     ble_rx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
     ble_tx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
 

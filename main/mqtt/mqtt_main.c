@@ -303,15 +303,14 @@ static void mqtt5_event_handler(void *handler_args, esp_event_base_t base, int32
         break;
     }
 }
-#include "wifi_util.h"
+
 static void mqtt5_app_start(void)
 {
     char *id_string = calloc(1, 32);
     
-    const wifi_info_t* wifi_info = wifi_Info_get();
     sprintf((char*)id_string,"/server/%02x%02x%02x%02x%02x%02x",MyMac[0],MyMac[1],MyMac[2],MyMac[3],MyMac[4],MyMac[5]);
     char host_addr[128];
-    sprintf(host_addr,"mqtt://%s:%d",wifi_info->host_ip,wifi_info->host_port);
+    sprintf(host_addr,"mqtt://%s:%d","192.168.0.55",4880);
     //#define URL_TEST "mqtt://jubix002.iptime.org:48890"
     esp_mqtt5_connection_property_config_t connect_property = {
         .session_expiry_interval = 10,
@@ -395,6 +394,21 @@ static void mqtt5_app_start(void)
 esp_err_t esp_read_mac(uint8_t *mac, esp_mac_type_t type);
 void mqtt_main(void)
 {
+    #if 0
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) != ESP_OK) {
+        ESP_LOGE("MQTT", "Wi-Fi 미연결로 MQTT를 시작할 수 없습니다.");
+        return;
+    }
+
+    // 2. IP 주소 할당 여부 최종 확인
+    esp_netif_ip_info_t ip_info;
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif == NULL || esp_netif_get_ip_info(netif, &ip_info) != ESP_OK || ip_info.ip.addr == 0) {
+        ESP_LOGE("MQTT", "IP 주소가 아직 없어 MQTT를 시작할 수 없습니다.");
+        return;
+    }
+    #endif
     esp_read_mac(MyMac,ESP_MAC_WIFI_STA);
 //    esp_base_mac_addr_get(MyMac);
     ESP_LOGI(TAG, "[APP] Startup..");

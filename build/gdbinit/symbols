@@ -13,8 +13,8 @@ end
 
 # Load bootloader symbols
 set confirm off
-    add-symbol-file C:/esp32/develop/tcp-client/build/bootloader/bootloader.elf
+    add-symbol-file C:/esp32/develop/water-dispenser/build/bootloader/bootloader.elf
 set confirm on
 
 # Load application symbols
-file C:/esp32/develop/tcp-client/build/tcp-client.elf
+file C:/esp32/develop/water-dispenser/build/tcp-client.elf

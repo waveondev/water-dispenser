@@ -6226,7 +6226,7 @@
                 ],
                 "depends_on": "EXAMPLE_SOCKET_IP_INPUT_STRING",
                 "help": "Example can use either IPV4 or IPV6.",
-                "id": "example-configuration-ip-version-C:-esp32-develop-tcp-client-main-Kconfig.projbuild-3",
+                "id": "example-configuration-ip-version-C:-esp32-develop-water-dispenser-main-Kconfig.projbuild-3",
                 "name": "EXAMPLE_IP_MODE",
                 "title": "IP Version",
                 "type": "choice"
@@ -6289,7 +6289,7 @@
                 ],
                 "depends_on": "EXAMPLE_IPV6",
                 "help": "Example can use either \"Auto\" or \"User specified\".",
-                "id": "example-configuration-interface-selection-C:-esp32-develop-tcp-client-main-Kconfig.projbuild-38",
+                "id": "example-configuration-interface-selection-C:-esp32-develop-water-dispenser-main-Kconfig.projbuild-38",
                 "name": "EXAMPLE_INTERFACE",
                 "title": "Interface selection",
                 "type": "choice"
@@ -6329,14 +6329,14 @@
                 ],
                 "depends_on": null,
                 "help": "Selects the input source of the IP used in the example.",
-                "id": "example-configuration-socket-example-source-C:-esp32-develop-tcp-client-main-Kconfig.projbuild-58",
+                "id": "example-configuration-socket-example-source-C:-esp32-develop-water-dispenser-main-Kconfig.projbuild-58",
                 "name": "EXAMPLE_SOCKET_IP_INPUT",
                 "title": "Socket example source",
                 "type": "choice"
             }
         ],
         "depends_on": null,
-        "id": "example-configuration-C:-esp32-develop-tcp-client-main-Kconfig.projbuild-1",
+        "id": "example-configuration-C:-esp32-develop-water-dispenser-main-Kconfig.projbuild-1",
         "title": "Example Configuration",
         "type": "menu"
     },
@@ -6549,7 +6549,7 @@
                         ],
                         "depends_on": "ETHERNET_INTERNAL_SUPPORT",
                         "help": "Select the communication interface between MAC and PHY chip.",
-                        "id": "ethernet-configuration-internal-emac-phy-interface-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-96",
+                        "id": "ethernet-configuration-internal-emac-phy-interface-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-96",
                         "name": "ETHERNET_PHY_INTERFACE",
                         "title": "PHY interface",
                         "type": "choice"
@@ -6579,7 +6579,7 @@
                         ],
                         "depends_on": "ETHERNET_PHY_INTERFACE_RMII && ETHERNET_INTERNAL_SUPPORT",
                         "help": "Select external or internal RMII CLK.",
-                        "id": "ethernet-configuration-internal-emac-rmii-clk-mode-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-112",
+                        "id": "ethernet-configuration-internal-emac-rmii-clk-mode-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-112",
                         "name": "ETHERNET_RMII_CLK_MODE",
                         "title": "RMII CLK mode",
                         "type": "choice"
@@ -6750,7 +6750,7 @@
                         ],
                         "depends_on": "ETHERNET_INTERNAL_SUPPORT",
                         "help": "Select the Ethernet PHY device to use.",
-                        "id": "ethernet-configuration-internal-emac-ethernet-phy-device-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-218",
+                        "id": "ethernet-configuration-internal-emac-ethernet-phy-device-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-218",
                         "name": "ETHERNET_PHY_MODEL",
                         "title": "Ethernet PHY Device",
                         "type": "choice"
@@ -6870,7 +6870,7 @@
                         ],
                         "depends_on": "ETHERNET_INTERNAL_SUPPORT",
                         "help": "If you observe undefined behavior (e.g. LCD glitches) of any DMA capable peripheral (SPI, I2S, etc.)\nwhich works normally when Ethernet is not connected over internal EMAC, you need to adjust EMAC DMA\nburst length since the DMA is shared resource between EMAC and other peripherals. The same applies\nwhen you observe Ethernet frames corruption at the output of SPI Ethernet module and you use\ncombination of internal EMAC and SPI Ethernet module as network interfaces.\nValid options are \"1, 2, 4, 8, 16 and 32\" beats. If you select default, driver's internal default\nvalue will be used.",
-                        "id": "ethernet-configuration-internal-emac-emac-dma-burst-length-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-313",
+                        "id": "ethernet-configuration-internal-emac-emac-dma-burst-length-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-313",
                         "name": "ETHERNET_DMA_BURST_LEN",
                         "title": "EMAC DMA Burst Length",
                         "type": "choice"
@@ -6984,7 +6984,7 @@
                         ],
                         "depends_on": "ETHERNET_SPI_SUPPORT",
                         "help": "Select which kind of SPI Ethernet will be used.",
-                        "id": "ethernet-configuration-spi-ethernet-spi-ethernet-module-1-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-392",
+                        "id": "ethernet-configuration-spi-ethernet-spi-ethernet-module-1-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-392",
                         "name": "ETHERNET_SPI_DEV0",
                         "title": "SPI Ethernet module #1",
                         "type": "choice"
@@ -7064,7 +7064,7 @@
                         ],
                         "depends_on": "ETHERNET_SPI_SUPPORT",
                         "help": "Select which kind of SPI Ethernet will be used as the second module. Multiple SPI modules can be\nconnected to one SPI interface and can be separately accessed based on state of associated Chip\nSelect (CS).",
-                        "id": "ethernet-configuration-spi-ethernet-spi-ethernet-module-2-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-420",
+                        "id": "ethernet-configuration-spi-ethernet-spi-ethernet-module-2-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-420",
                         "name": "ETHERNET_SPI_DEV1",
                         "title": "SPI Ethernet module #2",
                         "type": "choice"
@@ -7324,7 +7324,7 @@
                         ],
                         "depends_on": "(ETHERNET_SPI_DEV0_ENC28J60 || ETHERNET_SPI_DEV1_ENC28J60) && ETHERNET_SPI_SUPPORT",
                         "help": "Select ENC28J60 Duplex operation mode.",
-                        "id": "ethernet-configuration-spi-ethernet-duplex-mode-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-665",
+                        "id": "ethernet-configuration-spi-ethernet-duplex-mode-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-665",
                         "name": "ETHERNET_ENC28J60_DUPLEX_MODE",
                         "title": "Duplex Mode",
                         "type": "choice"
@@ -7368,7 +7368,7 @@
                                 ],
                                 "depends_on": "ETHERNET_USE_PLCA && (ETHERNET_PHY_LAN867X || ETHERNET_SPI_DEV0_LAN865X || ETHERNET_SPI_DEV1_LAN865X)",
                                 "help": "Select a role of PLCA node.",
-                                "id": "ethernet-configuration-10base-t1s-plca-use-plca-plca-node-role-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-694",
+                                "id": "ethernet-configuration-10base-t1s-plca-use-plca-plca-node-role-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-694",
                                 "name": "ETHERNET_PLCA_NODE_ROLE",
                                 "title": "PLCA Node Role",
                                 "type": "choice"
@@ -7455,7 +7455,7 @@
                     }
                 ],
                 "depends_on": "ETHERNET_PHY_LAN867X || ETHERNET_SPI_DEV0_LAN865X || ETHERNET_SPI_DEV1_LAN865X",
-                "id": "ethernet-configuration-10base-t1s-plca-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-686",
+                "id": "ethernet-configuration-10base-t1s-plca-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-686",
                 "title": "10BASE-T1S PLCA",
                 "type": "menu"
             },
@@ -7514,7 +7514,7 @@
                 ],
                 "depends_on": "ETHERNET_INTERNAL_SUPPORT || ETHERNET_SPI_SUPPORT",
                 "help": null,
-                "id": "ethernet-configuration-board-specific-init-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-807",
+                "id": "ethernet-configuration-board-specific-init-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-807",
                 "name": "ETHERNET_BOARD_SPECIFIC_INIT",
                 "title": "Board Specific Init",
                 "type": "choice"
@@ -7531,7 +7531,7 @@
             }
         ],
         "depends_on": null,
-        "id": "ethernet-configuration-C:-esp32-develop-tcp-client-managed_components-espressif__ethernet_init-Kconfig.projbuild-1",
+        "id": "ethernet-configuration-C:-esp32-develop-water-dispenser-managed_components-espressif__ethernet_init-Kconfig.projbuild-1",
         "title": "Ethernet Configuration",
         "type": "menu"
     },
@@ -14888,10 +14888,7 @@
                                         "help": "The number of unprocessed advertising report that bluetooth host can save.If you set\n`BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_NUM` to a small value, this may cause adv packets lost.\nIf you set `BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_NUM` to a large value, bluetooth host may cache a\nlot of adv packets and this may cause system memory run out. For example, if you set\nit to 50, the maximum memory consumed by host is 35 * 50 bytes. Please set\n`BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_NUM` according to your system free memory and handle adv\npackets as fast as possible, otherwise it will cause adv packets lost.",
                                         "id": "BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_NUM",
                                         "name": "BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_NUM",
-                                        "range": [
-                                            50,
-                                            1000
-                                        ],
+                                        "range": null,
                                         "title": "BLE adv report flow control number",
                                         "type": "int"
                                     },
@@ -14901,10 +14898,7 @@
                                         "help": "When adv report flow control is enabled, The ADV lost event will be generated when the number\nof ADV packets lost in the controller reaches this threshold. It is better to set a larger value.\nIf you set `BT_CTRL_BLE_ADV_REPORT_DISCARD_THRSHOLD` to a small value or printf every adv lost event, it\nmay cause adv packets lost more.",
                                         "id": "BT_CTRL_BLE_ADV_REPORT_DISCARD_THRSHOLD",
                                         "name": "BT_CTRL_BLE_ADV_REPORT_DISCARD_THRSHOLD",
-                                        "range": [
-                                            1,
-                                            1000
-                                        ],
+                                        "range": null,
                                         "title": "BLE adv lost event threshold value",
                                         "type": "int"
                                     }
@@ -37940,6 +37934,206 @@
             {
                 "children": [
                     {
+                        "children": [
+                            {
+                                "children": [],
+                                "depends_on": "CU_RELINKER_ENABLE",
+                                "help": "\"Enable this option to print error information instead of\n    throwing exception when missing function\"",
+                                "id": "CU_RELINKER_ENABLE_PRINT_ERROR_INFO_WHEN_MISSING_FUNCTION",
+                                "name": "CU_RELINKER_ENABLE_PRINT_ERROR_INFO_WHEN_MISSING_FUNCTION",
+                                "range": null,
+                                "title": "Print error information when missing function",
+                                "type": "bool"
+                            },
+                            {
+                                "children": [],
+                                "depends_on": "SPI_FLASH_AUTO_SUSPEND && CU_RELINKER_ENABLE",
+                                "help": "\"Enable this option, although functions' attribution\nare IRAM_ATTR, or configured to be noflash by link.lf, they will\nnot be linked into IRAM. Only functions specified by relinker\nconfiguration file will be linked into IRAM.\"",
+                                "id": "CU_RELINKER_LINK_SPECIFIC_FUNCTIONS_TO_IRAM",
+                                "name": "CU_RELINKER_LINK_SPECIFIC_FUNCTIONS_TO_IRAM",
+                                "range": null,
+                                "title": "Link specific functions to IRAM regardless of ESP-IDF's behavior",
+                                "type": "bool"
+                            },
+                            {
+                                "children": [
+                                    {
+                                        "children": [],
+                                        "depends_on": "CU_RELINKER_ENABLE_CUSTOMIZED_CONFIGURATION_FILES && CU_RELINKER_ENABLE",
+                                        "help": "\"Customized relinker configuration files path. This path is\nevaluated relative to the project root directory.\"",
+                                        "id": "CU_RELINKER_CUSTOMIZED_CONFIGURATION_FILES_PATH",
+                                        "name": "CU_RELINKER_CUSTOMIZED_CONFIGURATION_FILES_PATH",
+                                        "range": null,
+                                        "title": "Customized relinker configuration files path",
+                                        "type": "string"
+                                    }
+                                ],
+                                "depends_on": "CU_RELINKER_ENABLE",
+                                "help": "\"Enable this option to use customized relinker configuration\nfiles instead of default ones\"",
+                                "id": "CU_RELINKER_ENABLE_CUSTOMIZED_CONFIGURATION_FILES",
+                                "name": "CU_RELINKER_ENABLE_CUSTOMIZED_CONFIGURATION_FILES",
+                                "range": null,
+                                "title": "Enable customized relinker configuration files",
+                                "type": "bool"
+                            }
+                        ],
+                        "depends_on": null,
+                        "help": "\"Enable relinker to linker some IRAM functions to Flash\"",
+                        "id": "CU_RELINKER_ENABLE",
+                        "name": "CU_RELINKER_ENABLE",
+                        "range": null,
+                        "title": "Enable relinker",
+                        "type": "bool"
+                    },
+                    {
+                        "children": [
+                            {
+                                "children": [],
+                                "depends_on": "<choice CU_DIAGNOSTICS_COLOR>",
+                                "help": null,
+                                "id": "CU_DIAGNOSTICS_COLOR_NEVER",
+                                "name": "CU_DIAGNOSTICS_COLOR_NEVER",
+                                "range": null,
+                                "title": "never",
+                                "type": "bool"
+                            },
+                            {
+                                "children": [],
+                                "depends_on": "<choice CU_DIAGNOSTICS_COLOR>",
+                                "help": null,
+                                "id": "CU_DIAGNOSTICS_COLOR_ALWAYS",
+                                "name": "CU_DIAGNOSTICS_COLOR_ALWAYS",
+                                "range": null,
+                                "title": "always",
+                                "type": "bool"
+                            },
+                            {
+                                "children": [],
+                                "depends_on": "<choice CU_DIAGNOSTICS_COLOR>",
+                                "help": null,
+                                "id": "CU_DIAGNOSTICS_COLOR_AUTO",
+                                "name": "CU_DIAGNOSTICS_COLOR_AUTO",
+                                "range": null,
+                                "title": "auto",
+                                "type": "bool"
+                            }
+                        ],
+                        "depends_on": null,
+                        "help": "Use color in diagnostics. \"never\", \"always\", or \"auto\". If \"always\", GCC will output\nwith color defined in GCC_COLORS environment variable. If \"never\", only output plain\ntext. If \"auto\", only output with color when the standard error is a terminal and when\nnot executing in an emacs shell.",
+                        "id": "component-config-cmake-utilities-color-in-diagnostics-C:-esp32-develop-water-dispenser-managed_components-espressif__cmake_utilities-Kconfig-45",
+                        "name": "CU_DIAGNOSTICS_COLOR",
+                        "title": "Color in diagnostics",
+                        "type": "choice"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "\"Enable this option, users can enable GCC link time optimization(LTO)\n feature for target components or dependencies.",
+                        "id": "CU_GCC_LTO_ENABLE",
+                        "name": "CU_GCC_LTO_ENABLE",
+                        "range": null,
+                        "title": "Enable GCC link time optimization(LTO)",
+                        "type": "bool"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "\"Enable this option, user can make string in designated components align\n by 1-byte instead 1-word(4-byte), this can reduce unnecessary filled data\n so that to reduce firmware size.\"",
+                        "id": "CU_GCC_STRING_1BYTE_ALIGN",
+                        "name": "CU_GCC_STRING_1BYTE_ALIGN",
+                        "range": null,
+                        "title": "GCC string 1-byte align",
+                        "type": "bool"
+                    }
+                ],
+                "depends_on": null,
+                "id": "component-config-cmake-utilities-C:-esp32-develop-water-dispenser-managed_components-espressif__cmake_utilities-Kconfig-1",
+                "title": "CMake Utilities",
+                "type": "menu"
+            },
+            {
+                "children": [
+                    {
+                        "children": [
+                            {
+                                "children": [],
+                                "depends_on": null,
+                                "help": "If enable, i2c_bus will dynamically check configs and re-install i2c driver before each transfer,\nhence multiple devices with different configs on a single bus can be supported.",
+                                "id": "I2C_BUS_DYNAMIC_CONFIG",
+                                "name": "I2C_BUS_DYNAMIC_CONFIG",
+                                "range": null,
+                                "title": "enable dynamic configuration",
+                                "type": "bool"
+                            },
+                            {
+                                "children": [],
+                                "depends_on": null,
+                                "help": "task block time when try to take the bus, unit:milliseconds",
+                                "id": "I2C_MS_TO_WAIT",
+                                "name": "I2C_MS_TO_WAIT",
+                                "range": [
+                                    50,
+                                    5000
+                                ],
+                                "title": "mutex block time",
+                                "type": "int"
+                            },
+                            {
+                                "children": [],
+                                "depends_on": null,
+                                "help": "Enable this option for backward compatibility with the old I2C driver (only valid in IDF v5.3 and above).",
+                                "id": "I2C_BUS_BACKWARD_CONFIG",
+                                "name": "I2C_BUS_BACKWARD_CONFIG",
+                                "range": null,
+                                "title": "Enable backward compatibility for the I2C driver (force use of the old i2c_driver above v5.3)",
+                                "type": "bool"
+                            },
+                            {
+                                "children": [
+                                    {
+                                        "children": [],
+                                        "depends_on": "I2C_BUS_SUPPORT_SOFTWARE",
+                                        "help": "Set the maximum number of software I2C ports that can be used. This option is only applicable when\nsoftware I2C support is enabled.",
+                                        "id": "I2C_BUS_SOFTWARE_MAX_PORT",
+                                        "name": "I2C_BUS_SOFTWARE_MAX_PORT",
+                                        "range": null,
+                                        "title": "Maximum number of software I2C ports",
+                                        "type": "int"
+                                    }
+                                ],
+                                "depends_on": null,
+                                "help": "Enable this option to use a software-implemented I2C driver. This can be useful for scenarios where\nhardware I2C is unavailable or additional I2C buses are needed beyond the hardware support.",
+                                "id": "I2C_BUS_SUPPORT_SOFTWARE",
+                                "name": "I2C_BUS_SUPPORT_SOFTWARE",
+                                "range": null,
+                                "title": "Enable software I2C support",
+                                "type": "bool"
+                            },
+                            {
+                                "children": [],
+                                "depends_on": null,
+                                "help": "Enable this option to disable NULL_MEM_ADDR. This allows any register address to be sent.",
+                                "id": "I2C_BUS_REMOVE_NULL_MEM_ADDR",
+                                "name": "I2C_BUS_REMOVE_NULL_MEM_ADDR",
+                                "range": null,
+                                "title": "Remove the limitation of NULL_MEM_ADDR, any register address will be sent",
+                                "type": "bool"
+                            }
+                        ],
+                        "depends_on": null,
+                        "id": "component-config-bus-options-i2c-bus-options-C:-esp32-develop-water-dispenser-managed_components-espressif__i2c_bus-Kconfig-3",
+                        "title": "I2C Bus Options",
+                        "type": "menu"
+                    }
+                ],
+                "depends_on": null,
+                "id": "component-config-bus-options-C:-esp32-develop-water-dispenser-managed_components-espressif__i2c_bus-Kconfig-1",
+                "title": "Bus Options",
+                "type": "menu"
+            },
+            {
+                "children": [
+                    {
                         "children": [],
                         "depends_on": null,
                         "help": "If not, this library will use MQTT protocol 3.1",
@@ -38158,7 +38352,7 @@
                                 ],
                                 "depends_on": "MQTT_TASK_CORE_SELECTION_ENABLED",
                                 "help": null,
-                                "id": "component-config-esp-mqtt-configurations-enable-mqtt-task-core-selection-core-to-use--C:-esp32-develop-tcp-client-managed_components-espressif__mqtt-Kconfig-146",
+                                "id": "component-config-esp-mqtt-configurations-enable-mqtt-task-core-selection-core-to-use--C:-esp32-develop-water-dispenser-managed_components-espressif__mqtt-Kconfig-146",
                                 "name": "MQTT_TASK_CORE_SELECTION",
                                 "title": "Core to use ?",
                                 "type": "choice"
@@ -38214,7 +38408,7 @@
                     }
                 ],
                 "depends_on": null,
-                "id": "component-config-esp-mqtt-configurations-C:-esp32-develop-tcp-client-managed_components-espressif__mqtt-Kconfig-1",
+                "id": "component-config-esp-mqtt-configurations-C:-esp32-develop-water-dispenser-managed_components-espressif__mqtt-Kconfig-1",
                 "title": "ESP-MQTT Configurations",
                 "type": "menu"
             },
