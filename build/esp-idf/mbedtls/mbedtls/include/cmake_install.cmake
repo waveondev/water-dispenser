@@ -1,8 +1,8 @@
-# Install script for directory: C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include
+# Install script for directory: /Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
-  set(CMAKE_INSTALL_PREFIX "C:/Program Files (x86)/tcp-client")
+  set(CMAKE_INSTALL_PREFIX "/usr/local")
 endif()
 string(REGEX REPLACE "/$" "" CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}")
 
@@ -34,42 +34,113 @@ endif()
 
 # Set path to fallback-tool for dependency-resolution.
 if(NOT DEFINED CMAKE_OBJDUMP)
-  set(CMAKE_OBJDUMP "C:/Espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/bin/xtensa-esp32s3-elf-objdump.exe")
+  set(CMAKE_OBJDUMP "/Users/Yuna/.espressif/tools/xtensa-esp-elf/esp-14.2.0_20260121/xtensa-esp-elf/bin/xtensa-esp32s3-elf-objdump")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include/mbedtls" TYPE FILE PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ FILES
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/build_info.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/debug.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/error.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/mbedtls_config.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/net_sockets.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/oid.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/pkcs7.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl_cache.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl_ciphersuites.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl_cookie.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl_ticket.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/timing.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/version.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/x509.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/x509_crl.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/x509_crt.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/x509_csr.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/aes.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/aria.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/asn1.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/asn1write.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/base64.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/bignum.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/block_cipher.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/build_info.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/camellia.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ccm.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/chacha20.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/chachapoly.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/check_config.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/cipher.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/cmac.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/compat-2.x.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/config_adjust_legacy_crypto.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/config_adjust_legacy_from_psa.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/config_adjust_psa_from_legacy.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/config_adjust_psa_superset_legacy.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/config_adjust_ssl.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/config_adjust_x509.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/config_psa.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/constant_time.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ctr_drbg.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/debug.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/des.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/dhm.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ecdh.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ecdsa.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ecjpake.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ecp.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/entropy.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/error.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/gcm.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/hkdf.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/hmac_drbg.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/lms.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/mbedtls_config.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/md.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/md5.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/memory_buffer_alloc.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/net_sockets.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/nist_kw.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/oid.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/pem.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/pk.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/pkcs12.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/pkcs5.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/pkcs7.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/platform.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/platform_time.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/platform_util.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/poly1305.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/private_access.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/psa_util.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ripemd160.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/rsa.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/sha1.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/sha256.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/sha3.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/sha512.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl_cache.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl_ciphersuites.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl_cookie.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/ssl_ticket.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/threading.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/timing.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/version.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/x509.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/x509_crl.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/x509_crt.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/mbedtls/x509_csr.h"
     )
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include/mbedtls/private" TYPE FILE PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ FILES
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/private/config_adjust_ssl.h"
-    "C:/esp/v6.0.1/esp-idf/components/mbedtls/mbedtls/include/mbedtls/private/config_adjust_x509.h"
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include/psa" TYPE FILE PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ FILES
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/build_info.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_adjust_auto_enabled.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_adjust_config_dependencies.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_adjust_config_key_pair_types.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_adjust_config_synonyms.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_builtin_composites.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_builtin_key_derivation.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_builtin_primitives.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_compat.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_config.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_driver_common.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_driver_contexts_composites.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_driver_contexts_key_derivation.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_driver_contexts_primitives.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_extra.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_legacy.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_platform.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_se_driver.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_sizes.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_struct.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_types.h"
+    "/Users/Yuna/.espressif/v5.5.4/esp-idf/components/mbedtls/mbedtls/include/psa/crypto_values.h"
     )
 endif()
 
-string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
-       "${CMAKE_INSTALL_MANIFEST_FILES}")
-if(CMAKE_INSTALL_LOCAL_ONLY)
-  file(WRITE "C:/esp32/develop/water-dispenser/build/esp-idf/mbedtls/mbedtls/include/install_local_manifest.txt"
-     "${CMAKE_INSTALL_MANIFEST_CONTENT}")
-endif()

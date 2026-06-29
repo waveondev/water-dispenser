@@ -288,6 +288,7 @@ void Wifi_Connect(uint8_t* target_ssid, uint8_t* target_password)
     ESP_LOGD(TAG,"empty ssid block default ssid set= %s", ssid);
     ESP_LOGD(TAG,"empty pass block default pass set= %s", passward);
 
+    // esp_err_t ret = example_connect(ssid, passward);
     esp_err_t ret = example_connect(ssid, passward);
     if(ret == ESP_OK)
     {

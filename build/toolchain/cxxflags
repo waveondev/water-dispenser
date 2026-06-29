@@ -2,5 +2,5 @@
 -fno-builtin-memcpy
 -fno-builtin-memset
 -fno-builtin-bzero
-"-specs=C:/esp32/develop/water-dispenser/build/specs/picolibc.specs"
+-specs=picolibc.specs
 -fno-rtti

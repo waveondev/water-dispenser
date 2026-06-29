@@ -3,6 +3,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/timers.h"
+#include "esp_timer.h"
 #include "gpio_util.h"
 #include "esp_log.h"
 #include "app_config_flash.h"

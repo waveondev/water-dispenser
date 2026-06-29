@@ -1,6 +1,7 @@
 #ifndef __BLE_TASK_H__
 #define __BLE_TASK_H__
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
