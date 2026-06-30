@@ -1862,22 +1862,11 @@ esp_err_t esp_mqtt_client_start(esp_mqtt_client_handle_t client)
         err = ESP_FAIL;
     }
 #else
-
-    TaskHandle_t xHandle = NULL;
-    ESP_LOGI(TAG,"wifi_main task_start");
-    if (xTaskCreatePinnedToCore(
-            esp_mqtt_task,                  // 태스크 함수
-            "mqtt_task",                // 태스크 이름
-            client->config->task_stack,       // 스택 크기
-            client,        // 파라미터
-            client->config->task_prio,      // 우선순위
-            &client->task_handle,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
-        ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
-                  ESP_LOGE(TAG, "Error creating mqtt_task on Core 1");
+    ESP_LOGD(TAG, "Core selection disabled");
+    if (xTaskCreate(esp_mqtt_task, "mqtt_task", client->config->task_stack, client, client->config->task_prio, &client->task_handle) != pdTRUE) {
+        ESP_LOGE(TAG, "Error create mqtt task");
+        err = ESP_FAIL;
     }
-
-
 #endif
     MQTT_API_UNLOCK(client);
     return err;
