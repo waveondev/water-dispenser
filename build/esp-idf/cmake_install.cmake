@@ -719,6 +719,16 @@ endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
+  include("C:/esp32/develop/water-dispenser/build/esp-idf/espressif__ethernet_init/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
+  include("C:/esp32/develop/water-dispenser/build/esp-idf/protocol_examples_common/cmake_install.cmake")
+endif()
+
+if(NOT CMAKE_INSTALL_LOCAL_ONLY)
+  # Include the install script for the subdirectory.
   include("C:/esp32/develop/water-dispenser/build/esp-idf/espressif__led_strip/cmake_install.cmake")
 endif()
 
@@ -735,16 +745,6 @@ endif()
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)
   # Include the install script for the subdirectory.
   include("C:/esp32/develop/water-dispenser/build/esp-idf/espressif__mqtt/cmake_install.cmake")
-endif()
-
-if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  # Include the install script for the subdirectory.
-  include("C:/esp32/develop/water-dispenser/build/esp-idf/espressif__ethernet_init/cmake_install.cmake")
-endif()
-
-if(NOT CMAKE_INSTALL_LOCAL_ONLY)
-  # Include the install script for the subdirectory.
-  include("C:/esp32/develop/water-dispenser/build/esp-idf/protocol_examples_common/cmake_install.cmake")
 endif()
 
 if(NOT CMAKE_INSTALL_LOCAL_ONLY)

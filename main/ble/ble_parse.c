@@ -4,6 +4,8 @@
 #include "ble_task.h"
 #include "app_config_flash.h"
 #include "wifi_task.h"
+#include "http_ota.h"
+#define OTA_URL "https://evtago.s3.ap-northeast-2.amazonaws.com/water-dispenser.bin"
 void BLE_APP_Command(uint8_t* data, uint16_t len)
 {
     char buf[128];
@@ -18,6 +20,11 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
     if(strcmp(buf, "scan") == 0)
     {
         wifi_scan_start();
+        return;
+    }
+    if(strcmp(buf, "OTA") == 0)
+    {
+        ota_main(OTA_URL);
         return;
     }
 
