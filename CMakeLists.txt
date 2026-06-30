@@ -8,4 +8,4 @@ endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-project(tcp-client)
+project(water-dispenser)

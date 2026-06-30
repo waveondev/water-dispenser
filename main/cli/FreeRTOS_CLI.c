@@ -99,6 +99,14 @@ static const CLI_Command_Definition_t xSetCommand =
 	-1,
 	DEVEL_MODE
 };
+static const CLI_Command_Definition_t xConfigCommand =
+{
+	"config",
+	"\033[1;33mconfig\033[0m\r\n  config command\r\n",
+	prvConfigInformationCommand,
+	-1,
+	DEVEL_MODE
+};
 #endif
 /*--------------------------------------wisun_cli----------------------------------------*/
 /* Structure that defines the "run-time-stats" command line command.   This
@@ -222,7 +230,7 @@ static const CLI_Command_Definition_t* CommandList[] =
 	#endif
 	#if (	configGENERATE_RUN_TIME_STATS == 1 )
 	&xRunTimeStats,
-	//&xConfigCommand,
+	&xConfigCommand,
 	#endif
 	&xResetCommand,
 	NULL

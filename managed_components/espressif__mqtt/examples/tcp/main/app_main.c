@@ -79,8 +79,8 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
         break;
     case MQTT_EVENT_DATA:
         ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-        APP_String_printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-        APP_String_printf("DATA=%.*s\r\n", event->data_len, event->data);
+        printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
+        printf("DATA=%.*s\r\n", event->data_len, event->data);
         break;
     case MQTT_EVENT_ERROR:
         ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -108,7 +108,7 @@ static void mqtt_app_start(void)
 
     if (strcmp(mqtt_cfg.broker.address.uri, "FROM_STDIN") == 0) {
         int count = 0;
-        APP_String_printf("Please enter url of mqtt broker\n");
+        printf("Please enter url of mqtt broker\n");
         while (count < 128) {
             int c = fgetc(stdin);
             if (c == '\n') {
@@ -121,7 +121,7 @@ static void mqtt_app_start(void)
             vTaskDelay(10 / portTICK_PERIOD_MS);
         }
         mqtt_cfg.broker.address.uri = line;
-        APP_String_printf("Broker url: %s\n", line);
+        printf("Broker url: %s\n", line);
     } else {
         ESP_LOGE(TAG, "Configuration mismatch: wrong broker url");
         abort();

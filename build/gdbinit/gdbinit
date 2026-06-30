@@ -1,2 +1,2 @@
-source /Users/Yuna/Documents/Dev/fw/water-dispenser/build/gdbinit/symbols
-source /Users/Yuna/Documents/Dev/fw/water-dispenser/build/gdbinit/connect
+source C:/esp32/develop/water-dispenser/build/gdbinit/symbols
+source C:/esp32/develop/water-dispenser/build/gdbinit/connect

@@ -143,11 +143,11 @@ void simple_ota_example_task(void *pvParameter)
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "OTA Succeed, Rebooting...");
         state = CHARGE_FW_SUCCESS;
-        MQTT_Send(0,0,NULL,CHARGE_FW_UPDATE_STATE,&state,1);
+        //MQTT_Send(0,0,NULL,CHARGE_FW_UPDATE_STATE,&state,1);
     } else {
         ESP_LOGE(TAG, "Firmware upgrade failed");
         state = CHARGE_FW_FAIL;
-        MQTT_Send(0,0,NULL,CHARGE_FW_UPDATE_STATE,&state,1);
+        //MQTT_Send(0,0,NULL,CHARGE_FW_UPDATE_STATE,&state,1);
         OTA_Enable = 0;
         vTaskDelete(xOTA_Handle);
     }
@@ -199,7 +199,7 @@ void ota_main(const char* URL)
         ESP_LOGE(TAG, "Wi-Fi는 연결되었으나, 아직 IP 주소를 할당받지 못했습니다!");
         return;
     }
-
+    esp_log_level_set("esp_https_ota", ESP_LOG_DEBUG);
     static char URL_Buffer[200];
     memset(URL_Buffer, 0, sizeof(URL_Buffer));
     strncpy(URL_Buffer, URL, sizeof(URL_Buffer) - 1);
