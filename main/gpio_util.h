@@ -35,11 +35,17 @@ typedef enum {
 #ifndef PIN_TOF0_I2C_SCL
 #define PIN_TOF0_I2C_SCL 11
 #endif
+#ifndef PIN_TOF0_INT
+#define PIN_TOF0_INT 13
+#endif
 #ifndef PIN_TOF1_I2C_SDA
 #define PIN_TOF1_I2C_SDA 47
 #endif
 #ifndef PIN_TOF1_I2C_SCL
 #define PIN_TOF1_I2C_SCL 21
+#endif
+#ifndef PIN_TOF1_INT
+#define PIN_TOF1_INT 48
 #endif
 #define PIN_LED_RGBW 14
 

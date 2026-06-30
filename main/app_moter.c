@@ -13,7 +13,7 @@
 #define LEDC_MODE            LEDC_LOW_SPEED_MODE
 #define LEDC_TIMER           LEDC_TIMER_0
 #define LEDC_DUTY_RES        LEDC_TIMER_10_BIT  // 10비트 해상도 (0 ~ 1023)
-#define LEDC_FREQUENCY       (20000)            // 20kHz 설정
+#define LEDC_FREQUENCY       (4000)            // 20kHz 설정
 
 #define LEDC_CH0_MOTOR_IN1   LEDC_CHANNEL_0
 static const char *TAG = __FILE__;

@@ -157,6 +157,22 @@ static void periodic_timer_callback(void* arg)
     ESP_LOGI(TAG, "타이머 실행 중...");
 
     static bool pairing_led_state = 0;
+    static bool ota_led_state = 0;
+    if(last_led_status_resister & OTA_START_BIT)
+    {
+        if(ota_led_state)
+        {
+            ota_led_state = false;
+            set_rgb_led(LED_BRIGHTNESS_MAX,0 , LED_BRIGHTNESS_MAX, 0); // 녹색
+        }
+        else
+        {
+            ota_led_state = true;
+            set_rgb_led(LED_BRIGHTNESS_MAX,0 , LED_BRIGHTNESS_MAX, 0); // 녹색
+        }
+        return;
+    }
+
     if(last_led_status_resister & PAIRING_BIT)
     {
         if(pairing_led_state)
@@ -206,6 +222,9 @@ static void LED_task(void *pvParameter)
                 if (current_resister & PAIRING_BIT) {
                     ESP_ERROR_CHECK(esp_timer_start_periodic(pairing_timer, 500000));
                 }
+                else if (current_resister & OTA_START_BIT) {
+                    ESP_ERROR_CHECK(esp_timer_start_periodic(pairing_timer, 500000));
+                }                
                 else if (current_resister & TOF_DETECT_BIT) {
                     if (!esp_timer_is_active(pairing_timer)) {
                         esp_err_t err = esp_timer_start_periodic(pairing_timer, 1000);
@@ -221,7 +240,7 @@ static void LED_task(void *pvParameter)
             // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용
             else {
                 switch(last_op_mode) {
-                    case OP_MODE_NORMAL: set_rgb_led(0, LED_BRIGHTNESS_MAX, LED_BRIGHTNESS_MAX, 0); break;
+                    case OP_MODE_NORMAL: set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX); break;
                     case OP_MODE_NIGHT:  set_rgb_led(LED_BRIGHTNESS_MAX, 0, LED_BRIGHTNESS_MAX, 0); break;
                     case OP_MODE_SMART:  set_rgb_led(LED_BRIGHTNESS_MAX, LED_BRIGHTNESS_MAX, 0, 0); break;
                     case OP_MODE_SLEEP:  set_led_clear(); break;

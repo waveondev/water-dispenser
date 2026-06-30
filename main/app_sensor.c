@@ -32,7 +32,7 @@ void Sensor_task(void *pvParameter)
         #if 1
         HX711_Sensing();
         #endif
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
         VL53L0X_Sensing();
         //vTaskDelay(700 / portTICK_PERIOD_MS);
     }

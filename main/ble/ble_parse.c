@@ -78,7 +78,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                 sizeof(wifi_config->conn_password)-1);
 
         save_wifi_configuration();
-        Wifi_Connect((uint8_t*)ssid,(uint8_t*)pass);
+        Wifi_Connect(ssid,pass);
         printf("저장 완료\n");
     }
 }

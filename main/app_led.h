@@ -2,9 +2,10 @@
 #define __APP_LED_H__
 #include "esp_log.h"
 
-#define PAIRING_BIT    (1<<15)
-#define TOF_DETECT_BIT (1<<14)
-
+#define PAIRING_BIT     (1<<15)
+#define OTA_START_BIT   (1<<14)
+#define SENSING_ERR_BIT (1<<13)
+#define TOF_DETECT_BIT  (1<<12)
 
 bool led_moter_enable(void);
 void led_bit_disable(uint16_t disable);

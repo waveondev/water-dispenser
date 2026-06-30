@@ -66,6 +66,9 @@ static bool init_adc_calibration(adc_unit_t unit, adc_channel_t channel, adc_att
 }
 
 
+#if 0
+mv_ch0 > 800
+#endif
 
 void ADC_Sensing(void)
 {
@@ -75,7 +78,7 @@ void ADC_Sensing(void)
 
         // --- 채널 0 (GPIO 6 - ADC1) 읽기 ---
         err_ch0 = adc_oneshot_read(adc0_handle, CH0_ADC_CHANNEL, &raw_ch0);
-        #if 0
+        #if 1
         if (err_ch0 == ESP_OK) {
             if (do_cali_ch0) {
                 adc_cali_raw_to_voltage(cali_ch0_handle, raw_ch0, &mv_ch0);

@@ -52,15 +52,15 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 }
 
 void bf_SingleClickAction(void) {
-    //Opmode_Set();
-    send_motion();
+    Opmode_Set();
+   // send_motion();
     ESP_LOGI(TAG,"Single Click Action executed \r\n");
 }
 
 void bf_DoubleClickAction(void) {
     app_config_t* app_config = get_app_config();
     ESP_LOGI(TAG,"Double Click Action executed\r\n");
-    start_motor_with_boost(40, app_config->pump_clean_duration);
+    start_motor_with_boost(100, app_config->pump_clean_duration);
 }
 
 void bf_LongPress3SecAction(void) {

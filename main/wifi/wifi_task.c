@@ -24,37 +24,91 @@ static const char* TAG = __FILE__;
 #include <esp_https_ota.h>
 
 #include <esp_ota_ops.h>
-
+// 💡 메인 초기화 부분에 선언해두었던 이벤트 그룹과 비트들을 가져옵니다 (extern 또는 동일 파일 내 선언)
+EventGroupHandle_t s_wifi_event_group;
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
+static int s_retry_num = 0;
+#define MAXIMUM_RETRY  5
+static bool s_allow_reconnect = true; // 💡 자동 재연결 허용 플래그
+/**
+ * @brief 기존 Wi-Fi 연결을 안전하게 끊습니다.
+ * (esp_wifi_stop()까지는 할 필요 없이 disconnect 만으로 충분합니다)
+ */
 void Wifi_Disconnect(void)
 {
     wifi_ap_record_t ap_info;
     esp_err_t status = esp_wifi_sta_get_ap_info(&ap_info);
 
-    // 1. Wi-Fi가 아예 초기화 안 되었거나 꺼져(Stop) 있다면 함수 즉시 종료
-    if (status == ESP_ERR_WIFI_NOT_INIT || status == ESP_ERR_WIFI_NOT_STARTED) {
-        ESP_LOGI("WIFI_CHG", "Wi-Fi가 이미 정지 상태이므로 해제 프로세스를 생략합니다.");
+    if (status == ESP_OK) {
+        ESP_LOGI(TAG, "현재 연결된 AP가 존재합니다. 연결을 해제합니다...");
+        s_allow_reconnect = false;
+        esp_wifi_disconnect();
+        // 끊어질 시간을 잠깐 부여
+        vTaskDelay(pdMS_TO_TICKS(500)); 
+    } else {
+        ESP_LOGI(TAG, "현재 연결된 AP가 없습니다. 해제 생략.");
+    }
+}
+
+/**
+ * @brief 새로운 SSID와 비밀번호로 Wi-Fi를 연결하고 결과를 기다립니다.
+ */
+void Wifi_Connect(const char* target_ssid, const char* target_password)
+{
+    led_bit_enable(PAIRING_BIT);
+
+    // 1. 만약 어딘가 연결되어 있다면 먼저 끊어줍니다.
+    Wifi_Disconnect();
+
+    // 2. 새로운 설정을 담을 빈 구조체 생성
+    wifi_config_t wifi_config = {0};
+
+    // 3. 메모리 오버플로우를 막기 위해 안전한 strncpy 사용 (SSID 최대 32자, PASS 최대 64자)
+    strncpy((char *)wifi_config.sta.ssid, target_ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, target_password, sizeof(wifi_config.sta.password) - 1);
+
+    ESP_LOGI(TAG, "새로운 AP로 연결 시도: SSID = %s", wifi_config.sta.ssid);
+
+    // 4. 새로운 Wi-Fi 환경설정을 드라이버에 덮어씌웁니다.
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Wi-Fi 설정 적용 실패!");
+        ble_send_data_to_queue((uint8_t*)"CONNECT_AP FAIL", strlen("CONNECT_AP FAIL"));
+        led_bit_disable(PAIRING_BIT);
         return;
     }
 
-    ESP_LOGI("WIFI_CHG", "기존 Wi-Fi 세션 연결 해제 프로세스 시작...");
+    // 5. 이전에 남아있던 성공/실패 찌꺼기 비트를 깨끗하게 지웁니다.
+    xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT);
+    s_retry_num = 0;
+    // 6. 연결 시작! (이벤트 핸들러가 백그라운드에서 동작하기 시작함)
+    esp_wifi_connect();
 
-    // 2. 현재 AP에 "연결되어 있는 경우(ESP_OK)"에만 명시적으로 끊기
-    if (status == ESP_OK) {
-        esp_err_t err = esp_wifi_disconnect();
-        if (err == ESP_OK) {
-            ESP_LOGI("WIFI_CHG", "기존 AP와 디스커넥트 성공.");
-        }
+    // 7. 결과가 나올 때까지 대기 (무한 대기 방지를 위해 최대 15초만 기다림)
+    ESP_LOGI(TAG, "연결 결과를 기다리는 중...");
+    EventBits_t bits = xEventGroupWaitBits(
+        s_wifi_event_group,
+        WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+        pdFALSE,
+        pdFALSE,
+        pdMS_TO_TICKS(15000) // 💡 15초(15000ms) 타임아웃 방어 로직
+    );
+
+    // 8. 대기 결과에 따른 처리
+    if (bits & WIFI_CONNECTED_BIT) {
+        ESP_LOGI(TAG, "새 AP 연결 최종 성공!");
+        ble_send_data_to_queue((uint8_t*)"CONNECT_AP SUCCESS", strlen("CONNECT_AP SUCCESS"));
+    } else if (bits & WIFI_FAIL_BIT) {
+        ESP_LOGE(TAG, "새 AP 연결 실패 (비밀번호 오류 또는 AP 없음)!");
+        ble_send_data_to_queue((uint8_t*)"CONNECT_AP FAIL", strlen("CONNECT_AP FAIL"));
     } else {
-        ESP_LOGI("WIFI_CHG", "Wi-Fi 드라이버는 실행 중이나, 현재 연결된 AP는 없습니다.");
+        ESP_LOGE(TAG, "새 AP 연결 타임아웃! (15초 초과)");
+        ble_send_data_to_queue((uint8_t*)"CONNECT_AP TIMEOUT", strlen("CONNECT_AP TIMEOUT"));
+        esp_wifi_disconnect(); // 타임아웃 났으니 연결 시도 중단
     }
 
-    // 3. Wi-Fi 드라이버 잠시 정지 (내부 상태 머신 초기화 효과)
-    esp_wifi_stop();
-    // 잠시 태스크 유예를 주어 하드웨어 드라이버가 완전히 내려가도록 유도 (필수)
-    vTaskDelay(pdMS_TO_TICKS(500)); 
-
-    // 4. 다시 Wi-Fi 드라이버를 시작하고 새 환경설정 적용
-    esp_wifi_start();
+    led_bit_disable(PAIRING_BIT);
 }
 /*
 void wifi_init_sta_static_ip(char* WIFI_SSID, char* WIFI_PASS)
@@ -288,45 +342,54 @@ uint16_t wifi_scan_start(void)
     return total_found_count;
 }
 #endif
-void Wifi_Connect(uint8_t* target_ssid, uint8_t* target_password)
+// 백그라운드 이벤트 핸들러
+static void wifi_event_handler(void* arg, esp_event_base_t event_base,
+                                int32_t event_id, void* event_data)
 {
-    led_bit_enable(PAIRING_BIT);
-    uint8_t ssid[32];
-    uint8_t passward[64];
-    memset(ssid,0,sizeof(ssid));
-    memset(passward,0,sizeof(passward));    
-    memcpy(ssid,target_ssid,strlen((char*)target_ssid));
-    memcpy(passward,target_password,strlen((char*)target_password));
-
-    ESP_LOGD(TAG,"empty ssid block default ssid set= %s", ssid);
-    ESP_LOGD(TAG,"empty pass block default pass set= %s", passward);
-
-    // esp_err_t ret = example_connect(ssid, passward);
-    esp_err_t ret = example_connect(ssid, passward);
-    if(ret == ESP_OK)
-    {
-         ble_send_data_to_queue((uint8_t*)"CONNECT_AP SUCCESS",strlen("CONNECT_AP SUCCESS"));
+    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        // 💡 중요: 여기서 esp_wifi_connect()를 절대 호출하지 않습니다!
+        // 드라이버가 준비 완료(Start) 되었다는 로그만 남깁니다.
+        ESP_LOGI(TAG, "Wi-Fi 드라이버가 준비되었습니다 (STA_START).");
+    } 
+    else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+            if (s_allow_reconnect) {
+                if (s_retry_num < MAXIMUM_RETRY) {
+                    esp_wifi_connect();
+                    s_retry_num++;
+                    ESP_LOGI(TAG, "연결 실패, 재시도 중... (%d/%d)", s_retry_num, MAXIMUM_RETRY);
+                } else {
+                    xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+                    ESP_LOGE(TAG, "최종 연결 실패 (재시도 횟수 초과)");
+                }
+            }
+    } 
+    else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
+        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        ESP_LOGI(TAG, "IP 할당 완료: " IPSTR, IP2STR(&event->ip_info.ip));
+        s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
-    else
-    {
-         ble_send_data_to_queue((uint8_t*)"CONNECT_AP FAIL",strlen("CONNECT_AP FAIL"));
-    }
-        led_bit_disable(PAIRING_BIT);
-    //mqtt_main();
 }
-
 void wifi_init(void)
 {
-    static uint8_t ucParameterToPass;
-    TaskHandle_t xHandle = NULL;
-    ESP_LOGI(TAG,"wifi task_start");
-    
-    const esp_partition_t* run_parti;
-    run_parti = esp_ota_get_running_partition();
-    ESP_LOGD("partition","type = %d", run_parti->type);
-    ESP_LOGD("partition","subtype = %d", run_parti->subtype);
+s_wifi_event_group = xEventGroupCreate();
 
+    // 1. TCP/IP 스택 및 기본 이벤트 루프 초기화
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    example_wifi_start();
+    esp_netif_create_default_wifi_sta();
+
+    // 2. Wi-Fi 하드웨어 드라이버 초기화
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+    // 3. 이벤트 핸들러 등록 (Wi-Fi 상태 변화 감지)
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, NULL));
+
+    // 4. Wi-Fi 모드를 STA(단말기)로 설정하고 드라이버 켜기
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
+
+    ESP_LOGI("WIFI", "Wi-Fi 초기화 완료! (대기 또는 자동 연결 진행 중)");
 }

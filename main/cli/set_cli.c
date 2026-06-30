@@ -105,7 +105,7 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
             }	
 			else if (!strncmp(ag[1], "cal", 3))
 			{
-                HX711_cal_init();
+                HX711_cal_init(atoi(ag[2]));
             }		
 			else if (!strncmp(ag[1], "testmode", 8))
 			{

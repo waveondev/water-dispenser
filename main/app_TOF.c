@@ -32,6 +32,46 @@ static uint16_t tof1_mm;
 uint32_t ts_tof0_ms = 0;
 uint32_t ts_tof1_ms = 0;
 
+#define FILTER_SIZE 10
+static uint32_t TOF_Buf_L[FILTER_SIZE] = {0};
+static uint32_t TOF_Buf_R[FILTER_SIZE] = {0};
+static int buffer_idx_L = 0,    buffer_idx_R = 0;
+
+/**
+ * @brief 새로운 데이터를 필터 버퍼에 추가하는 함수
+ * @param new_value 새로 측정된 센서 값
+ */
+static void moving_average_update_l(uint16_t new_value) {
+    TOF_Buf_L[buffer_idx_L] = new_value;
+    buffer_idx_L = (buffer_idx_L + 1) % FILTER_SIZE;
+}
+static void moving_average_update_r(uint16_t new_value) {
+    TOF_Buf_R[buffer_idx_R] = new_value;
+    buffer_idx_R = (buffer_idx_R + 1) % FILTER_SIZE;
+}
+
+/**
+ * @brief 현재 버퍼에 쌓인 데이터들의 평균값을 계산하여 반환하는 함수
+ * @return float 최근 FILTER_SIZE 개수의 평균값
+ */
+uint16_t moving_average_get_L(void) {
+    uint32_t sum = 0;
+    for (int i = 0; i < FILTER_SIZE; i++) {
+        sum += TOF_Buf_L[i];
+    }
+    if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm(raw = %4d)",  (uint16_t)(sum / FILTER_SIZE),tof0_mm);
+    else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
+    return (uint16_t)(sum / FILTER_SIZE);
+}
+uint16_t moving_average_get_R(void) {
+    uint32_t sum = 0;
+    for (int i = 0; i < FILTER_SIZE; i++) {
+        sum += TOF_Buf_R[i];
+    }
+    if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", (uint16_t)(sum / FILTER_SIZE),tof1_mm);
+        else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
+    return (uint16_t)(sum / FILTER_SIZE);
+}
 // 💡 내부 헬퍼 함수: 단일 센서 ST C API 초기화 및 아크릴 보정 
 static bool init_single_vl53l0x(VL53L0X_Dev_t *pDevice, i2c_port_t i2c_port, const char *sensor_name)
 {
@@ -95,17 +135,17 @@ bool VL53L0X_Detect(void)
 {
     bool condition_tof0 = false;
     bool condition_tof1 = false;
-
+    app_config_t* app_config = get_app_config();
     // TOF0 조건 체크
     if (g_tof0_ok) {
-        if (tof0_mm > 70 && tof0_mm < 200) {
+        if (tof0_mm > 70 && tof0_mm < app_config->tof_sense_threshold_l) {
             condition_tof0 = true;
         }
     }
 
     // TOF1 조건 체크
     if (g_tof1_ok) {
-        if (tof1_mm > 70 && tof1_mm < 200) {
+        if (tof1_mm > 70 && tof1_mm < app_config->tof_sense_threshold_r) {
             condition_tof1 = true;
         }
     }
@@ -132,9 +172,13 @@ void VL53L0X_Sensing(void)
             tof0_mm = measure_data0.RangeMilliMeter; // 아크릴 노이즈가 제거된 깨끗한 실제 거리
             ts_tof0_ms = now_ms;
             g_tof0_last_ok_ms = now_ms;
-        } else {
-            // 정밀 측정 실패 시 기본 범위 오류 가드 (필요시 에러 로그 활성화)
-            // ESP_LOGW(TAG, "TOF0 Range Status Warning: %d", measure_data0.RangeStatus);
+        } else if (measure_data0.RangeStatus == 2 || measure_data0.RangeStatus == 4) {
+            // 허공이거나 너무 멀어서 측정이 안 된 경우 -> 장애물이 없다는 뜻!
+            tof0_mm = 8190; // VL53L0X의 최대 에러 값(Out of Range) 대입 또는 무시
+            // ESP_LOGD(TAG, "TOF0: 물체가 감지 범위를 벗어났습니다. (Status: %d)", measure_data0.RangeStatus);
+        }
+        else {
+            ESP_LOGW(TAG, "TOF0 Range Status Warning: %d", measure_data0.RangeStatus);
         }
     }
 
@@ -145,21 +189,20 @@ void VL53L0X_Sensing(void)
             tof1_mm = measure_data1.RangeMilliMeter; // 아크릴 노이즈가 제거된 깨끗한 실제 거리
             ts_tof1_ms = now_ms;
             g_tof1_last_ok_ms = now_ms;
-        } else {
-            // ESP_LOGW(TAG, "TOF1 Range Status Warning: %d", measure_data1.RangeStatus);
+        } else if (measure_data1.RangeStatus == 2 || measure_data1.RangeStatus == 4) {
+            // 허공이거나 너무 멀어서 측정이 안 된 경우 -> 장애물이 없다는 뜻!
+            tof1_mm = 8190; // VL53L0X의 최대 에러 값(Out of Range) 대입 또는 무시
+            // ESP_LOGD(TAG, "TOF0: 물체가 감지 범위를 벗어났습니다. (Status: %d)", measure_data0.RangeStatus);
+        }
+        else {
+            ESP_LOGW(TAG, "TOF1 Range Status Warning: %d", measure_data1.RangeStatus);
         }
     }
     // ⭐️ [0.5초마다 터미널에 보정된 센서값 출력] ⭐️
-
-        #if 0
-    ESP_LOGI(TAG, "========================================");
-    if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm", tof0_mm);
-    else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
-    
-    if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm", tof1_mm);
-    else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
-    ESP_LOGI(TAG, "========================================");
-    #endif
+    moving_average_update_l(tof0_mm);
+    moving_average_update_r(tof1_mm);
+    moving_average_get_L();
+    moving_average_get_R();
 }
 
 bool TOF_VL53L0X_init(void)
@@ -167,13 +210,23 @@ bool TOF_VL53L0X_init(void)
     // -------------------------------------------------------------
     // 1. I2C 포트 1 초기화 (TOF1용)
     // -------------------------------------------------------------
+    gpio_config_t io_conf_int1 = {
+        .pin_bit_mask = (1ULL << PIN_TOF1_INT), // 연결하신 INT 핀 번호
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,          // 💡 핵심: Float 대신 내부 풀업 활성화!
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_NEGEDGE            // 인터럽트를 쓴다면 하강 엣지, 안 쓰면 DISABLE
+    };
+    gpio_config(&io_conf_int1);
+
+
     i2c_config_t i2c_bus1_cfg = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = PIN_TOF1_I2C_SDA,
         .sda_pullup_en = GPIO_PULLUP_DISABLE,
         .scl_io_num = PIN_TOF1_I2C_SCL,
         .scl_pullup_en = GPIO_PULLUP_DISABLE,
-        .master.clk_speed = 400000,
+        .master.clk_speed = 100000,
     };
     
     if (i2c_param_config(I2C_NUM_1, &i2c_bus1_cfg) != ESP_OK) {
@@ -188,13 +241,22 @@ bool TOF_VL53L0X_init(void)
     // -------------------------------------------------------------
     // 2. I2C 포트 0 초기화 (TOF0용)
     // -------------------------------------------------------------
+    gpio_config_t io_conf_int0 = {
+        .pin_bit_mask = (1ULL << PIN_TOF0_INT), // 연결하신 INT 핀 번호
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,          // 💡 핵심: Float 대신 내부 풀업 활성화!
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_NEGEDGE            // 인터럽트를 쓴다면 하강 엣지, 안 쓰면 DISABLE
+    };
+    gpio_config(&io_conf_int0);
+
     i2c_config_t i2c_bus0_cfg = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = PIN_TOF0_I2C_SDA,
         .sda_pullup_en = GPIO_PULLUP_DISABLE,
         .scl_io_num = PIN_TOF0_I2C_SCL,
         .scl_pullup_en = GPIO_PULLUP_DISABLE,
-        .master.clk_speed = 400000, // 400kHz
+        .master.clk_speed = 100000, // 400kHz
     };
     
     if (i2c_param_config(I2C_NUM_0, &i2c_bus0_cfg) != ESP_OK) {

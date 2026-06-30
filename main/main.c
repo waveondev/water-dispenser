@@ -46,9 +46,12 @@ void app_main(void)
     init_motor_ledc();
     button_task_init();
     init_led_strip();
-    sensor_init();
-    opmode_task_init();
     LED_task_init();
+    sensor_init();
+
+    
+    opmode_task_init();
+
     ble_task_init();
     MotionTaskInit();
     //charge_init();
