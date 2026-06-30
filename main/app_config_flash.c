@@ -1,6 +1,8 @@
 #include "app_config_flash.h"
 #include "esp_log.h"
 #include "opmode_task.h"
+#include "nvs_flash.h"
+#include "esp_system.h"
 static const char *TAG = __FILE__;
 
 app_config_t app_config = 
@@ -27,6 +29,21 @@ ble_config_t ble_config =
 {
    .ble_device_name = ""
 };
+
+void reset_all_nvs_data(void)
+{
+    ESP_LOGW("NVS", "NVS 영역을 포맷(초기화)합니다...");
+    
+    // 💡 이 함수를 실행하면 NVS 스토리지 전체가 싹 다 포맷됩니다.
+    esp_err_t err = nvs_flash_erase();
+    
+    if (err == ESP_OK) {
+        ESP_LOGI("NVS", "포맷 완료! 변경사항을 적용하기 위해 재부팅합니다.");
+        esp_restart(); // ⚠️ 중요: 깨끗해진 NVS 구조를 새로 올리기 위해 재부팅 필수
+    } else {
+        ESP_LOGE("NVS", "NVS 포맷 실패: %s", esp_err_to_name(err));
+    }
+}
 
 void dump_all_configurations(void)
 {

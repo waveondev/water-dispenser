@@ -214,7 +214,7 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
 
     // 2. 예외 처리: 목표 속도가 0% 이거나, 가동 시간이 10초 이하인 경우 예외 정지 처리
     if (target_percentage <= 0 || (duration_sec > 0 && duration_sec <= 10)) {
-        ESP_LOGI(TAG, "[PUMP] 🛑 모터 즉시 정지 (0%%)");
+       // ESP_LOGI(TAG, "[PUMP] 🛑 모터 즉시 정지 (0%%)");
         set_motor_speed_percent(0);
         
         // 정지했으므로 상태 변수들도 초기화

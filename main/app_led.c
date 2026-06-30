@@ -205,7 +205,7 @@ static void LED_task(void *pvParameter)
     app_config_t* app_config = get_app_config();
     
     set_rgb_led(0,0,0,LED_BRIGHTNESS_MAX);
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
+    vTaskDelay(3000 / portTICK_PERIOD_MS);
     
     ESP_LOGI(TAG, "Starting LED_task (Pure Event Driven Mode)");
 

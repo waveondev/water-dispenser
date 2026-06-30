@@ -96,7 +96,6 @@ static void Opmode_task(void *pvParameter)
                 {
                     // 💡 1. 센서 감지 즉시 모터 가동! 그리고 5초 검증 타이머 시작
                     start_weight = loadcell_data_get();
-                    start_motor_with_boost(100, 0);
                     smart_timer_target = current_tick + (5000 / portTICK_PERIOD_MS);
                     smart_state = SMART_RUN_VERIFY;
                     ESP_LOGI(TAG, "SMART: Sensor detected! Motor ON immediately. Verifying 5s...");

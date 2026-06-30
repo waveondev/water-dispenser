@@ -59,8 +59,8 @@ uint16_t moving_average_get_L(void) {
     for (int i = 0; i < FILTER_SIZE; i++) {
         sum += TOF_Buf_L[i];
     }
-    if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm(raw = %4d)",  (uint16_t)(sum / FILTER_SIZE),tof0_mm);
-    else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
+    //if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm(raw = %4d)",  (uint16_t)(sum / FILTER_SIZE),tof0_mm);
+    //else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
     return (uint16_t)(sum / FILTER_SIZE);
 }
 uint16_t moving_average_get_R(void) {
@@ -68,8 +68,8 @@ uint16_t moving_average_get_R(void) {
     for (int i = 0; i < FILTER_SIZE; i++) {
         sum += TOF_Buf_R[i];
     }
-    if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", (uint16_t)(sum / FILTER_SIZE),tof1_mm);
-        else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
+    //if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", (uint16_t)(sum / FILTER_SIZE),tof1_mm);
+     //   else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
     return (uint16_t)(sum / FILTER_SIZE);
 }
 // 💡 내부 헬퍼 함수: 단일 센서 ST C API 초기화 및 아크릴 보정 

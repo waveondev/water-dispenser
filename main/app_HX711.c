@@ -10,6 +10,12 @@
 #include "esp_timer.h"
 #include "app_config_flash.h"
 static const char *TAG = __FILE__;
+// 필터 설정값 (상황에 맞게 조절)
+#define FILTER_ALPHA   0.60f  // 0.0 ~ 1.0 (낮을수록 부드럽지만 반응이 느려짐)
+#define DEADBAND_LIMIT 0.05f  // 이 값보다 작은 변화는 노이즈로 보고 무시 (단위: g 또는 kg)
+
+static float filtered_weight = 0.0f; // 현재 필터링된 최종 무게값
+#include "math.h"
 #if 0 
 [SENSOR] Weight: 239.6 g (raw: 251934) 없을때
 [SENSOR] Weight: 302.02 g (raw: 314222) 물통만 
@@ -19,7 +25,9 @@ static const char *TAG = __FILE__;
 #endif
 typedef struct  { uint32_t t; float w; }WSample;
 
-
+static WSample g_wbuf[10];
+static uint8_t g_wbuf_n = 0;
+static uint8_t g_wbuf_i = 0;
 static uint8_t hx711_cal_enable = 0;
 
 static unsigned long millis() {
@@ -68,6 +76,28 @@ static bool calc_weight_g(const app_config_t* s, int32_t raw, float* out_g) {
   if (s->hx1_scale == 0.0f) return false;
   *out_g = ((float)raw - (float)s->hx1_offset) / s->hx1_scale;
   return true;
+}
+
+static void push_weight_sample(float w) {
+  const size_t max_samples = sizeof(g_wbuf) / sizeof(g_wbuf[0]);
+  g_wbuf[g_wbuf_i] = (WSample){ millis(), w };
+  g_wbuf_i = (uint8_t)((g_wbuf_i + 1) % max_samples);
+  if (g_wbuf_n < max_samples) g_wbuf_n++;
+}
+
+static float moving_average_calc(void) {
+    if (g_wbuf_n == 0) return filtered_weight; // 데이터가 없으면 1번 필터값 그대로 반환
+
+    float sum = 0.0f;
+    for (uint8_t i = 0; i < g_wbuf_n; i++) {
+        sum += g_wbuf[i].w;
+    }
+    return sum / (float)g_wbuf_n; // 최근 데이터의 평균값 반환
+}
+
+float loadcell_data_get(void) {
+    // ⚠️ 기존의 filtered_weight 대신, 2차 필터까지 끝난 이동 평균 값을 리턴해 줍니다!
+    return moving_average_calc(); 
 }
 
 void HX711_cal_scale(float known_weight_g)
@@ -143,12 +173,7 @@ void HX711_cal_init(uint8_t cal)
 {
     hx711_cal_enable = cal;
 }
-// 필터 설정값 (상황에 맞게 조절)
-#define FILTER_ALPHA   0.60f  // 0.0 ~ 1.0 (낮을수록 부드럽지만 반응이 느려짐)
-#define DEADBAND_LIMIT 0.05f  // 이 값보다 작은 변화는 노이즈로 보고 무시 (단위: g 또는 kg)
 
-static float filtered_weight = 0.0f; // 현재 필터링된 최종 무게값
-#include "math.h"
 /**
  * @brief 로드셀 데이터를 입력받아 필터링을 수행하는 함수
  * @param raw_weight HX711 등에서 막 읽어온 가공되지 않은 무게값
@@ -169,11 +194,7 @@ void loadcell_filter_update(float raw_weight) {
 float loadcell_filter_get(void) {
     return filtered_weight;
 }
-static float clean_weight = 0.0f;
-float loadcell_data_get(void)
-{
-    return clean_weight;
-}
+
 void HX711_Sensing(void)
 {
     app_config_t* app_config = get_app_config();
@@ -208,11 +229,13 @@ void HX711_Sensing(void)
             loadcell_filter_update(w);
             
             // 💡 2. 필터링을 거쳐 나온 깨끗한 최종 무게값을 가져옵니다.
-            clean_weight = loadcell_filter_get();
+            float clean_weight = loadcell_filter_get();
             
+            // 💡 3. 기존 원형 버퍼(g_wbuf)에도 필터링된 값을 저장합니다.
+            push_weight_sample(clean_weight);
             
             // 로그 출력 시 날것의 값(w)과 필터링된 값(clean_weight)을 함께 비교해 보세요.
-            ESP_LOGI(TAG, " Raw: %.2f g | Filtered: %.2f g (raw_bits: %d)\r\n", w, clean_weight, raw);
+           // ESP_LOGI(TAG, " Raw: %.2f g | Filtered: %.2f g (raw_bits: %d)\r\n", w, moving_average_calc(), raw);
         }
     }
 

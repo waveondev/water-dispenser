@@ -82,9 +82,9 @@ void ADC_Sensing(void)
         if (err_ch0 == ESP_OK) {
             if (do_cali_ch0) {
                 adc_cali_raw_to_voltage(cali_ch0_handle, raw_ch0, &mv_ch0);
-                ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d | Voltage: %4d mV (%.2f V)\r\n", raw_ch0, mv_ch0, (float)mv_ch0 / 1000.0f);
+                //ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d | Voltage: %4d mV (%.2f V)\r\n", raw_ch0, mv_ch0, (float)mv_ch0 / 1000.0f);
             } else {
-                ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d (No Calibration)\r\n", raw_ch0);
+                //ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d (No Calibration)\r\n", raw_ch0);
             }
         } else {
             ESP_LOGE(TAG, "Failed to read GPIO 6 (%s)", esp_err_to_name(err_ch0));
