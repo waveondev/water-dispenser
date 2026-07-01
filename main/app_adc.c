@@ -5,6 +5,7 @@
 #include "esp_adc/adc_cali_scheme.h"
 #include "app_adc.h"
 #include "gpio_util.h"
+#include "debug_cli.h"
 static const char *TAG = __FILE__;
 
 

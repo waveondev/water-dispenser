@@ -3,6 +3,10 @@
 #include "opmode_task.h"
 #include "nvs_flash.h"
 #include "esp_system.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+
 static const char *TAG = __FILE__;
 
 app_config_t app_config = 
@@ -14,6 +18,7 @@ app_config_t app_config =
     .gate_way_rssi_th = -55,
     .hx1_scale = 1000.0f,
     .hx1_offset = 0,
+    .case_raw_data = 0,
     .tof_sense_threshold_l = 250,
     .tof_sense_threshold_r = 250,
     .motion_data_time = 1800,
@@ -30,6 +35,23 @@ ble_config_t ble_config =
    .ble_device_name = ""
 };
 
+
+static bool app_save_flag = false;
+static bool wifi_save_flag = false;
+static bool ble_save_flag = false;
+
+void app_nvs_save_set(void)
+{
+    app_save_flag = true;
+}
+void wifi_nvs_save_set(void)
+{
+    wifi_save_flag = true;
+}
+void ble_nvs_save_set(void)
+{
+    ble_save_flag = true;
+}
 void reset_all_nvs_data(void)
 {
     ESP_LOGW("NVS", "NVS 영역을 포맷(초기화)합니다...");
@@ -113,7 +135,7 @@ void load_app_configuration(void)
 }
 
 // 값이 바뀔 때마다 호출해 줄 저장 함수
-void save_app_configuration(void)
+static void save_app_configuration(void)
 {
     write_nvs_blob(APP_NAMESPACE, APP_CONFIGURATION, &app_config, sizeof(app_config_t));
 // 2. 검증을 위해 NVS에서 데이터를 다시 읽어올 임시 그릇 생성
@@ -157,7 +179,7 @@ void load_wifi_configuration(void)
 }
 
 // 값이 바뀔 때마다 호출해 줄 저장 함수
-void save_wifi_configuration(void)
+static void save_wifi_configuration(void)
 {
     write_nvs_blob(APP_NAMESPACE, APP_KEY_WIFI_CONFIG, &wifi_config, sizeof(wifi_config_t));
 // 2. 검증을 위해 NVS에서 데이터를 다시 읽어올 임시 그릇 생성
@@ -201,7 +223,7 @@ void load_ble_configuration(void)
 }
 
 // 값이 바뀔 때마다 호출해 줄 저장 함수
-void save_ble_configuration(void)
+static void save_ble_configuration(void)
 {
     write_nvs_blob(APP_NAMESPACE, APP_KEY_BLE_CONFIG, &ble_config, sizeof(ble_config_t));
 // 2. 검증을 위해 NVS에서 방금 저장한 값을 다시 읽어올 임시 그릇 생성
@@ -225,13 +247,57 @@ void save_ble_configuration(void)
         ESP_LOGE(TAG, "[BLE] 검증을 위해 다시 읽어오는 과정에서 에러 발생 (%s)", esp_err_to_name(err));
     }
 }
+#define FLASH_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
+
+static void flash_task(void *pvParameter)
+{
+    ESP_LOGI(TAG, "Starting flash_task ");
+
+    while (1) {
+        if(app_save_flag)
+        {
+            app_save_flag = false;
+            save_app_configuration();
+        }
+        if(wifi_save_flag)
+        {
+            wifi_save_flag = false;
+            save_wifi_configuration();
+        }
+        if(ble_save_flag)
+        {
+            ble_save_flag = false;
+            save_ble_configuration();
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 
 void NVS_Flash_init(void)
 {
+    TaskHandle_t xHandle = NULL;
+    static uint8_t ucParameterToPass;
+    // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
+    if (xTaskCreatePinnedToCore(
+            flash_task,                  // 태스크 함수
+            "flash_task",                // 태스크 이름
+            FLASH_TASK_STACK_SIZE,       // 스택 크기
+            &ucParameterToPass,        // 파라미터
+            tskIDLE_PRIORITY + 1,      // 우선순위
+            &xHandle,                  // 태스크 핸들
+            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+        ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
+        
+        ESP_LOGE(TAG, "Error creating Button_task on Core 1");
+    }
     load_app_configuration();
     load_wifi_configuration();
     load_ble_configuration();
     dump_all_configurations();
+    
 }
+
+
 
 

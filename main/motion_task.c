@@ -12,7 +12,7 @@ static esp_timer_handle_t motion_timer;
 
 static void motion_timer_callback(void* arg)
 {
-    ESP_LOGI(TAG, "타이머 실행 중...");
+    ESP_LOGI(TAG, "motion_timer_callback 실행 중...");
   
     app_config_t* app_config = get_app_config();
     motion_msg_send(MOTION_START_REQUEST);
@@ -30,16 +30,15 @@ static void motion_timer_callback(void* arg)
     }
 }
 
-void MotionGetTimer(bool status)
+void MotionSetTimer(bool status)
 {
     app_config_t* app_config = get_app_config();
+    esp_timer_stop(motion_timer);
     if(status)
     {
-        esp_timer_stop(motion_timer);
         ESP_ERROR_CHECK(esp_timer_start_periodic(motion_timer, 5000000));
     }
-    else
-        esp_timer_stop(motion_timer);
+
 }
 
 

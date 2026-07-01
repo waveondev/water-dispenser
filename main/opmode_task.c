@@ -19,7 +19,7 @@ static esp_timer_handle_t opmode_timer = NULL;
 static void opmode_timer_callback(void* arg)
 {
     ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
-    save_app_configuration();
+    app_nvs_save_set();
     // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
 }
 
@@ -148,30 +148,37 @@ static void Opmode_task(void *pvParameter)
                 }
                 break;
         }
-        switch(current_opmode)
+        if(ota_enable() || hardware_error_enable())
         {
-            case OP_MODE_SMART:
-            {
-                if(sensor_detected)
-                    start_motor_with_boost(100, 0);
-                else
-                    start_motor_with_boost(0, 0);
-                break;
-            }
-
-            // 타 모드는 기본 구조 유지
-            case OP_MODE_NORMAL:
-                start_motor_with_boost(100, 0);
-                break;
-            case OP_MODE_NIGHT:
-                start_motor_with_boost(40, 0);
-                break;
-            case OP_MODE_SLEEP:
-                start_motor_with_boost(0, 0);
-                break;
-            default:
-                break;
+            start_motor_with_boost(0, 0);
         }
+        else
+        {
+                switch(current_opmode)
+                {
+                    case OP_MODE_SMART:
+                    {
+                        if(sensor_detected || sense_enable())
+                            start_motor_with_boost(100, 0);
+                        else
+                            start_motor_with_boost(0, 0);
+                    }
+                    break;
+                    // 타 모드는 기본 구조 유지
+                    case OP_MODE_NORMAL:
+                        start_motor_with_boost(100, 0);
+                        break;
+                    case OP_MODE_NIGHT:
+                        start_motor_with_boost(90, 0);
+                        break;
+                    case OP_MODE_SLEEP:
+                        start_motor_with_boost(0, 0);
+                        break;
+                    default:
+                        break;
+                }
+        }
+
 
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }

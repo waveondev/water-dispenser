@@ -27,14 +27,14 @@ void Sensor_task(void *pvParameter)
     ESP_LOGI(TAG, "Starting sensor task");
 
     while (1) {
+       // if(loadcell_data_get() >)
         ADC_Sensing();
        // vTaskDelay(300 / portTICK_PERIOD_MS);
         #if 1
         HX711_Sensing();
         #endif
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(150 / portTICK_PERIOD_MS);
         VL53L0X_Sensing();
-        //vTaskDelay(700 / portTICK_PERIOD_MS);
     }
     
 }
@@ -46,7 +46,7 @@ bool sensor_init(void)
     bool ret = false;
     adc_init();
     ret = HX711_init();
-    #if 0
+    #if 1
     if(ret == false)
     {
         ESP_LOGE(TAG, "HX711 Error\r\n");
@@ -54,7 +54,7 @@ bool sensor_init(void)
     }
     #endif
     ret = TOF_VL53L0X_init();
-    #if 0
+    #if 1
     if(ret == false)
     {
         ESP_LOGE(TAG, "TOF Error\r\n");

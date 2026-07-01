@@ -44,6 +44,7 @@
 #include "esp_log.h"
 #include "config_cli.h"
 #include "set_cli.h"
+#include "debug_cli.h"
 const char jbx_pwd_1[16] = "#80860612";
 
 typedef struct xCOMMAND_INPUT_LIST
@@ -91,6 +92,14 @@ static const CLI_Command_Definition_t xStartStopTrace;
 static const CLI_Command_Definition_t xRunTimeStats;
 #endif
 #if 1
+static const CLI_Command_Definition_t xDbgCommand =
+{
+	"dbg",
+	"\033[1;33mdbg\033[0m\r\n  dbg command\r\n",
+	prvDebugformationCommand,
+	-1,
+	DEVEL_MODE
+};
 static const CLI_Command_Definition_t xSetCommand =
 {
 	"set",
@@ -230,8 +239,9 @@ static const CLI_Command_Definition_t* CommandList[] =
 	#endif
 	#if (	configGENERATE_RUN_TIME_STATS == 1 )
 	&xRunTimeStats,
-	&xConfigCommand,
 	#endif
+	&xConfigCommand,
+	&xDbgCommand,
 	&xResetCommand,
 	NULL
 };

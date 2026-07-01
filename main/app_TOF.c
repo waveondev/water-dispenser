@@ -59,8 +59,7 @@ uint16_t moving_average_get_L(void) {
     for (int i = 0; i < FILTER_SIZE; i++) {
         sum += TOF_Buf_L[i];
     }
-    //if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm(raw = %4d)",  (uint16_t)(sum / FILTER_SIZE),tof0_mm);
-    //else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
+
     return (uint16_t)(sum / FILTER_SIZE);
 }
 uint16_t moving_average_get_R(void) {
@@ -68,8 +67,7 @@ uint16_t moving_average_get_R(void) {
     for (int i = 0; i < FILTER_SIZE; i++) {
         sum += TOF_Buf_R[i];
     }
-    //if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", (uint16_t)(sum / FILTER_SIZE),tof1_mm);
-     //   else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
+
     return (uint16_t)(sum / FILTER_SIZE);
 }
 // 💡 내부 헬퍼 함수: 단일 센서 ST C API 초기화 및 아크릴 보정 
@@ -152,6 +150,12 @@ bool VL53L0X_Detect(void)
 
     // ⭐️ 둘 중에 하나라도 조건을 만족(OR 연산)하면 true 반환, 둘 다 아니면 false 반환
     if (condition_tof0 || condition_tof1) {
+        #if 0
+        if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm(raw = %4d)", moving_average_get_L() ,tof0_mm);
+        else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
+        if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", moving_average_get_R(),tof1_mm);
+        else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
+        #endif
         return true;
     } else {
         return false;
@@ -201,12 +205,11 @@ void VL53L0X_Sensing(void)
     // ⭐️ [0.5초마다 터미널에 보정된 센서값 출력] ⭐️
     moving_average_update_l(tof0_mm);
     moving_average_update_r(tof1_mm);
-    moving_average_get_L();
-    moving_average_get_R();
 }
 
 bool TOF_VL53L0X_init(void)
 {
+    #if 0
     // -------------------------------------------------------------
     // 1. I2C 포트 1 초기화 (TOF1용)
     // -------------------------------------------------------------
@@ -218,7 +221,7 @@ bool TOF_VL53L0X_init(void)
         .intr_type = GPIO_INTR_NEGEDGE            // 인터럽트를 쓴다면 하강 엣지, 안 쓰면 DISABLE
     };
     gpio_config(&io_conf_int1);
-
+    #endif
 
     i2c_config_t i2c_bus1_cfg = {
         .mode = I2C_MODE_MASTER,
@@ -237,7 +240,7 @@ bool TOF_VL53L0X_init(void)
     }
 
     vTaskDelay(pdMS_TO_TICKS(500));
-
+#if 0
     // -------------------------------------------------------------
     // 2. I2C 포트 0 초기화 (TOF0용)
     // -------------------------------------------------------------
@@ -249,7 +252,7 @@ bool TOF_VL53L0X_init(void)
         .intr_type = GPIO_INTR_NEGEDGE            // 인터럽트를 쓴다면 하강 엣지, 안 쓰면 DISABLE
     };
     gpio_config(&io_conf_int0);
-
+#endif
     i2c_config_t i2c_bus0_cfg = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = PIN_TOF0_I2C_SDA,

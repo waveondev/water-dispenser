@@ -13,7 +13,7 @@
 #define LEDC_MODE            LEDC_LOW_SPEED_MODE
 #define LEDC_TIMER           LEDC_TIMER_0
 #define LEDC_DUTY_RES        LEDC_TIMER_10_BIT  // 10비트 해상도 (0 ~ 1023)
-#define LEDC_FREQUENCY       (4000)            // 20kHz 설정
+#define LEDC_FREQUENCY       (70000)            // 20kHz 설정
 
 #define LEDC_CH0_MOTOR_IN1   LEDC_CHANNEL_0
 static const char *TAG = __FILE__;
@@ -90,15 +90,16 @@ void set_motor_speed_percent(int percentage)
 // -------------------------------------------------------------
     // [경우 1] 100% 출력: PWM을 끄고 순수 GPIO HIGH로 꽂아버리기
     // -------------------------------------------------------------
+    #if 1
    if (percentage == 100) {
         // 1. ledc_stop으로 타이머를 안전하게 멈춤 (HIGH 상태로)
-        ledc_stop(LEDC_MODE, LEDC_CH0_MOTOR_IN1, 1);
+
 
         // 2. ⭐ 질문자님이 제안하신 안전한 구조체 초기화 방식!
         gpio_config_t io_conf_motor = {
             .pin_bit_mask = (1ULL << MOTOR_IN1_GPIO),
             .mode = GPIO_MODE_OUTPUT,              // 👈 반드시 OUTPUT이어야 합니다!
-            .pull_up_en = GPIO_PULLUP_DISABLE,     // 풀다운/풀업 모두 꺼서 
+            .pull_up_en = GPIO_PULLUP_ENABLE,     // 풀다운/풀업 모두 꺼서 
             .pull_down_en = GPIO_PULLDOWN_DISABLE, // gpio_reset_pin처럼 전압이 툭 떨어지는 걸 방지
             .intr_type = GPIO_INTR_DISABLE
         };
@@ -106,21 +107,32 @@ void set_motor_speed_percent(int percentage)
 
         // 3. 완벽한 3.3V 직선 출력 고정
         gpio_set_level(MOTOR_IN1_GPIO, 1);
-    } 
-    else if (percentage == 0) {
-        ledc_stop(LEDC_MODE, LEDC_CH0_MOTOR_IN1, 0);
+        ledc_stop(LEDC_MODE, LEDC_CH0_MOTOR_IN1, 1);
+        uint32_t duty = (percentage * 1023) / 100;
+        ledc_set_duty(LEDC_MODE, LEDC_CH0_MOTOR_IN1, duty);
+        ledc_update_duty(LEDC_MODE, LEDC_CH0_MOTOR_IN1);
+   }
+    else 
+    #endif
+    if (percentage == 0) {
+        #if 1
+        //ledc_stop(LEDC_MODE, LEDC_CH0_MOTOR_IN1, 0);
         
         gpio_config_t io_conf_motor = {
             .pin_bit_mask = (1ULL << MOTOR_IN1_GPIO),
             .mode = GPIO_MODE_OUTPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
             .pull_down_en = GPIO_PULLDOWN_DISABLE,
             .intr_type = GPIO_INTR_DISABLE
         };
         gpio_config(&io_conf_motor);
         gpio_set_level(MOTOR_IN1_GPIO, 0);
+        #endif
+        ledc_set_duty(LEDC_MODE, LEDC_CH0_MOTOR_IN1, 0);
+        ledc_update_duty(LEDC_MODE, LEDC_CH0_MOTOR_IN1);
     } 
     else {
+        #if 1
         // 1% ~ 99% 구간: 다시 LEDC 기능으로 핀을 연결
         ledc_channel_config_t ledc_ch0 = {
             .speed_mode     = LEDC_MODE,
@@ -132,6 +144,7 @@ void set_motor_speed_percent(int percentage)
             .hpoint         = 0
         };
         ledc_channel_config(&ledc_ch0);
+        #endif
 
         uint32_t duty = (percentage * 1023) / 100;
         ledc_set_duty(LEDC_MODE, LEDC_CH0_MOTOR_IN1, duty);
@@ -163,8 +176,9 @@ static void motor_boost_task(void *pvParameters)
 
     // 1. 🚀 무조건 첫 10초는 100% 초기 부스트 구동
     ESP_LOGI(TAG, "[PUMP] 🚀 100%% 초기 부스트 스타트! (10초 대기)");
+
     set_motor_speed_percent(100);
-    vTaskDelay(pdMS_TO_TICKS(20000)); 
+    vTaskDelay(pdMS_TO_TICKS(2000));    
 
     // 2. 부스트가 끝났으니 목표 속도로 전환
     ESP_LOGI(TAG, "[PUMP] ⏱️ 초기 부스트 완료. 목표 속도 %d%%로 전환", target_speed);

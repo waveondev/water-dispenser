@@ -14,6 +14,7 @@ typedef struct{
     int32_t gate_way_rssi_th;
     float hx1_scale;                 // counts per gram
     int32_t hx1_offset;              // tare offset
+    uint32_t case_raw_data;
     uint32_t tof_sense_threshold_l;
     uint32_t tof_sense_threshold_r;
     uint32_t motion_data_time;
@@ -29,16 +30,18 @@ typedef struct{
 typedef struct{
     uint8_t ble_device_name[BLE_DEVICENAME_LEN];
 }ble_config_t;
-
+void app_nvs_save_set(void);
+void wifi_nvs_save_set(void);
+void ble_nvs_save_set(void);
 app_config_t* get_app_config(void);
 wifi_config_t* get_wifi_config(void);
 ble_config_t* get_ble_config(void);
 void load_app_configuration(void);
-void save_app_configuration(void);
+
 void load_wifi_configuration(void);
-void save_wifi_configuration(void);
+
 void load_ble_configuration(void);
-void save_ble_configuration(void);
+
 void NVS_Flash_init(void);
 void dump_all_configurations(void);
 #endif

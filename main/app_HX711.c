@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "app_config_flash.h"
+#include "app_led.h"
 static const char *TAG = __FILE__;
 // 필터 설정값 (상황에 맞게 조절)
 #define FILTER_ALPHA   0.60f  // 0.0 ~ 1.0 (낮을수록 부드럽지만 반응이 느려짐)
@@ -100,6 +101,11 @@ float loadcell_data_get(void) {
     return moving_average_calc(); 
 }
 
+bool check_weight_condition(void) {
+    float avg_val = moving_average_calc();
+    return (avg_val < 200.0f || avg_val <= -1.0f);
+}
+
 void HX711_cal_scale(float known_weight_g)
 {
     app_config_t* app_config = get_app_config();
@@ -136,7 +142,7 @@ void HX711_cal_scale(float known_weight_g)
             app_config->hx1_scale = (float)raw_diff / known_weight_g;
             
             // 5. 플래시 메모리에 저장 (영구 보존)
-            save_app_configuration();
+            app_nvs_save_set();
             
             ESP_LOGI(TAG, "스케일 설정 완료! 새로운 Scale 값: %.2f", app_config->hx1_scale);
         } else {
@@ -165,8 +171,10 @@ static void HX711_cal_process(void)
         }
         vTaskDelay(500 / portTICK_PERIOD_MS);    
     }
+
+    app_config->case_raw_data = raw + 1000;
     app_config->hx1_offset = count > 0 ? (raw_sum / count) : 0;
-    save_app_configuration();
+    app_nvs_save_set();
      ESP_LOGI(TAG, "Tare offset set to %d\r\n", app_config->hx1_offset);
 }
 void HX711_cal_init(uint8_t cal)
@@ -235,10 +243,19 @@ void HX711_Sensing(void)
             push_weight_sample(clean_weight);
             
             // 로그 출력 시 날것의 값(w)과 필터링된 값(clean_weight)을 함께 비교해 보세요.
-           // ESP_LOGI(TAG, " Raw: %.2f g | Filtered: %.2f g (raw_bits: %d)\r\n", w, moving_average_calc(), raw);
+            ESP_LOGI(TAG, " Raw: %.2f g | Filtered: %.2f g (raw_bits: %d)\r\n", w, moving_average_calc(), raw);
+        }
+        
+        float avg_val = moving_average_calc();
+        if(avg_val < 200.0f || raw < app_config->case_raw_data)
+        {
+            led_bit_enable(HARDWARE_ERR_BIT);
+        }
+        else
+        {
+            led_bit_disable(HARDWARE_ERR_BIT);
         }
     }
-
 }
 
 

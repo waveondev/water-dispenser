@@ -31,6 +31,7 @@
 #include "http_ota.h"
 #include "mqtt_main.h"
 #include "mqtt_parse.h"
+#include "app_led.h"
 TaskHandle_t xOTA_Handle = NULL;
 static uint8_t OTA_Enable = 0;
 #define HASH_LEN 32
@@ -138,6 +139,7 @@ void simple_ota_example_task(void *pvParameter)
     esp_https_ota_config_t ota_config = {
         .http_config = &config,
     };
+    led_bit_enable(OTA_START_BIT);
     ESP_LOGI(TAG, "Attempting to download update from %s", config.url);
     esp_err_t ret = esp_https_ota(&ota_config);
     if (ret == ESP_OK) {
@@ -149,6 +151,7 @@ void simple_ota_example_task(void *pvParameter)
         state = CHARGE_FW_FAIL;
         //MQTT_Send(0,0,NULL,CHARGE_FW_UPDATE_STATE,&state,1);
         OTA_Enable = 0;
+        led_bit_disable(OTA_START_BIT);
         vTaskDelete(xOTA_Handle);
     }
     while (1) {
