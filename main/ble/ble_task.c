@@ -536,9 +536,9 @@ static void ble_tx_processing_task(void *pvParameters)
 
 static void mac_send_timer_callback(void* arg)
 {
-    send_mac();
-
     esp_timer_stop(Mac_sending_timer);
+    send_mac();
+    
 }
 
 void motion_msg_send(uint8_t cmd)

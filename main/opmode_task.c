@@ -18,7 +18,7 @@ static esp_timer_handle_t opmode_timer = NULL;
 // 1초 뒤 타이머가 만료되면 실행될 콜백 함수
 static void opmode_timer_callback(void* arg)
 {
-    ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
+    //ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
     app_nvs_save_set();
     // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
 }
@@ -30,7 +30,7 @@ void Opmode_test_mode(void)
 void Opmode_Set(void)
 {
         app_config_t* app_config = get_app_config();
-        start_motor_with_boost(0,0);
+        //start_motor_with_boost(0,0);
         switch(current_opmode)
         {
             case OP_MODE_NORMAL:
@@ -62,7 +62,7 @@ void Opmode_Set(void)
             esp_timer_stop(opmode_timer);
         }
     // 4. 타이머를 1초(1,000,000 마이크로초)로 다시 시작
-        esp_timer_start_once(opmode_timer, 10000000);
+        esp_timer_start_once(opmode_timer, 5000000);
 
         ESP_LOGI(TAG, "모드 변경됨 -> %d (10초 타이머 시작/리셋)", current_opmode);
     }
@@ -144,7 +144,7 @@ static void Opmode_task(void *pvParameter)
                 if ((int32_t)(smart_timer_target - current_tick) <= 0) 
                 {
                     smart_state = SMART_IDLE; // 완전히 끝내고 대기 상태로 복귀
-                    ESP_LOGI(TAG, "SMART: 3-second off confirmed. Cycle fully finished. %.2f",loadcell_data_get() - start_weight);
+                    ESP_LOGI(TAG, "SMART: 3-second off confirmed. Cycle fully finished. %.2f",start_weight - loadcell_data_get() );
                 }
                 break;
         }
@@ -180,7 +180,7 @@ static void Opmode_task(void *pvParameter)
         }
 
 
-        vTaskDelay(100 / portTICK_PERIOD_MS);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 #else

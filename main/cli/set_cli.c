@@ -4,6 +4,7 @@
 #include "wifi_task.h"
 #include "app_HX711.h"
 #include "opmode_task.h"
+#include "app_config_flash.h"
 void send_mac(void);
 BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
@@ -120,7 +121,10 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 
 				Wifi_Disconnect();
 			}
-
+			else if (!strncmp(ag[1], "facto", 5))
+			{
+				reset_all_nvs_data();
+			}
 		
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;

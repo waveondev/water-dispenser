@@ -30,6 +30,7 @@ typedef struct{
 typedef struct{
     uint8_t ble_device_name[BLE_DEVICENAME_LEN];
 }ble_config_t;
+void reset_all_nvs_data(void);
 void app_nvs_save_set(void);
 void wifi_nvs_save_set(void);
 void ble_nvs_save_set(void);

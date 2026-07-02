@@ -22,11 +22,11 @@ static void motion_timer_callback(void* arg)
     // 3. 변경된 시간으로 타이머를 다시 시작합니다.
     if (app_config->motion_data_time > 0) {
         ESP_ERROR_CHECK(esp_timer_start_periodic(motion_timer, (app_config->motion_data_time) * 1000000ULL));
-        ESP_LOGI(TAG, "모션 타이머 주기 수정 완료: %d초", app_config->motion_data_time);
+       // ESP_LOGI(TAG, "모션 타이머 주기 수정 완료: %d초", app_config->motion_data_time);
     } else {
         // 설정값이 0 이하로 잘못 들어왔을 경우 기본값 30분(1800초) 적용
         ESP_ERROR_CHECK(esp_timer_start_periodic(motion_timer, 1800ULL * 1000000ULL));
-        ESP_LOGI(TAG, "모션 타이머 주기 수정 완료: 기본값 1800초");
+       // ESP_LOGI(TAG, "모션 타이머 주기 수정 완료: 기본값 1800초");
     }
 }
 

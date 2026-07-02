@@ -10,6 +10,7 @@
 #include "esp_timer.h"
 #include "app_config_flash.h"
 #include "app_led.h"
+#include "debug_cli.h"
 static const char *TAG = __FILE__;
 // 필터 설정값 (상황에 맞게 조절)
 #define FILTER_ALPHA   0.60f  // 0.0 ~ 1.0 (낮을수록 부드럽지만 반응이 느려짐)
@@ -29,7 +30,7 @@ typedef struct  { uint32_t t; float w; }WSample;
 static WSample g_wbuf[10];
 static uint8_t g_wbuf_n = 0;
 static uint8_t g_wbuf_i = 0;
-static uint8_t hx711_cal_enable = 0;
+static uint16_t hx711_cal_enable = 0;
 
 static unsigned long millis() {
   return (unsigned long)(esp_timer_get_time() / 1000ULL);
@@ -177,7 +178,7 @@ static void HX711_cal_process(void)
     app_nvs_save_set();
      ESP_LOGI(TAG, "Tare offset set to %d\r\n", app_config->hx1_offset);
 }
-void HX711_cal_init(uint8_t cal)
+void HX711_cal_init(uint16_t cal)
 {
     hx711_cal_enable = cal;
 }
@@ -216,7 +217,7 @@ void HX711_Sensing(void)
       }
       else
       {
-        HX711_cal_scale(550.0f);
+        HX711_cal_scale((float)hx711_cal_enable);
       }
         hx711_cal_enable = 0;
     }
@@ -243,15 +244,21 @@ void HX711_Sensing(void)
             push_weight_sample(clean_weight);
             
             // 로그 출력 시 날것의 값(w)과 필터링된 값(clean_weight)을 함께 비교해 보세요.
-            ESP_LOGI(TAG, " Raw: %.2f g | Filtered: %.2f g (raw_bits: %d)\r\n", w, moving_average_calc(), raw);
+            
         }
         
         float avg_val = moving_average_calc();
+        DBG_Resister_t *DBG_Resister = Debug_Get();
+        if(DBG_Resister->HX711)
+        {
+            ESP_LOGI(TAG, " Raw: %.2f g | Filtered: %.2f g (raw_bits: %d)\r\n", w, moving_average_calc(), raw);
+        }
         if(avg_val < 200.0f || raw < app_config->case_raw_data)
         {
+
             led_bit_enable(HARDWARE_ERR_BIT);
         }
-        else
+        if(hardware_error_enable() && avg_val > 201.0f && raw > app_config->case_raw_data)
         {
             led_bit_disable(HARDWARE_ERR_BIT);
         }

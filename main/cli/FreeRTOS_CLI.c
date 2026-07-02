@@ -526,13 +526,10 @@ char GetData(void)
 #include "esp_log.h"
 void vOutputString(const char* func, uint32_t len, uint8_t* data)
 {
-	char buffer[200];
-	puts((const char*)data);
-
-	//sprintf(buffer,"%s",data);	
-	 //ESP_LOGI(TAG, "%s",buffer);	
-   // for(int i=0;i<len;i++)
-   //     printf("%c",*data++);
+	for(uint32_t i = 0; i < len; i++)
+    {
+        putchar(data[i]); // 혹은 printf("%c", data[i]);
+    }
 }
 /*-----------------------------------------------------------*/
 static BaseType_t prvLoginCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
@@ -984,7 +981,7 @@ static void console_main(void *argument)
 
 	vRegisterDefaultCLICommands(Get_Command_Level());
 	pcOutputString = FreeRTOS_CLIGetOutputBuffer();
-
+	char str_buf[2];
 	for( ;; )
 	{
 		//while( Login_Check_fn(*(uint32_t*)argument) )
@@ -997,8 +994,9 @@ static void console_main(void *argument)
                 }
                 vTaskDelay(CONSOLE_TASK_DELAY_MS(10));			
         }
+		sprintf(str_buf,"%c",cRxedChar);
 		/* Echo the character back. */
-		vOutputString("1", sizeof( cRxedChar ), (uint8_t *)&cRxedChar);
+		vOutputString("1", strlen( str_buf ), (uint8_t *)str_buf);
 
 		if( cRxedChar == '\r' || cRxedChar == '\n' )
 		{

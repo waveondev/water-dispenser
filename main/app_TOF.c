@@ -127,7 +127,7 @@ static bool init_single_vl53l0x(VL53L0X_Dev_t *pDevice, i2c_port_t i2c_port, con
 
     return true;
 }
-
+#include "debug_cli.h"
 // 💡 센서가 정상적으로 응답하는지 체크하는 디텍트 함수
 bool VL53L0X_Detect(void)
 {
@@ -136,18 +136,25 @@ bool VL53L0X_Detect(void)
     app_config_t* app_config = get_app_config();
     // TOF0 조건 체크
     if (g_tof0_ok) {
-        if (tof0_mm > 70 && tof0_mm < app_config->tof_sense_threshold_l) {
+        if (moving_average_get_L() > 60 && moving_average_get_L() < app_config->tof_sense_threshold_l) {
             condition_tof0 = true;
         }
     }
 
     // TOF1 조건 체크
     if (g_tof1_ok) {
-        if (tof1_mm > 70 && tof1_mm < app_config->tof_sense_threshold_r) {
+        if (moving_average_get_R() > 60 && moving_average_get_R() < app_config->tof_sense_threshold_r) {
             condition_tof1 = true;
         }
     }
-
+    DBG_Resister_t *DBG_Resister = Debug_Get();
+    if(DBG_Resister->TOF)
+    {
+        if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm(raw = %4d)", moving_average_get_L() ,tof0_mm);
+        else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
+        if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", moving_average_get_R(),tof1_mm);
+        else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
+    }
     // ⭐️ 둘 중에 하나라도 조건을 만족(OR 연산)하면 true 반환, 둘 다 아니면 false 반환
     if (condition_tof0 || condition_tof1) {
         #if 0
@@ -202,7 +209,7 @@ void VL53L0X_Sensing(void)
             ESP_LOGW(TAG, "TOF1 Range Status Warning: %d", measure_data1.RangeStatus);
         }
     }
-    // ⭐️ [0.5초마다 터미널에 보정된 센서값 출력] ⭐️
+
     moving_average_update_l(tof0_mm);
     moving_average_update_r(tof1_mm);
 }
@@ -239,7 +246,7 @@ bool TOF_VL53L0X_init(void)
         ESP_LOGE(TAG, "Failed to install I2C Port 1");
     }
 
-    vTaskDelay(pdMS_TO_TICKS(500));
+   //vTaskDelay(pdMS_TO_TICKS(500));
 #if 0
     // -------------------------------------------------------------
     // 2. I2C 포트 0 초기화 (TOF0용)
@@ -269,7 +276,7 @@ bool TOF_VL53L0X_init(void)
         ESP_LOGE(TAG, "Failed to install I2C Port 0");
     }
 
-    vTaskDelay(pdMS_TO_TICKS(100));
+    //vTaskDelay(pdMS_TO_TICKS(100));
 
     // -------------------------------------------------------------
     // 3. ⭐️ ST 공식 C API를 이용한 하드웨어 엔진 캘리브레이션 구동 ⭐️

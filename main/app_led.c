@@ -69,7 +69,7 @@ void init_led_strip(void) {
         .max_leds = LED_NUMBERS,
         // ⚠️ v3.x에서는 아래와 같이 멤버명과 상수명이 바뀌었습니다!
         .color_component_format = LED_STRIP_COLOR_COMPONENT_FMT_GRBW, 
-        .led_model = LED_MODEL_WS2812,
+        .led_model = LED_MODEL_SK6812,
     };
 
     // 2. RMT 하드웨어 타이머 설정 (v3.x 최신 규격)
@@ -114,13 +114,17 @@ void set_rgb_led(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
     // SK6812RGBW 칩은 W 소자가 따로 있으므로, 
     // W 값이 들어오면 RGB는 완전히 끄고 순수 W 소자만 켜는 것이 하드웨어 수명과 밝기에 완벽합니다.
     led_strip_set_pixel_rgbw(led_strip, 0, R, G, B, W);
+        vTaskDelay(pdMS_TO_TICKS(10));
     led_strip_set_pixel_rgbw(led_strip, 1, R, G, B, W);
+        vTaskDelay(pdMS_TO_TICKS(10));
     led_strip_set_pixel_rgbw(led_strip, 2, R, G, B, W);
+        vTaskDelay(pdMS_TO_TICKS(10));
     led_strip_set_pixel_rgbw(led_strip, 3, R, G, B, W);
+        vTaskDelay(pdMS_TO_TICKS(10));
 
     // 실제 SK6812 칩들로 32비트 정밀 신호 전송
     led_strip_refresh(led_strip); 
-    vTaskDelay(pdMS_TO_TICKS(5));
+
 }
 
 void app_tof_sensor_poll_100ms(void)
@@ -132,7 +136,6 @@ void app_tof_sensor_poll_100ms(void)
     {
         is_tof_pressing = false;
         tof_match_start_time = 0;
-        set_rgb_led(0, LED_BRIGHTNESS_MAX, 0, 0); 
         led_bit_enable(TOF_DETECT_BIT); 
     } 
     else 
@@ -215,7 +218,12 @@ static void LED_task(void *pvParameter)
                 else
                     toggle_time++;
 
-            }                                       
+            }                  
+            else if (led_status_resister & TOF_DETECT_BIT) {
+                    set_rgb_led(0, LED_BRIGHTNESS_MAX, 0, 0); 
+            }         
+            
+
         }
         // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용
         else {
