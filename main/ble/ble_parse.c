@@ -82,11 +82,12 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
         printf("저장 완료\n");
     }
 }
-
+static uint32_t total_count = 0;
+static uint32_t input_count = 0;
 void BLE_Receive_data(uint8_t* data, uint16_t len)
 {
     Motion_Packet_t* Motion_Packet = (Motion_Packet_t*)data;
-
+    
     printf("[BLE_Receive_data] %d 바이트 데이터 처리 중: ", len);
 
     for(int i = 0; i < len; i++)
@@ -99,9 +100,16 @@ void BLE_Receive_data(uint8_t* data, uint16_t len)
     {   
         case MOTION_START_RESPONSE:
             printf("interval = %d Len = %d",Motion_Packet->motion_req.interval, Motion_Packet->motion_req.total_points);
+            if(Motion_Packet->motion_req.total_points != 0)
+            {
+                    total_count = Motion_Packet->motion_req.total_points + (9-(Motion_Packet->motion_req.total_points%9));
+                    input_count = 0;
+            }
         break;
         case MOTION_DATA:
+            input_count += 9;
             printf("seq = %d\n", Motion_Packet->motion_data.seq);
+
             printf("data0: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_0.bit.type, Motion_Packet->motion_data.pack_data_0.bit.data, Motion_Packet->motion_data.pack_data_0.word);
             printf("data1: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_1.bit.type, Motion_Packet->motion_data.pack_data_1.bit.data, Motion_Packet->motion_data.pack_data_1.word);
             printf("data2: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_2.bit.type, Motion_Packet->motion_data.pack_data_2.bit.data, Motion_Packet->motion_data.pack_data_2.word);
@@ -111,6 +119,8 @@ void BLE_Receive_data(uint8_t* data, uint16_t len)
             printf("data6: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_6.bit.type, Motion_Packet->motion_data.pack_data_6.bit.data, Motion_Packet->motion_data.pack_data_6.word);
             printf("data7: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_7.bit.type, Motion_Packet->motion_data.pack_data_7.bit.data, Motion_Packet->motion_data.pack_data_7.word);
             printf("data8: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_8.bit.type, Motion_Packet->motion_data.pack_data_8.bit.data, Motion_Packet->motion_data.pack_data_8.word);
+            if(input_count == total_count)
+                motion_msg_send(MOTION_DATA_ACK,Motion_Packet->motion_data.seq);
         break;
         default:
             BLE_APP_Command(data,len);

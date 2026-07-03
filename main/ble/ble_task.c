@@ -18,6 +18,9 @@
 #include "app_config_flash.h"
 #include "ble_parse.h"
 #include "motion_task.h"
+#include "ble_tracker_id.h"
+#include "opmode_task.h"
+
 static const char *TAG = __FILE__;
 
 #define DEVICE_NAME "Wave_Peri3"
@@ -43,11 +46,6 @@ static esp_timer_handle_t Mac_sending_timer;
 extern void ble_store_config_init(void);
 static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg);
 
-// 큐로 주고받을 데이터 구조체
-typedef struct {
-    uint16_t len;
-    uint8_t data[128]; 
-} ble_data_msg_t;
 static uint16_t current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool is_phone_connected = false;
 static QueueHandle_t ble_rx_queue = NULL;
@@ -139,15 +137,7 @@ static void ble_spp_server_advertise(void)
         NULL
     );
 }
-void send_mac(void)
-{
-        uint8_t mac[6];
-        uint8_t Str[40];
-        esp_read_mac(mac,ESP_MAC_WIFI_STA);
-        sprintf((char*)Str, "Wifi MAC %02X%02X%02X%02X%02X%02X", 
-        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-        ble_send_data_to_queue((const uint8_t*)Str, strlen((const char*)Str));
-}
+
 void send_motion(void)
 {
     MotionSetTimer(is_phone_connected);
@@ -288,7 +278,6 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         if (svc_uuid != 0x1234) {
             return 0; // 우리가 찾는 0x1234 서비스가 아니면 차단
         }
-
         // -----------------------------------------------------------------
         // 4. 🎉 모든 방어벽 통과! 이제야 안심하고 `dev_list`에 저장/업데이트 진행
         // -----------------------------------------------------------------
@@ -323,18 +312,28 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
                dev_list[idx].rssi);
 
         if (actual_data_len > 0) {
-            printf("HEX  : ");
-            for (int i = 0; i < actual_data_len; i++) {
-                printf("%02X ", actual_data[i]);
-            }
-            printf("\n");
+            char str_dump_buf[64] = {0}; 
+            int buf_idx = 0;
 
-            printf("STR  : ");
+            // 2. 원본 데이터 길이만큼 돌면서 필터링 후 버퍼에 적재
             for (int i = 0; i < actual_data_len; i++) {
+                // ⚠️ 64바이트 버퍼가 가득 차는 것을 방지 (마지막 널 문자를 위해 62번 인덱스까지만 저장)
+                if (buf_idx >= (sizeof(str_dump_buf) - 1)) {
+                    break; 
+                }
+
                 char c = actual_data[i];
-                printf("%c", (c >= 32 && c <= 126) ? c : '.');
+                
+                // 출력 가능한 문자면 그대로 넣고, 아니면 점('.')으로 넣기
+                str_dump_buf[buf_idx] = (c >= 32 && c <= 126) ? c : '.';
+                buf_idx++;
             }
-            printf("\n");
+
+            // 3. 🌟 C언어 문자열의 완성: 맨 끝에 널 문자 강제 삽입 (안전장치)
+            str_dump_buf[buf_idx] = '\0';
+            Tracker_In_ID(str_dump_buf);
+            // 4. 결과 출력 테스트
+            printf("STR  : %s\n", str_dump_buf);
         } else {
             printf("HEX  : 서비스 데이터 페이로드가 비어있음\n");
         }
@@ -537,18 +536,40 @@ static void ble_tx_processing_task(void *pvParameters)
 static void mac_send_timer_callback(void* arg)
 {
     esp_timer_stop(Mac_sending_timer);
-    send_mac();
+    uint8_t mac[6];
+    uint8_t Str[40];
+    esp_read_mac(mac,ESP_MAC_WIFI_STA);
+    sprintf((char*)Str, "Wifi MAC %02X%02X%02X%02X%02X%02X", 
+    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    ble_send_data_to_queue((const uint8_t*)Str, strlen((const char*)Str));
     
 }
 
-void motion_msg_send(uint8_t cmd)
+void motion_msg_send(uint8_t cmd,uint8_t sub_cmd)
 {
     Motion_Packet_t Motion_Packet;
 
     memset(&Motion_Packet,0,sizeof(Motion_Packet));
         
-    Motion_Packet.event_code = cmd;
-    Motion_Packet.motion_res.req_type = 1;
+    switch(cmd)
+    {
+        case MOTION_START_REQUEST:
+            Motion_Packet.event_code = cmd;
+            Motion_Packet.motion_res.req_type = sub_cmd;
+        break;
+        case MOTION_DATA_ACK:
+            Motion_Packet.event_code = cmd;
+            Motion_Packet.motion_ack.ack_seq_no = sub_cmd;
+        break;
+        case OTA_MODE_REQUEST:
+            Motion_Packet.event_code = cmd;
+            Motion_Packet.ota_req.cmd_type = sub_cmd;
+        break;    
+        default : 
+        return;            
+    }
+
+
 
     ble_send_data_to_queue((uint8_t*)&Motion_Packet,sizeof(Motion_Packet));
     // 설정값이 0보다 클 때만 타이머 실행 (안전성 강화)

@@ -15,7 +15,7 @@ static void motion_timer_callback(void* arg)
     ESP_LOGI(TAG, "motion_timer_callback 실행 중...");
   
     app_config_t* app_config = get_app_config();
-    motion_msg_send(MOTION_START_REQUEST);
+    motion_msg_send(MOTION_START_REQUEST,1);
     esp_timer_stop(motion_timer);
 
 

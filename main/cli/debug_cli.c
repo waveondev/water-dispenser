@@ -1,6 +1,6 @@
 #include "debug_cli.h"
 #include "app_config_flash.h"
-
+#include "ble_tracker_id.h"
 DBG_Resister_t DBG_Resister;
 
 
@@ -114,7 +114,12 @@ BaseType_t prvDebugformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			else if (!strncmp(ag[1], "nvs", 3))
 			{
 				dump_all_configurations();
-            }					
+            }			
+			else if (!strncmp(ag[1], "tracker", 7))
+			{
+				dump_tracker_all_devices();
+			}
+					
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

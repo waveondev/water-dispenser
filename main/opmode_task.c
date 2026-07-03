@@ -8,6 +8,7 @@
 #include "app_TOF.h"
 #include "app_led.h"
 #include "app_HX711.h"
+#include "ble_tracker_id.h"
 static QueueHandle_t opModeQueue = NULL;
 
 static const char* TAG = __FILE__;
@@ -69,20 +70,20 @@ void Opmode_Set(void)
 
 }
 
+
+static smart_state_t smart_state = SMART_IDLE;
+smart_state_t Time_ratio_state(void)
+{
+    return smart_state;
+}
+
 #if 1
 static void Opmode_task(void *pvParameter)
 {
     ESP_LOGI(TAG, "Starting Opmode_task");
     
-    // SMART 모드 내부 상태 머신 정의
-    typedef enum {
-        SMART_IDLE,          // 대기 상태 (센서 없음, 모터 Off)
-        SMART_RUN_VERIFY,    // 즉시 구동 후 5초 유지 검증 상태 (모터 On)
-        SMART_RUN_STABLE,    // 5초 검증 통과 후 안정 구동 상태 (모터 On)
-        SMART_STOP_CHECK     // 모터는 껐지만, 3초 동안 계속 센서가 없는지 감시하는 상태 (모터 Off)
-    } smart_state_t;
 
-    static smart_state_t smart_state = SMART_IDLE;
+
     static uint32_t smart_timer_target = 0; // 각 상태별 마감 시한 틱 저장
     float start_weight = 0;
     while (1) {
@@ -144,7 +145,9 @@ static void Opmode_task(void *pvParameter)
                 if ((int32_t)(smart_timer_target - current_tick) <= 0) 
                 {
                     smart_state = SMART_IDLE; // 완전히 끝내고 대기 상태로 복귀
-                    ESP_LOGI(TAG, "SMART: 3-second off confirmed. Cycle fully finished. %.2f",start_weight - loadcell_data_get() );
+                    float diff_weight = start_weight - loadcell_data_get();
+                    Tracker_waterintake_end((uint32_t)(diff_weight*100));
+                    ESP_LOGI(TAG, "SMART: 3-second off confirmed. Cycle fully finished. %.2f",diff_weight );
                 }
                 break;
         }
@@ -180,7 +183,7 @@ static void Opmode_task(void *pvParameter)
         }
 
 
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        vTaskDelay(100 / portTICK_PERIOD_MS);
     }
 }
 #else

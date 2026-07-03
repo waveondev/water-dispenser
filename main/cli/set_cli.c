@@ -5,7 +5,7 @@
 #include "app_HX711.h"
 #include "opmode_task.h"
 #include "app_config_flash.h"
-void send_mac(void);
+
 BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
     const char *pcParameter;
@@ -112,10 +112,6 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
                 Opmode_test_mode();
             }		
-			else if (!strncmp(ag[1], "send", 4))
-			{
-                send_mac();
-            }
 			else if (!strncmp(ag[1], "discon", 6))
 			{
 

@@ -23,6 +23,7 @@ extern void tcp_client(void);
 #include "app_sensor.h"
 #include "app_config_flash.h"
 #include "motion_task.h"
+#include "ble_tracker_id.h"
 void app_main(void)
 {
     esp_err_t ret;
@@ -52,7 +53,7 @@ void app_main(void)
 
     
     opmode_task_init();
-
+    Create_Tracker_Capture_Task();
     ble_task_init();
     MotionTaskInit();
     //charge_init();
