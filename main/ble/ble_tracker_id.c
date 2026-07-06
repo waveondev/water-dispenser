@@ -202,8 +202,8 @@ void vTrackerCaptureTask(void *pvParameters)
     for (;;)
     {
         /*-----------------------------------------------------------------*/
-        /* 🎯 여기에 100ms마다 실행할 캡처 및 처리 로직을 작성하세요.       */
-        /* 예: 센서 데이터 읽기, Tracker 상태 업데이트 등                  */
+        /* 🎯 여기에 100ms마다 실행할 캡처 및 처리 로직을 작성하세요.                  */
+        /* 예: 센서 데이터 읽기, Tracker 상태 업데이트 등                          */
         /*-----------------------------------------------------------------*/
         // printf("[캡처] 데이터를 캡처하는 중...\n"); 
     
@@ -212,13 +212,17 @@ void vTrackerCaptureTask(void *pvParameters)
             {      
                 Tracker_device_time_add(i);
             }
-            if(Tracker_Device[i]->Enable)
-            {
-                Tracker_Device[i]->Disable_Time += 100;
-                if(Tracker_Device[i]->Disable_Time >= 2000)
+
+            // Device Null 체크 추가
+            if (Tracker_Device[i] != NULL){
+                if(Tracker_Device[i]->Enable)
                 {
-                    Tracker_Device_disable(i);
-                }  
+                    Tracker_Device[i]->Disable_Time += 100;
+                    if(Tracker_Device[i]->Disable_Time >= 2000)
+                    {
+                        Tracker_Device_disable(i);
+                    }  
+                }
             }
         }   
 
