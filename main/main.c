@@ -17,6 +17,10 @@
 #include "app_led.h"
 #include "app_adc.h"
 #include "opmode_task.h"
+
+// AWS IoT Provisioning header 추가
+#include "aws_iot_task.h"
+
 extern void tcp_client(void);
 
 #include "esp_vfs_dev.h"
@@ -61,4 +65,7 @@ void app_main(void)
     //mqtt_client_connect()
     //if(wifi_info_get_used())
     wifi_init();
+
+    //[by.jeon] wifi가 연결이 되는 시점에 aws provisioning를 해야 한다.
+    aws_iot_task_init();
 }

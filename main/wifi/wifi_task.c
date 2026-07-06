@@ -372,7 +372,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
 }
 void wifi_init(void)
 {
-s_wifi_event_group = xEventGroupCreate();
+    s_wifi_event_group = xEventGroupCreate();
 
     // 1. TCP/IP 스택 및 기본 이벤트 루프 초기화
     ESP_ERROR_CHECK(esp_netif_init());
