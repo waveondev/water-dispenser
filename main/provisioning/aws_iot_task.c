@@ -12,6 +12,8 @@
 // #include "fleet_provisioning_with_csr_demo.h" 
 
 static const char *TAG = "aws_iot_task";
+extern EventGroupHandle_t s_wifi_event_group;
+static bool is_aws_started = false;
 
 extern int aws_iot_provisioning_main( int argc, char ** argv );
 
@@ -31,7 +33,7 @@ static void aws_iot_main_entry(void *pvParameters)
         portMAX_DELAY         // ⏳ 연결될 때까지 무한정 대기 (인터넷 안 되면 여기서 대기)
     );
 
-    ESP_LOGI("AWS_TASK", "인터넷 연결 확인됨! AWS Fleet Provisioning 프로세스를 시작합니다.");
+    ESP_LOGI(TAG, "인터넷 연결 확인됨! AWS Fleet Provisioning 프로세스를 시작합니다.");
 
     aws_iot_provisioning_main(0, NULL);
 
@@ -46,5 +48,8 @@ static void aws_iot_main_entry(void *pvParameters)
 
 void aws_iot_task_init(void)
 {
-    xTaskCreate(aws_iot_main_entry, "aws_iot_task", 24576, NULL, 5, NULL);
+    if (is_aws_started == false) {
+        xTaskCreate(aws_iot_main_entry, "aws_iot_task", 24576, NULL, 5, NULL);
+        is_aws_started = true;
+    }
 }

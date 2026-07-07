@@ -24,7 +24,7 @@ static const char* TAG = __FILE__;
 #include <esp_https_ota.h>
 
 #include <esp_ota_ops.h>
-// 💡 메인 초기화 부분에 선언해두었던 이벤트 그룹과 비트들을 가져옵니다 (extern 또는 동일 파일 내 선언)
+//메인 초기화 부분에 선언해두었던 이벤트 그룹과 비트들을 가져옵니다 (extern 또는 동일 파일 내 선언)
 EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1

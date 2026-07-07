@@ -31,6 +31,7 @@ idf_component_register(
         esp_netif 
         protocol_examples_common
         esp_https_ota
+        spiffs
 
     PRIV_REQUIRES 
         bt 
@@ -54,7 +55,7 @@ idf_component_register(
         backoffAlgorithm
 )
 
-target_compile_definitions(${COMPONENT_LIB} PRIVATE
-    "-DconfigGENERATE_RUN_TIME_STATS=1"
-    "-DportGET_RUN_TIME_COUNTER_VALUE()=((unsigned_long)esp_timer_get_time())"
-)
+# target_compile_definitions(${COMPONENT_LIB} PRIVATE
+#     "-DconfigGENERATE_RUN_TIME_STATS=1"
+#     "-DportGET_RUN_TIME_COUNTER_VALUE()=((unsigned_long)esp_timer_get_time())"
+# )

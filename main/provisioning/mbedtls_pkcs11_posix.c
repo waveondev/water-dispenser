@@ -513,13 +513,13 @@ static MbedtlsPkcs11Status_t configureMbedtlsFragmentLength( MbedtlsPkcs11Contex
          */
         mbedtlsError = mbedtls_ssl_conf_max_frag_len( &( pMbedtlsPkcs11Context->config ), MBEDTLS_SSL_MAX_FRAG_LEN_4096 );
 
-        if( mbedtlsError != 0 )
-        {
-            LogError( ( "Failed to maximum fragment length extension: mbedTLSError= %s : %s.",
-                        mbedtlsHighLevelCodeOrDefault( mbedtlsError ),
-                        mbedtlsLowLevelCodeOrDefault( mbedtlsError ) ) );
-            returnStatus = MBEDTLS_PKCS11_INTERNAL_ERROR;
-        }
+        // if( mbedtlsError != 0 )
+        // {
+        //     LogError( ( "Failed to maximum fragment length extension: mbedTLSError= %s : %s.",
+        //                 mbedtlsHighLevelCodeOrDefault( mbedtlsError ),
+        //                 mbedtlsLowLevelCodeOrDefault( mbedtlsError ) ) );
+        //     returnStatus = MBEDTLS_PKCS11_INTERNAL_ERROR;
+        // }
     #endif /* ifdef MBEDTLS_SSL_MAX_FRAGMENT_LENGTH */
     return returnStatus;
 }

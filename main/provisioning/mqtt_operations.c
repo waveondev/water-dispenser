@@ -48,6 +48,11 @@
 /* Interface include. */
 #include "mqtt_operations.h"
 
+#ifdef NETWORK_BUFFER_SIZE
+    #undef NETWORK_BUFFER_SIZE
+#endif
+#define NETWORK_BUFFER_SIZE    ( 8192 )
+
 /* MbedTLS transport include. */
 #include "mbedtls_pkcs11_posix.h"
 
