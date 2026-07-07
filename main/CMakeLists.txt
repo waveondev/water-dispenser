@@ -11,7 +11,8 @@ idf_component_register(
     SRCS 
         ${SOURCES} # 이렇게 하면 새로 추가 되는 파일이 자동 인식 된다네요.
     
-    INCLUDE_DIRS 
+    INCLUDE_DIRS
+        "."
         "${CMAKE_CURRENT_LIST_DIR}"
         "${CMAKE_CURRENT_LIST_DIR}/ble"
         "${CMAKE_CURRENT_LIST_DIR}/wifi"
@@ -20,6 +21,7 @@ idf_component_register(
         "${CMAKE_CURRENT_LIST_DIR}/provisioning"
         "${CMAKE_CURRENT_LIST_DIR}/vl53l0x/core/inc"
         "${CMAKE_CURRENT_LIST_DIR}/vl53l0x/platform/inc"
+        "${CMAKE_CURRENT_LIST_DIR}/../components/common/posix_compat"
 
     # 블루투스, OTA, NVS flash에 더해 'driver'(GPIO용)까지 싹 다 명시합니다.
     # 💡 esp_https_ota.h 에러를 해결하기 위해 여기에 명시적으로 등록합니다.
@@ -42,7 +44,14 @@ idf_component_register(
         esp_driver_ledc 
         led_strip 
         esp_adc 
-        coreMQTT # 💡 수동으로 가져왔던 coreMQTT 컴포넌트 의존성도 여기에 안전하게 붙여두었습니다.
+        esp_timer
+        json
+        coreMQTT                                     
+        coreJSON
+        corePKCS11
+        Fleet-Provisioning-for-AWS-IoT-embedded-sdk
+        espressif__cbor
+        backoffAlgorithm
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

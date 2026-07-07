@@ -13,6 +13,8 @@
 
 static const char *TAG = "aws_iot_task";
 
+extern int aws_iot_provisioning_main( int argc, char ** argv );
+
 static void aws_iot_main_entry(void *pvParameters)
 {
     ESP_LOGI(TAG, "AWS IoT 전담 태스크가 시작!");
@@ -31,16 +33,7 @@ static void aws_iot_main_entry(void *pvParameters)
 
     ESP_LOGI("AWS_TASK", "인터넷 연결 확인됨! AWS Fleet Provisioning 프로세스를 시작합니다.");
 
-    /*-----------------------------------------------------------------*/
-    /* 여기에 기존에 성공했던 AWS 데모 코드의 본문 내용을 복사해 넣으세요.  */
-    /* - 임시 인증서로 연결                                           */
-    /* - CSR 생성 및 새 인증서 발급 요청                              */
-    /* - NVS 플래시에 새 인증서 저장                                  */
-    /* - 새 인증서로 본 서버(MQTT) 재접속                              */
-    /*-----------------------------------------------------------------*/
-    
-    // 예시 구동 함수 호출
-    // runFleetProvisioningWithCsrDemo();
+    aws_iot_provisioning_main(0, NULL);
 
     // 태스크가 끝나지 않고 계속 MQTT 메시지를 수신/송신하도록 하거나, 
     // 통신 전담 루프를 돌려야 합니다.

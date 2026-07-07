@@ -1,0 +1,839 @@
+/*
+ * AWS IoT Device SDK for Embedded C 202211.00
+ * Copyright (C) 2020 Amazon.com, Inc. or its affiliates.  All Rights Reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
+
+/*
+ * Demo for showing use of the Fleet Provisioning library to use the Fleet
+ * Provisioning feature of AWS IoT Core for provisioning devices with
+ * credentials. This demo shows how a device can be provisioned with AWS IoT
+ * Core using the Certificate Signing Request workflow of the Fleet
+ * Provisioning feature.
+ *
+ * The Fleet Provisioning library provides macros and helper functions for
+ * assembling MQTT topics strings, and for determining whether an incoming MQTT
+ * message is related to the Fleet Provisioning API of AWS IoT Core. The Fleet
+ * Provisioning library does not depend on any particular MQTT library,
+ * therefore the functionality for MQTT operations is placed in another file
+ * (mqtt_operations.c). This demo uses the coreMQTT library. If needed,
+ * mqtt_operations.c can be modified to replace coreMQTT with another MQTT
+ * library. This demo requires using the AWS IoT Core broker as Fleet
+ * Provisioning is an AWS IoT Core feature.
+ *
+ * This demo provisions a device certificate using the provisioning by claim
+ * workflow with a Certificate Signing Request (CSR). The demo connects to AWS
+ * IoT Core using provided claim credentials (whose certificate needs to be
+ * registered with IoT Core before running this demo), subscribes to the
+ * CreateCertificateFromCsr topics, and obtains a certificate. It then
+ * subscribes to the RegisterThing topics and activates the certificate and
+ * obtains a Thing using the provisioning template. Finally, it reconnects to
+ * AWS IoT Core using the new credentials.
+ */
+
+/* Standard includes. */
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+
+/* POSIX includes. */
+#include <unistd.h>
+#include <errno.h>
+
+/* aws iot config */
+#include "aws_iot_config.h"
+
+/* corePKCS11 includes. */
+#include "core_pkcs11.h"
+#include "core_pkcs11_config.h"
+
+/* AWS IoT Fleet Provisioning Library. */
+#include "fleet_provisioning.h"
+
+/* Demo includes. */
+#include "mqtt_operations.h"
+#include "pkcs11_operations.h"
+#include "fleet_provisioning_serializer.h"
+
+#include "cJSON.h"
+
+#include "nvs_flash.h"  // [NVS 추가] 플래시 메모리 헤더
+#include "nvs.h"        // [NVS 추가] 플래시 메모리 헤더
+
+/**
+ * These configurations are required. Throw compilation error if it is not
+ * defined.
+ */
+#ifndef PROVISIONING_TEMPLATE_NAME
+    #error "Please define PROVISIONING_TEMPLATE_NAME to the template name registered with AWS IoT Core in demo_config.h."
+#endif
+#ifndef CLAIM_CERT_PATH
+    #error "Please define path to claim certificate (CLAIM_CERT_PATH) in demo_config.h."
+#endif
+#ifndef CLAIM_PRIVATE_KEY_PATH
+    #error "Please define path to claim private key (CLAIM_PRIVATE_KEY_PATH) in demo_config.h."
+#endif
+#ifndef DEVICE_SERIAL_NUMBER
+    #error "Please define a serial number (DEVICE_SERIAL_NUMBER) in demo_config.h."
+#endif
+
+/**
+ * @brief The length of #PROVISIONING_TEMPLATE_NAME.
+ */
+#define PROVISIONING_TEMPLATE_NAME_LENGTH    ( ( uint16_t ) ( sizeof( PROVISIONING_TEMPLATE_NAME ) - 1 ) )
+
+/**
+ * @brief The length of #DEVICE_SERIAL_NUMBER.
+ */
+#define DEVICE_SERIAL_NUMBER_LENGTH          ( ( uint16_t ) ( sizeof( DEVICE_SERIAL_NUMBER ) - 1 ) )
+
+/**
+ * @brief Size of AWS IoT Thing name buffer.
+ *
+ * See https://docs.aws.amazon.com/iot/latest/apireference/API_CreateThing.html#iot-CreateThing-request-thingName
+ */
+#define MAX_THING_NAME_LENGTH                128
+
+/**
+ * @brief The maximum number of times to run the loop in this demo.
+ *
+ * @note The demo loop is attempted to re-run only if it fails in an iteration.
+ * Once the demo loop succeeds in an iteration, the demo exits successfully.
+ */
+#ifndef FLEET_PROV_MAX_DEMO_LOOP_COUNT
+    #define FLEET_PROV_MAX_DEMO_LOOP_COUNT    ( 3 )
+#endif
+
+/**
+ * @brief Time in seconds to wait between retries of the demo loop if
+ * demo loop fails.
+ */
+#define DELAY_BETWEEN_DEMO_RETRY_ITERATIONS_SECONDS    ( 5 )
+
+/**
+ * @brief Size of buffer in which to hold the certificate signing request (CSR).
+ */
+#define CSR_BUFFER_LENGTH                              2048
+
+/**
+ * @brief Size of buffer in which to hold the certificate.
+ */
+#define CERT_BUFFER_LENGTH                             2048
+
+/**
+ * @brief Size of buffer in which to hold the certificate id.
+ *
+ * See https://docs.aws.amazon.com/iot/latest/apireference/API_Certificate.html#iot-Type-Certificate-certificateId
+ */
+#define CERT_ID_BUFFER_LENGTH                          64
+
+/**
+ * @brief Size of buffer in which to hold the certificate ownership token.
+ */
+#define OWNERSHIP_TOKEN_BUFFER_LENGTH                  512
+
+/**
+ * @brief Status values of the Fleet Provisioning response.
+ */
+typedef enum
+{
+    ResponseNotReceived,
+    ResponseAccepted,
+    ResponseRejected
+} ResponseStatus_t;
+
+/*-----------------------------------------------------------*/
+
+/**
+ * @brief Status reported from the MQTT publish callback.
+ */
+static ResponseStatus_t responseStatus;
+
+/**
+ * @brief Buffer to hold the provisioned AWS IoT Thing name.
+ */
+static char thingName[ MAX_THING_NAME_LENGTH ];
+
+/**
+ * @brief Length of the AWS IoT Thing name.
+ */
+static size_t thingNameLength;
+
+/**
+ * @brief Buffer to hold responses received from the AWS IoT Fleet Provisioning
+ * APIs. When the MQTT publish callback receives an expected Fleet Provisioning
+ * accepted payload, it copies it into this buffer.
+ */
+static uint8_t payloadBuffer[ NETWORK_BUFFER_SIZE ];
+
+/**
+ * @brief Length of the payload stored in #payloadBuffer. This is set by the
+ * MQTT publish callback when it copies a received payload into #payloadBuffer.
+ */
+static size_t payloadLength;
+
+/*-----------------------------------------------------------*/
+
+/**
+ * @brief Callback to receive the incoming publish messages from the MQTT
+ * broker. Sets responseStatus if an expected CreateCertificateFromCsr or
+ * RegisterThing response is received, and copies the response into
+ * responseBuffer if the response is an accepted one.
+ *
+ * @param[in] pPublishInfo Pointer to publish info of the incoming publish.
+ * @param[in] packetIdentifier Packet identifier of the incoming publish.
+ */
+static void provisioningPublishCallback( MQTTPublishInfo_t * pPublishInfo,
+                                         uint16_t packetIdentifier );
+
+/**
+ * @brief Run the MQTT process loop to get a response.
+ */
+static bool waitForResponse( void );
+
+/**
+ * @brief Subscribe to the CreateCertificateFromCsr accepted and rejected topics.
+ */
+static bool subscribeToCsrResponseTopics( void );
+
+/**
+ * @brief Unsubscribe from the CreateCertificateFromCsr accepted and rejected topics.
+ */
+static bool unsubscribeFromCsrResponseTopics( void );
+
+/**
+ * @brief Subscribe to the RegisterThing accepted and rejected topics.
+ */
+static bool subscribeToRegisterThingResponseTopics( void );
+
+/**
+ * @brief Unsubscribe from the RegisterThing accepted and rejected topics.
+ */
+static bool unsubscribeFromRegisterThingResponseTopics( void );
+
+/*-----------------------------------------------------------*/
+
+/*-----------------------------------------------------------*/
+/* [NVS 추가] 헬퍼 함수: 플래시 메모리에서 등록 상태 읽기 */
+/*-----------------------------------------------------------*/
+/* [NVS 추가] NVS 저장용 네임스페이스 및 키 정의 */
+#define NVS_REG_NAMESPACE                      "iot_storage"
+#define NVS_REG_KEY                            "is_prov_done"
+
+static bool read_nvs_registration_flag(void)
+{
+    nvs_handle_t my_handle;
+    esp_err_t err;
+    uint8_t is_provisioned = 0; // 0 = 미등록, 1 = 등록완료
+
+    err = nvs_open(NVS_REG_NAMESPACE, NVS_READONLY, &my_handle);
+    if (err != ESP_OK) {
+        LogInfo(("NVS namespace not found. Treating as NOT provisioned."));
+        return false; 
+    }
+
+    err = nvs_get_u8(my_handle, NVS_REG_KEY, &is_provisioned);
+    nvs_close(my_handle);
+
+    if (err == ESP_OK && is_provisioned == 1) {
+        return true;
+    }
+    return false;
+}
+
+/*-----------------------------------------------------------*/
+/* [NVS 추가] 헬퍼 함수: 플래시 메모리에 등록 완료 상태 쓰기 */
+/*-----------------------------------------------------------*/
+static void write_nvs_registration_flag(bool done)
+{
+    nvs_handle_t my_handle;
+    esp_err_t err;
+    uint8_t is_provisioned = done ? 1 : 0;
+
+    err = nvs_open(NVS_REG_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        LogError(("Failed to open NVS for writing."));
+        return;
+    }
+
+    err = nvs_set_u8(my_handle, NVS_REG_KEY, is_provisioned);
+    if (err == ESP_OK) {
+        nvs_commit(my_handle);
+        LogInfo(("Successfully saved Provisioning Flag to NVS."));
+    }
+    nvs_close(my_handle);
+}
+
+/*-----------------------------------------------------------*/
+
+static void provisioningPublishCallback( MQTTPublishInfo_t * pPublishInfo,
+                                         uint16_t packetIdentifier )
+{
+    FleetProvisioningStatus_t status;
+    FleetProvisioningTopic_t api;
+    const char * cborDump;
+
+    /* Silence compiler warnings about unused variables. */
+    ( void ) packetIdentifier;
+
+    status = FleetProvisioning_MatchTopic( pPublishInfo->pTopicName,
+                                           pPublishInfo->topicNameLength, &api );
+
+    if( status != FleetProvisioningSuccess )
+    {
+        // LogWarn( ( "Unexpected publish message received. Topic: %.*s.",
+        //            ( int ) pPublishInfo->topicNameLength,
+        //            ( const char * ) pPublishInfo->pTopicName ) );
+
+        /* ========================================================== */
+        /* [추가] 일반 토픽 수신 시 내용을 터미널에 예쁘게 출력합니다 */
+        /* ========================================================== */
+        LogInfo( ( "[수신 테스트] 서버로부터 메시지가 도착했습니다!" ) );
+        LogInfo( ( "▶ 토픽: %.*s", ( int ) pPublishInfo->topicNameLength, pPublishInfo->pTopicName ) );
+        LogInfo( ( "▶ 내용: %.*s", ( int ) pPublishInfo->payloadLength, ( const char * ) pPublishInfo->pPayload ) );
+        /* ========================================================== */
+    }
+    else
+    {
+        if( api == FleetProvCborCreateCertFromCsrAccepted )
+        {
+            LogInfo( ( "Received accepted response from Fleet Provisioning CreateCertificateFromCsr API." ) );
+
+            cborDump = getStringFromCbor( ( const uint8_t * ) pPublishInfo->pPayload, pPublishInfo->payloadLength );
+            LogDebug( ( "Payload: %s", cborDump ) );
+            free( ( void * ) cborDump );
+
+            responseStatus = ResponseAccepted;
+
+            /* Copy the payload from the MQTT library's buffer to #payloadBuffer. */
+            ( void ) memcpy( ( void * ) payloadBuffer,
+                             ( const void * ) pPublishInfo->pPayload,
+                             ( size_t ) pPublishInfo->payloadLength );
+
+            payloadLength = pPublishInfo->payloadLength;
+        }
+        else if( api == FleetProvCborCreateCertFromCsrRejected )
+        {
+            LogError( ( "Received rejected response from Fleet Provisioning CreateCertificateFromCsr API." ) );
+
+            cborDump = getStringFromCbor( ( const uint8_t * ) pPublishInfo->pPayload, pPublishInfo->payloadLength );
+            LogError( ( "Payload: %s", cborDump ) );
+            free( ( void * ) cborDump );
+
+            responseStatus = ResponseRejected;
+        }
+        else if( api == FleetProvCborRegisterThingAccepted )
+        {
+            LogInfo( ( "Received accepted response from Fleet Provisioning RegisterThing API." ) );
+
+            cborDump = getStringFromCbor( ( const uint8_t * ) pPublishInfo->pPayload, pPublishInfo->payloadLength );
+            LogDebug( ( "Payload: %s", cborDump ) );
+            free( ( void * ) cborDump );
+
+            responseStatus = ResponseAccepted;
+
+            /* Copy the payload from the MQTT library's buffer to #payloadBuffer. */
+            ( void ) memcpy( ( void * ) payloadBuffer,
+                             ( const void * ) pPublishInfo->pPayload,
+                             ( size_t ) pPublishInfo->payloadLength );
+
+            payloadLength = pPublishInfo->payloadLength;
+        }
+        else if( api == FleetProvCborRegisterThingRejected )
+        {
+            LogError( ( "Received rejected response from Fleet Provisioning RegisterThing API." ) );
+
+            cborDump = getStringFromCbor( ( const uint8_t * ) pPublishInfo->pPayload, pPublishInfo->payloadLength );
+            LogError( ( "Payload: %s", cborDump ) );
+            free( ( void * ) cborDump );
+
+            responseStatus = ResponseRejected;
+        }
+        else
+        {
+            LogError( ( "Received message on unexpected Fleet Provisioning topic. Topic: %.*s.",
+                        ( int ) pPublishInfo->topicNameLength,
+                        ( const char * ) pPublishInfo->pTopicName ) );
+        }
+    }
+}
+/*-----------------------------------------------------------*/
+
+static bool waitForResponse( void )
+{
+    bool status = false;
+
+    responseStatus = ResponseNotReceived;
+
+    /* responseStatus is updated from the MQTT publish callback. */
+    ( void ) ProcessLoopWithTimeout();
+
+    if( responseStatus == ResponseNotReceived )
+    {
+        LogError( ( "Timed out waiting for response." ) );
+    }
+
+    if( responseStatus == ResponseAccepted )
+    {
+        status = true;
+    }
+
+    return status;
+}
+/*-----------------------------------------------------------*/
+
+static bool subscribeToCsrResponseTopics( void )
+{
+    bool status;
+
+    status = SubscribeToTopic( FP_CBOR_CREATE_CERT_ACCEPTED_TOPIC,
+                               FP_CBOR_CREATE_CERT_ACCEPTED_LENGTH );
+
+    if( status == false )
+    {
+        LogError( ( "Failed to subscribe to fleet provisioning topic: %.*s.",
+                    FP_CBOR_CREATE_CERT_ACCEPTED_LENGTH,
+                    FP_CBOR_CREATE_CERT_ACCEPTED_TOPIC ) );
+    }
+
+    if( status == true )
+    {
+        status = SubscribeToTopic( FP_CBOR_CREATE_CERT_REJECTED_TOPIC,
+                                   FP_CBOR_CREATE_CERT_REJECTED_LENGTH );
+
+        if( status == false )
+        {
+            LogError( ( "Failed to subscribe to fleet provisioning topic: %.*s.",
+                        FP_CBOR_CREATE_CERT_REJECTED_LENGTH,
+                        FP_CBOR_CREATE_CERT_REJECTED_TOPIC ) );
+        }
+    }
+
+    return status;
+}
+/*-----------------------------------------------------------*/
+
+static bool unsubscribeFromCsrResponseTopics( void )
+{
+    bool status;
+
+    status = UnsubscribeFromTopic( FP_CBOR_CREATE_CERT_ACCEPTED_TOPIC,
+                                   FP_CBOR_CREATE_CERT_ACCEPTED_LENGTH );
+
+    if( status == false )
+    {
+        LogError( ( "Failed to unsubscribe from fleet provisioning topic: %.*s.",
+                    FP_CBOR_CREATE_CERT_ACCEPTED_LENGTH,
+                    FP_CBOR_CREATE_CERT_ACCEPTED_TOPIC ) );
+    }
+
+    if( status == true )
+    {
+        status = UnsubscribeFromTopic( FP_CBOR_CREATE_CERT_REJECTED_TOPIC,
+                                       FP_CBOR_CREATE_CERT_REJECTED_LENGTH );
+
+        if( status == false )
+        {
+            LogError( ( "Failed to unsubscribe from fleet provisioning topic: %.*s.",
+                        FP_CBOR_CREATE_CERT_REJECTED_LENGTH,
+                        FP_CBOR_CREATE_CERT_REJECTED_TOPIC ) );
+        }
+    }
+
+    return status;
+}
+/*-----------------------------------------------------------*/
+
+static bool subscribeToRegisterThingResponseTopics( void )
+{
+    bool status;
+
+    status = SubscribeToTopic( FP_CBOR_REGISTER_ACCEPTED_TOPIC( PROVISIONING_TEMPLATE_NAME ),
+                               FP_CBOR_REGISTER_ACCEPTED_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ) );
+
+    if( status == false )
+    {
+        LogError( ( "Failed to subscribe to fleet provisioning topic: %.*s.",
+                    FP_CBOR_REGISTER_ACCEPTED_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ),
+                    FP_CBOR_REGISTER_ACCEPTED_TOPIC( PROVISIONING_TEMPLATE_NAME ) ) );
+    }
+
+    if( status == true )
+    {
+        status = SubscribeToTopic( FP_CBOR_REGISTER_REJECTED_TOPIC( PROVISIONING_TEMPLATE_NAME ),
+                                   FP_CBOR_REGISTER_REJECTED_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ) );
+
+        if( status == false )
+        {
+            LogError( ( "Failed to subscribe to fleet provisioning topic: %.*s.",
+                        FP_CBOR_REGISTER_REJECTED_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ),
+                        FP_CBOR_REGISTER_REJECTED_TOPIC( PROVISIONING_TEMPLATE_NAME ) ) );
+        }
+    }
+
+    return status;
+}
+/*-----------------------------------------------------------*/
+
+static bool unsubscribeFromRegisterThingResponseTopics( void )
+{
+    bool status;
+
+    status = UnsubscribeFromTopic( FP_CBOR_REGISTER_ACCEPTED_TOPIC( PROVISIONING_TEMPLATE_NAME ),
+                                   FP_CBOR_REGISTER_ACCEPTED_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ) );
+
+    if( status == false )
+    {
+        LogError( ( "Failed to unsubscribe from fleet provisioning topic: %.*s.",
+                    FP_CBOR_REGISTER_ACCEPTED_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ),
+                    FP_CBOR_REGISTER_ACCEPTED_TOPIC( PROVISIONING_TEMPLATE_NAME ) ) );
+    }
+
+    if( status == true )
+    {
+        status = UnsubscribeFromTopic( FP_CBOR_REGISTER_REJECTED_TOPIC( PROVISIONING_TEMPLATE_NAME ),
+                                       FP_CBOR_REGISTER_REJECTED_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ) );
+
+        if( status == false )
+        {
+            LogError( ( "Failed to unsubscribe from fleet provisioning topic: %.*s.",
+                        FP_CBOR_REGISTER_REJECTED_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ),
+                        FP_CBOR_REGISTER_REJECTED_TOPIC( PROVISIONING_TEMPLATE_NAME ) ) );
+        }
+    }
+
+    return status;
+}
+/*-----------------------------------------------------------*/
+
+/* This example uses a single application task, which shows that how to use
+ * the Fleet Provisioning library to generate and validate AWS IoT Fleet
+ * Provisioning MQTT topics, and use the coreMQTT library to communicate with
+ * the AWS IoT Fleet Provisioning APIs. */
+int aws_iot_provisioning_main( int argc,
+          char ** argv )
+{
+    bool status = false;
+    /* Buffer for holding the CSR. */
+    char csr[ CSR_BUFFER_LENGTH ] = { 0 };
+    size_t csrLength = 0;
+    /* Buffer for holding received certificate until it is saved. */
+    char certificate[ CERT_BUFFER_LENGTH ];
+    size_t certificateLength;
+    /* Buffer for holding the certificate ID. */
+    char certificateId[ CERT_ID_BUFFER_LENGTH ];
+    size_t certificateIdLength;
+    /* Buffer for holding the certificate ownership token. */
+    char ownershipToken[ OWNERSHIP_TOKEN_BUFFER_LENGTH ];
+    size_t ownershipTokenLength;
+    bool connectionEstablished = false;
+    CK_SESSION_HANDLE p11Session;
+    int demoRunCount = 0;
+    CK_RV pkcs11ret = CKR_OK;
+
+    /* Silence compiler warnings about unused variables. */
+    ( void ) argc;
+    ( void ) argv;
+
+    do
+    {
+        /* Initialize the buffer lengths to their max lengths. */
+        certificateLength = CERT_BUFFER_LENGTH;
+        certificateIdLength = CERT_ID_BUFFER_LENGTH;
+        ownershipTokenLength = OWNERSHIP_TOKEN_BUFFER_LENGTH;
+
+        /* Initialize the PKCS #11 module */
+        pkcs11ret = xInitializePkcs11Session( &p11Session );
+
+        if( pkcs11ret != CKR_OK )
+        {
+            LogError( ( "Failed to initialize PKCS #11." ) );
+            status = false;
+            break;
+        }
+
+        /* ================================================================= */
+        /* [NVS 흐름 제어] 플래시 메모리에서 현재 기기의 등록 여부를 체크합니다. */
+        /* ================================================================= */
+        bool is_already_registered = read_nvs_registration_flag();
+
+        if ( is_already_registered == false )
+        {
+            LogInfo( ( "[최초 실행] 기기가 등록되지 않았습니다. 프로비저닝 시동!" ) );
+
+            /* Insert the claim credentials into the PKCS #11 module */
+            status = loadClaimCredentials( p11Session,
+                                           CLAIM_CERT_PATH,
+                                           pkcs11configLABEL_CLAIM_CERTIFICATE,
+                                           CLAIM_PRIVATE_KEY_PATH,
+                                           pkcs11configLABEL_CLAIM_PRIVATE_KEY );
+
+            if( status == false )
+            {
+                LogError( ( "Failed to provision PKCS #11 with claim credentials." ) );
+            }
+        }else{
+            /* ================================================================= */
+            /* [NVS 흐름 제어] 이미 등록된 상태라면 위의 복잡한 과정을 즉시 통과합니다. */
+            /* ================================================================= */
+            LogInfo( ( "[기등록 기기] NVS에서 기기 인증 기록을 확인했습니다. 프로비저닝 패스!" ) );
+            status = true;
+        }
+
+        /**** Connect to AWS IoT Core with provisioning claim credentials *****/
+
+        /* We first use the claim credentials to connect to the broker. These
+         * credentials should allow use of the RegisterThing API and one of the
+         * CreateCertificatefromCsr or CreateKeysAndCertificate.
+         * In this demo we use CreateCertificatefromCsr. */
+
+        if( status == true )
+        {
+            /* Attempts to connect to the AWS IoT MQTT broker. If the
+             * connection fails, retries after a timeout. Timeout value will
+             * exponentially increase until maximum attempts are reached. */
+            LogInfo( ( "Establishing MQTT session with claim certificate..." ) );
+            status = EstablishMqttSession( provisioningPublishCallback,
+                                           p11Session,
+                                           pkcs11configLABEL_CLAIM_CERTIFICATE,
+                                           pkcs11configLABEL_CLAIM_PRIVATE_KEY );
+
+            if( status == true )
+            {
+                LogInfo( ( "Establishing MQTT session with claim certificate..." ) );
+                status = EstablishMqttSession( provisioningPublishCallback, p11Session, pkcs11configLABEL_CLAIM_CERTIFICATE, pkcs11configLABEL_CLAIM_PRIVATE_KEY );
+                if( status == true ) connectionEstablished = true;
+            }
+
+            /**** Call the CreateCertificateFromCsr API ****/
+            if( status == true ) status = subscribeToCsrResponseTopics();
+            if( status == true ) status = generateKeyAndCsr( p11Session, pkcs11configLABEL_DEVICE_PRIVATE_KEY_FOR_TLS, pkcs11configLABEL_DEVICE_PUBLIC_KEY_FOR_TLS, csr, CSR_BUFFER_LENGTH, &csrLength );
+            if( status == true ) status = generateCsrRequest( payloadBuffer, NETWORK_BUFFER_SIZE, csr, csrLength, &payloadLength );
+            if( status == true ) status = PublishToTopic( FP_CBOR_CREATE_CERT_PUBLISH_TOPIC, FP_CBOR_CREATE_CERT_PUBLISH_LENGTH, ( char * ) payloadBuffer, payloadLength );
+            if( status == true ) status = waitForResponse();
+            if( status == true ) {
+                status = parseCsrResponse( payloadBuffer, payloadLength, certificate, &certificateLength, certificateId, &certificateIdLength, ownershipToken, &ownershipTokenLength );
+                if( status == true ) LogInfo( ( "Received certificate with Id: %.*s", ( int ) certificateIdLength, certificateId ) );
+            }
+            if( status == true ) status = loadCertificate( p11Session, certificate, pkcs11configLABEL_DEVICE_CERTIFICATE_FOR_TLS, certificateLength );
+            if( status == true ) unsubscribeFromCsrResponseTopics();
+
+            /**** Call the RegisterThing API ****/
+            if( status == true ) status = generateRegisterThingRequest( payloadBuffer, NETWORK_BUFFER_SIZE, ownershipToken, ownershipTokenLength, DEVICE_SERIAL_NUMBER, DEVICE_SERIAL_NUMBER_LENGTH, &payloadLength );
+            if( status == true ) status = subscribeToRegisterThingResponseTopics();
+            if( status == true ) status = PublishToTopic( FP_CBOR_REGISTER_PUBLISH_TOPIC( PROVISIONING_TEMPLATE_NAME ), FP_CBOR_REGISTER_PUBLISH_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ), ( char * ) payloadBuffer, payloadLength );
+            if( status == true ) status = waitForResponse();
+            if( status == true ) {
+                thingNameLength = MAX_THING_NAME_LENGTH;
+                status = parseRegisterThingResponse( payloadBuffer, payloadLength, thingName, &thingNameLength );
+                if( status == true ) LogInfo( ( "Received AWS IoT Thing name: %.*s", ( int ) thingNameLength, thingName ) );
+            }
+            if( status == true ) unsubscribeFromRegisterThingResponseTopics();
+
+            /* Claim 임시 세션 해제 */
+            if( connectionEstablished == true )
+            {
+                DisconnectMqttSession();
+                connectionEstablished = false;
+            }
+
+            /* 🚨 [NVS 핵심] 모든 프로비저닝이 완벽히 끝나면 NVS에 등록 성공(true)을 영구 기록합니다. */
+            if ( status == true )
+            {
+                write_nvs_registration_flag( true );
+                LogInfo( ( "기기 등록 성공! 다음 부팅부터는 이 과정을 건너뜁니다." ) );
+
+                /* ========================================================== */
+                /* [해결책] 새 인증서로 재접속하기 전에 AWS 동기화 시간을 벌어줍니다. */
+                /* ========================================================== */
+                LogInfo( ( "AWS 측 인증서 활성화 및 동기화를 위해 3초 대기합니다..." ) );
+                LogInfo( ( "재접속 직전 힙 메모리 여유: %u bytes", esp_get_free_heap_size() ) );
+                
+                vTaskDelay(pdMS_TO_TICKS(3000)); /* 3초 대기 */
+            }
+        }
+
+    
+
+        /**** Connect to AWS IoT Core with provisioned certificate ************/
+
+        if( status == true )
+        {
+            LogInfo( ( "Establishing MQTT session with provisioned certificate..." ) );
+            status = EstablishMqttSession( provisioningPublishCallback,
+                                           p11Session,
+                                           pkcs11configLABEL_DEVICE_CERTIFICATE_FOR_TLS,
+                                           pkcs11configLABEL_DEVICE_PRIVATE_KEY_FOR_TLS );
+
+            if( status != true )
+            {
+                LogError( ( "Failed to establish MQTT session with provisioned "
+                            "credentials. Verify on your AWS account that the "
+                            "new certificate is active and has an attached IoT "
+                            "Policy that allows the \"iot:Connect\" action." ) );
+            }
+            else
+            {
+                LogInfo( ( "Sucessfully established connection with provisioned credentials." ) );
+                connectionEstablished = true;
+
+                /* ========================================================== */
+                /* [추가] AWS IoT Core 구독(Subscribe) & 발행(Publish) 동시 테스트 */
+                /* ========================================================== */
+                //const char * subTopic = "$aws/things/W100_28372F9C283C/shadow/update/accepted";
+                //const char * pubTopic = "$aws/things/W100_28372F9C283C/shadow/update"; 
+                const char * subTopic = "things/w100/W100_28372F9C283C/result/registration";
+                // 💡 토픽도 registration에 맞게 수정하실 수 있도록 남겨두었습니다.
+                const char * pubTopic = "things/w100/W100_28372F9C283C/registration"; 
+
+                LogInfo( ( "=== 1. MQTT 구독(Subscribe)을 먼저 세팅합니다 ===" ) );
+                bool subStatus = SubscribeToTopic( subTopic, strlen( subTopic ) );
+
+                if( subStatus == true )
+                {
+                    LogInfo( ( "구독 성공! 이제 서버의 명령을 받을 준비가 되었습니다." ) );
+                }
+
+                LogInfo( ( "=== 2. MQTT 퍼블리시(Publish) 루프를 시작합니다 ===" ) );
+                for( int i = 1; i <= 1; i++ ) /* 테스트를 위해 20번(약 40초)으로 늘렸습니다 */
+                {
+                    /* --------------------------------------------------------- */
+                    /* 백엔드 규격에 맞춘 JSON 데이터 조립 (cJSON 적용) */
+                    /* --------------------------------------------------------- */
+                    cJSON *root = cJSON_CreateObject();
+                    /* Root 레벨 필수 필드 추가 */
+                    cJSON_AddStringToObject(root, "id", "123e4567-e89b-12d3-a456-426614174000"); /* 실제로는 uuid 생성 함수 사용 */
+                    cJSON_AddNumberToObject(root, "timestamp", 1747396800); /* 현재 시간 unix epoch seconds */
+
+                    cJSON_AddStringToObject(root, "event_type", "registration");
+                    cJSON_AddStringToObject(root, "env", "alpha");
+                    
+                    /* 🚨 주의: 'w100'이 아니라 'water_dispenser'가 스펙입니다! */
+                    cJSON_AddStringToObject(root, "device_type", "w100"); 
+                    cJSON_AddStringToObject(root, "firmware", "v1.0.0");
+                    
+                    /* 타임스탬프 필수 (현재 시간 epoch sec). 테스트용 하드코딩 시 1747396800 등 활용 */
+                    //cJSON_AddNumberToObject(root, "timestamp", 1747396800); 
+
+                    cJSON *data_obj = cJSON_CreateObject();
+                    cJSON_AddStringToObject(data_obj, "mac", "28372F9C283C");
+                    cJSON_AddStringToObject(data_obj, "hw_rev", "r3.1");
+                    
+                    /* 🚨 필수 추가 필드: registration에는 home_id와 paired_at이 꼭 필요합니다 */
+                    cJSON_AddStringToObject(data_obj, "home_id", "home_test_01");
+                    cJSON_AddNumberToObject(data_obj, "paired_at", 1747396800);
+                    
+                    cJSON_AddItemToObject(root, "data", data_obj);
+
+                    /* 공백 없이 압축된 JSON 문자열 생성 */
+                    char *payloadBuf = cJSON_PrintUnformatted(root);
+                    
+                    if (payloadBuf != NULL) 
+                    {
+                        /* 데이터 송신 (Publish) */
+                        bool pubStatus = PublishToTopic( pubTopic, strlen( pubTopic ), payloadBuf, strlen( payloadBuf ) );
+                        
+                        if( pubStatus == true )
+                        {
+                            LogInfo( ( "🚀 퍼블리시 성공! [전송 카운트: %d]", i ) );
+                            LogInfo( ( "보낸 페이로드: %s", payloadBuf ) );
+                        }
+
+                        /* 🚨 중요: 문자열 변환에 사용된 동적 메모리 해제 */
+                        cJSON_free(payloadBuf);
+                    }
+                    
+                    /* 🚨 중요: JSON 객체 껍데기 메모리 통째로 해제 */
+                    cJSON_Delete(root);
+                    /* --------------------------------------------------------- */
+
+                    /* ========================================================== */
+                    /* [무한 청취 루프] 평생 끝나지 않는 실시간 서버 이벤트 대기 모드 */
+                    /* ========================================================== */
+                    LogInfo( ( "=== 3. MQTT 무한 청취 모드 돌입 (서버 명령 실시간 수신) ===" ) );
+                    
+                    while (1)
+                    {
+                        /* 백그라운드에서 지속적으로 수신 버퍼를 감시하며 콜백 함수를 유도합니다 */
+                        ProcessLoopWithTimeout(); 
+                        
+                        /* FreeRTOS의 다른 태스크(하드웨어 제어 등)가 원활히 돌 수 있도록 양보합니다 */
+                        vTaskDelay(pdMS_TO_TICKS(100)); 
+                    }
+                    /* ========================================================== */
+
+                    // /* 💡 핵심: 단순 sleep() 대신, 네트워크 수신 버퍼를 확인하며 대기해야 서버 메시지를 받을 수 있습니다. */
+                    // for( int wait = 0; wait < 20; wait++ )
+                    // {
+                    //     /* 서버로부터 온 메시지가 있는지 확인하고, 있으면 콜백 함수를 즉시 실행합니다 */
+                    //     ProcessLoopWithTimeout(); 
+                    //     usleep( 500000 ); /* 0.5초 대기 (총 4번 반복 = 2초 주기) */
+                    // }
+                }
+                LogInfo( ( "=== 동시 테스트 종료 ===" ) );
+                /* ========================================================== */
+            }
+        }
+
+        /**** Finish **********************************************************/
+
+        if( connectionEstablished == true )
+        {
+            /* Close the connection. */
+            DisconnectMqttSession();
+            connectionEstablished = false;
+        }
+
+        pkcs11CloseSession( p11Session );
+
+        /**** Retry in case of failure ****************************************/
+
+        /* Increment the demo run count. */
+        demoRunCount++;
+
+        if( status == true )
+        {
+            LogInfo( ( "Demo iteration %d is successful.", demoRunCount ) );
+        }
+        /* Attempt to retry a failed iteration of demo for up to #FLEET_PROV_MAX_DEMO_LOOP_COUNT times. */
+        else if( demoRunCount < FLEET_PROV_MAX_DEMO_LOOP_COUNT )
+        {
+            LogWarn( ( "Demo iteration %d failed. Retrying...", demoRunCount ) );
+            sleep( DELAY_BETWEEN_DEMO_RETRY_ITERATIONS_SECONDS );
+        }
+        /* Failed all #FLEET_PROV_MAX_DEMO_LOOP_COUNT demo iterations. */
+        else
+        {
+            LogError( ( "All %d demo iterations failed.", FLEET_PROV_MAX_DEMO_LOOP_COUNT ) );
+            break;
+        }
+    } while( status != true );
+
+    /* Log demo success. */
+    if( status == true )
+    {
+        LogInfo( ( "Demo completed successfully." ) );
+    }
+
+    return ( status == true ) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+/*-----------------------------------------------------------*/

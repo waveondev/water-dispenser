@@ -23,7 +23,7 @@
 
 static const char *TAG = __FILE__;
 
-#define DEVICE_NAME "Wave_Peri3"
+#define DEVICE_NAME "Wave_Test3"
 #define MY_UUID128_BASE(XX, YY) \
     BLE_UUID128_DECLARE(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, \
                         0xF3, 0x93, 0xB5, 0xA3, YY, XX, 0x40, 0x6E)

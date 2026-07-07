@@ -28,6 +28,7 @@ extern void tcp_client(void);
 #include "app_config_flash.h"
 #include "motion_task.h"
 #include "ble_tracker_id.h"
+
 void app_main(void)
 {
     esp_err_t ret;
@@ -47,6 +48,19 @@ void app_main(void)
 #endif
     NVS_Flash_init();
 
+    // =========================================================================
+    // 1️NVS (비휘발성 플래시 메모리) 초기화
+    // AWS 프로비저닝 과정에서 발급받은 "고유 인증서"와 "개인키"를 
+    // 기기의 플래시 메모리에 영구 저장하려면 NVS가 반드시 켜져 있어야 함.
+    // =========================================================================
+    ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS 파티션이 꼬였을 경우 포맷하고 다시 시도하는 방어 코드
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
     console_task_init();
     init_motor_ledc();
     button_task_init();
@@ -64,6 +78,7 @@ void app_main(void)
 
     //mqtt_client_connect()
     //if(wifi_info_get_used())
+    
     wifi_init();
 
     //[by.jeon] wifi가 연결이 되는 시점에 aws provisioning를 해야 한다.
