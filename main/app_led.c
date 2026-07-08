@@ -1,6 +1,6 @@
 #include "app_led.h"
 #include "led_strip.h"
-#define BLINK_GPIO   14   // 네오픽셀 데이터 선이 연결된 GPIO 핀 번호
+#include "gpio_util.h"
 #define LED_NUMBERS  4   // 연결된 네오픽셀 LED 총 개수 (예: 3개)
 #define LED_BRIGHTNESS_MAX    180
 #define LED_BRIGHTNESS_CENTER 100
@@ -12,6 +12,7 @@
 #include "opmode_task.h"
 
 #include "app_TOF.h"
+#include "debug_cli.h"
 static led_strip_handle_t led_strip;
 static const char *TAG = __FILE__;
 #define LED_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
@@ -84,18 +85,10 @@ void init_led_strip(void) {
 }
 
 void set_led_clear(void) {
-    // 0번째 LED를 빨간색(R:255, G:0, B:0)으로 설정
-    led_strip_set_pixel_rgbw(led_strip, 0, 0, 0, 0,0);
-
-    // 1번째 LED를 초록색(R:0, G:255, B:0)으로 설정
-    led_strip_set_pixel_rgbw(led_strip, 1, 0, 0, 0,0);
-
-        // 0번째 LED를 빨간색(R:255, G:0, B:0)으로 설정
-    led_strip_set_pixel_rgbw(led_strip, 2, 0, 0, 0,0);
-
-    // 1번째 LED를 초록색(R:0, G:255, B:0)으로 설정
-    led_strip_set_pixel_rgbw(led_strip, 3, 0, 0, 0,0);
-    // ⚠️ 아두이노의 show()처럼, 실제 LED에 데이터를 쏴서 켜는 함수
+    for(int i=0;i<LED_NUMBERS;i++)
+    {
+        led_strip_set_pixel_rgbw(led_strip, i, 0, 0, 0,0);
+    }
     led_strip_refresh(led_strip); 
     
 }
@@ -111,20 +104,13 @@ void set_rgb_led(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
     B_buf = B;
     W_buf = W;
 
-    // SK6812RGBW 칩은 W 소자가 따로 있으므로, 
-    // W 값이 들어오면 RGB는 완전히 끄고 순수 W 소자만 켜는 것이 하드웨어 수명과 밝기에 완벽합니다.
-    led_strip_set_pixel_rgbw(led_strip, 0, R, G, B, W);
-        vTaskDelay(pdMS_TO_TICKS(10));
-    led_strip_set_pixel_rgbw(led_strip, 1, R, G, B, W);
-        vTaskDelay(pdMS_TO_TICKS(10));
-    led_strip_set_pixel_rgbw(led_strip, 2, R, G, B, W);
-        vTaskDelay(pdMS_TO_TICKS(10));
-    led_strip_set_pixel_rgbw(led_strip, 3, R, G, B, W);
-        vTaskDelay(pdMS_TO_TICKS(10));
-
+    for(int i=0;i<LED_NUMBERS;i++)
+    {
+         led_strip_set_pixel_rgbw(led_strip, i, R, G, B, W);
+    }
     // 실제 SK6812 칩들로 32비트 정밀 신호 전송
-    led_strip_refresh(led_strip); 
 
+    led_strip_refresh(led_strip); 
 }
 
 void app_tof_sensor_poll_100ms(void)
@@ -140,6 +126,7 @@ void app_tof_sensor_poll_100ms(void)
     } 
     else 
     {
+        led_bit_disable(TOF_DETECT_BIT); // ⭐️ 손 치우면 즉시 꺼짐 호출
         if (!is_tof_pressing) {
             tof_match_start_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
             is_tof_pressing = true;
@@ -147,7 +134,7 @@ void app_tof_sensor_poll_100ms(void)
             uint32_t elapsed_time = (xTaskGetTickCount() * portTICK_PERIOD_MS) - tof_match_start_time;
             if (elapsed_time >= 3000) {
                 // ⭐️ 3초 만족 시 호출 -> 내부 가드 덕분에 매번 호출해도 세마포어는 딱 1번만 방출됨!
-                led_bit_disable(TOF_DETECT_BIT); // ⭐️ 손 치우면 즉시 꺼짐 호출
+               
             }
         }
     }
@@ -171,72 +158,78 @@ static void LED_task(void *pvParameter)
     vTaskDelay(3000 / portTICK_PERIOD_MS);
     
     ESP_LOGI(TAG, "Starting LED_task (Pure Event Driven Mode)");
-
+    DBG_Resister_t *DBG_Resister = Debug_Get();
     while (1) {
         app_tof_sensor_poll_100ms();
    
-        // [우선순위 1] 특수 비트가 하나라도 켜져 있는 상태라면
-        if (led_status_resister != 0) {
-            last_op_mode = -1; // 모드 무효화
-            if(led_status_resister & HARDWARE_ERR_BIT)
-            {
-                set_rgb_led(LED_BRIGHTNESS_MAX,0 , 0, 0); // 녹색
-            }
-            else if (led_status_resister & PAIRING_BIT) {
-                if(toggle_time >= 2)
-                {
-                    if(toggle_flag == true)
-                    {
-                        toggle_flag = false;
-                        set_rgb_led(LED_BRIGHTNESS_MAX,0 , 0, 0); // 녹색
-                    }
-                    else
-                    {
-                        toggle_flag = true;
-                        set_rgb_led(0 ,0 , LED_BRIGHTNESS_MAX, 0); // 녹색
-                    }
-                    toggle_time = 0;
-                }
-                else 
-                    toggle_time++;  
-            }
-            else if (led_status_resister & OTA_START_BIT) {
-                if(toggle_time >= 2)
-                {
-                    if(toggle_flag == true)
-                    {
-                        toggle_flag = false;
-                        set_rgb_led(LED_BRIGHTNESS_MAX,0 , LED_BRIGHTNESS_MAX, 0);
-                    }
-                    else
-                    {
-                        toggle_flag = true;
-                        set_rgb_led(0 ,0 , 0, 0); // 녹색
-                    }
-                    toggle_time = 0;
-                }
-                else
-                    toggle_time++;
-
-            }                  
-            else if (led_status_resister & TOF_DETECT_BIT) {
-                    set_rgb_led(0, LED_BRIGHTNESS_MAX, 0, 0); 
-            }         
-            
+        if(DBG_Resister->led)
+        {
 
         }
-        // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용
-        else {
-            switch(last_op_mode) {
-                case OP_MODE_NORMAL: set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX); break;
-                case OP_MODE_NIGHT:  set_rgb_led(LED_BRIGHTNESS_MAX, 0, LED_BRIGHTNESS_MAX, 0); break;
-                case OP_MODE_SMART:  set_rgb_led(LED_BRIGHTNESS_MAX, LED_BRIGHTNESS_MAX, 0, 0); break;
-                case OP_MODE_SLEEP:  set_rgb_led(0, 0, 0, 0);; break;
-                default: set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX); break;
-            }
-           // ESP_LOGE(TAG, "last_op_mode = %08x",last_op_mode);
-        }
+        else
+        {
+            // [우선순위 1] 특수 비트가 하나라도 켜져 있는 상태라면
+            if (led_status_resister != 0) {
+                last_op_mode = -1; // 모드 무효화
+                if(led_status_resister & HARDWARE_ERR_BIT)
+                {
+                    set_rgb_led(LED_BRIGHTNESS_MAX,0 , 0, 0); // 녹색
+                }
+                else if (led_status_resister & PAIRING_BIT) {
+                    if(toggle_time >= 2)
+                    {
+                        if(toggle_flag == true)
+                        {
+                            toggle_flag = false;
+                            set_rgb_led(LED_BRIGHTNESS_MAX,0 , 0, 0); // 녹색
+                        }
+                        else
+                        {
+                            toggle_flag = true;
+                            set_rgb_led(0 ,0 , LED_BRIGHTNESS_MAX, 0); // 녹색
+                        }
+                        toggle_time = 0;
+                    }
+                    else 
+                        toggle_time++;  
+                }
+                else if (led_status_resister & OTA_START_BIT) {
+                    if(toggle_time >= 2)
+                    {
+                        if(toggle_flag == true)
+                        {
+                            toggle_flag = false;
+                            set_rgb_led(LED_BRIGHTNESS_MAX,0 , LED_BRIGHTNESS_MAX, 0);
+                        }
+                        else
+                        {
+                            toggle_flag = true;
+                            set_rgb_led(0 ,0 , 0, 0); // 녹색
+                        }
+                        toggle_time = 0;
+                    }
+                    else
+                        toggle_time++;
 
+                }                  
+                else if ((led_status_resister & TOF_DETECT_BIT) || (led_status_resister & CLEAN_MODE_BIT)){
+                        set_rgb_led(0, LED_BRIGHTNESS_MAX, 0, 0); 
+                }         
+                
+
+            }
+            // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용
+            else {
+                switch(last_op_mode) {
+                    case OP_MODE_NORMAL: set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX); break;
+                    case OP_MODE_NIGHT:  set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX/2); break;
+                    case OP_MODE_SMART:  set_rgb_led(0,0 , LED_BRIGHTNESS_MAX, 0); break;
+                    case OP_MODE_SLEEP:  set_rgb_led(0, 0, 0, 0);; break;
+                    default: set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX); break;
+                }
+            // ESP_LOGE(TAG, "last_op_mode = %08x",last_op_mode);
+            }
+        }
         // ⭐️ [중요] 처리가 다 끝난 시점에 마스터 버퍼를 업데이트하여 다음 외부 진입을 방어합니다.
         vTaskDelay(pdMS_TO_TICKS(200));
     }

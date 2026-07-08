@@ -3,7 +3,6 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/timers.h"
-#include "esp_timer.h"
 #include "gpio_util.h"
 #include "esp_log.h"
 #include "app_config_flash.h"
@@ -12,6 +11,7 @@
 #include "opmode_task.h"
 #include "wifi_task.h"
 #include "ble_task.h"
+#include "app_led.h"
 static const char *TAG = "BUTTON_CTRL";
 #define BUTTON_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
 
@@ -53,14 +53,15 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 
 void bf_SingleClickAction(void) {
     Opmode_Set();
-   // send_motion();
     ESP_LOGI(TAG,"Single Click Action executed \r\n");
 }
 
 void bf_DoubleClickAction(void) {
     app_config_t* app_config = get_app_config();
     ESP_LOGI(TAG,"Double Click Action executed\r\n");
+    led_bit_enable(CLEAN_MODE_BIT); 
     start_motor_with_boost(100, app_config->pump_clean_duration);
+
 }
 
 void bf_LongPress3SecAction(void) {

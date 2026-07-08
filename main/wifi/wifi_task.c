@@ -14,6 +14,8 @@
 #include "mqtt_main.h"
 #include "app_led.h"
 #include "ble_task.h"
+#include "app_config_flash.h"
+
 static const char* TAG = __FILE__;
 
 #define USER_CONFIG_EXAMPLE_WIFI_SSID "iptime_lab0"
@@ -24,6 +26,9 @@ static const char* TAG = __FILE__;
 #include <esp_https_ota.h>
 
 #include <esp_ota_ops.h>
+#include "esp_netif_sntp.h"
+#include "esp_sntp.h"  // v5.x 호환용
+
 //메인 초기화 부분에 선언해두었던 이벤트 그룹과 비트들을 가져옵니다 (extern 또는 동일 파일 내 선언)
 EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
@@ -342,6 +347,42 @@ uint16_t wifi_scan_start(void)
     return total_found_count;
 }
 #endif
+
+
+// [단계 2] NTP 서버로부터 시간이 실제로 동기화되었을 때 호출되는 콜백 함수
+void time_sync_notification_cb(struct timeval *tv) {
+    ESP_LOGI(TAG, "NTP 시간 동기화 완료!");
+    
+    // 한국 표준시(KST) 세팅 (UTC + 9시간)
+    setenv("TZ", "KST-9", 1);
+    tzset();
+
+    // 현재 시간 예쁘게 출력해보기
+    time_t now;
+    struct tm timeinfo;
+    time(&now);
+    localtime_r(&now, &timeinfo);
+    
+    char strftime_buf[64];
+    strftime(strftime_buf, sizeof(strftime_buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
+    ESP_LOGI(TAG, "현재 한국 시간: %s", strftime_buf);
+}
+
+// [단계 1] 와이파이 연결 성공 시 호출할 SNTP 초기화 함수
+void sntp_init_and_sync(void) {
+    ESP_LOGI(TAG, "SNTP 초기화 및 시간 요청 시작...");
+    
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    
+    // 전 세계 공용 또는 한국 공용 NTP 서버 설정
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(1, "time.windows.com"); // 백업용
+    
+    // 콜백 등록 (시간이 정상 수신되면 알림을 받음)
+    esp_sntp_set_time_sync_notification_cb(time_sync_notification_cb);
+    
+    esp_sntp_init();
+}
 // 백그라운드 이벤트 핸들러
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
@@ -368,6 +409,7 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         ESP_LOGI(TAG, "IP 할당 완료: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
+        sntp_init_and_sync();
     }
 }
 void wifi_init(void)
@@ -392,4 +434,10 @@ void wifi_init(void)
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI("WIFI", "Wi-Fi 초기화 완료! (대기 또는 자동 연결 진행 중)");
+    
+    app_wifi_config_t* wifi_config = get_wifi_config();
+    if ((wifi_config->conn_ssid[0] != '\0') &&  (wifi_config->conn_password[0] != '\0'))
+        Wifi_Connect((char*)wifi_config->conn_ssid,(const char*)wifi_config->conn_password);
+
+
 }

@@ -7,7 +7,7 @@
 #include "freertos/task.h"
 #include "gpio_util.h"
 #include "esp_log.h"
-
+#include "app_led.h"
 #if 0
 #define MOTOR_IN1_GPIO       (PIN_PUMP_PWM)
 
@@ -363,10 +363,10 @@ static void motor_boost_task(void *pvParameters)
                 set_motor_speed_percent(i);
                 vTaskDelay(pdMS_TO_TICKS(20)); // 정확히 1초(1000ms)만 대기
             }
-          //  if(current_target_percentage != 100)
+            //if(current_target_percentage != 100)
             {
-            //    set_motor_speed_percent(100);
-            //    vTaskDelay(pdMS_TO_TICKS(2000)); // 정확히 1초(1000ms)만 대기
+             //   set_motor_speed_percent(100);
+             //   vTaskDelay(pdMS_TO_TICKS(2000)); // 정확히 1초(1000ms)만 대기
             }
 
             set_motor_speed_percent(received_data.target_percentage);
@@ -375,6 +375,7 @@ static void motor_boost_task(void *pvParameters)
                 duration_sec_buf--;
                 vTaskDelay(1000);
             }
+            led_bit_disable(CLEAN_MODE_BIT); 
         }
     }
 }

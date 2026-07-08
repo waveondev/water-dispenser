@@ -3,7 +3,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "app_config_flash.h"
-#include "esp_timer.h"
+
 #include "app_moter.h"
 #include "app_TOF.h"
 #include "app_led.h"
@@ -30,24 +30,24 @@ void Opmode_test_mode(void)
 }
 void Opmode_Set(void)
 {
-        app_config_t* app_config = get_app_config();
-        //start_motor_with_boost(0,0);
-        switch(current_opmode)
-        {
-            case OP_MODE_NORMAL:
-                current_opmode = OP_MODE_NIGHT;
-            break;
-            case OP_MODE_NIGHT:
-                current_opmode = OP_MODE_SMART;
-            break;
-            case OP_MODE_SMART:
-                current_opmode = OP_MODE_SLEEP;
-            break;
-            default:
-                current_opmode = OP_MODE_NORMAL;
-            break;
-        }
-        app_config->op_mode = current_opmode;
+    app_config_t* app_config = get_app_config();
+    //start_motor_with_boost(0,0);
+    switch(current_opmode)
+    {
+        case OP_MODE_NORMAL:
+            current_opmode = OP_MODE_NIGHT;
+        break;
+        case OP_MODE_NIGHT:
+            current_opmode = OP_MODE_SMART;
+        break;
+        case OP_MODE_SMART:
+            current_opmode = OP_MODE_SLEEP;
+        break;
+        default:
+            current_opmode = OP_MODE_NORMAL;
+        break;
+    }
+    app_config->op_mode = current_opmode;
     {
         // 2. 타이머가 처음 호출된 거라면 타이머를 생성
         if (opmode_timer == NULL) {

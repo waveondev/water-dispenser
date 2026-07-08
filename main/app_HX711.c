@@ -7,7 +7,6 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "esp_timer.h"
 #include "app_config_flash.h"
 #include "app_led.h"
 #include "debug_cli.h"

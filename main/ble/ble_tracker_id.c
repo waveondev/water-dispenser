@@ -6,6 +6,9 @@
 #include <string.h>
 #include "opmode_task.h"
 #include "esp_log.h" // 👈 ESP_LOGE를 위해 추가
+#include "app_config_flash.h"
+#include "ble_task.h"
+#include "ble_parse.h"
 TaskHandle_t xTrackerCaptureHandle = NULL;
 static const char *TAG = __FILE__;
 void Tracker_Device_disable(int i);
@@ -185,6 +188,28 @@ void Tracker_In_ID(char* Tracker_ID)
 }
 
 
+
+
+
+
+
+static bool Motion_Send_enable = false;
+static int Motion_Send_tick = 50;
+
+
+
+void MotionSetTimer(bool status)
+{
+    if(Motion_Send_enable != status)
+    {
+        Motion_Send_enable = status;
+    }
+    if(Motion_Send_enable)
+    {
+        Motion_Send_tick = 50;
+    }
+}
+
 /**
  * @brief 100ms 주기로 실행될 Tracker Capture 태스크 함수
  */
@@ -198,23 +223,30 @@ void vTrackerCaptureTask(void *pvParameters)
     xLastWakeTime = xTaskGetTickCount();
 
     printf("[태스크] tracker_capture 태스크가 시작되었습니다. (주기: 100ms)\n");
-
+    app_config_t* app_config = get_app_config();
     for (;;)
     {
         /*-----------------------------------------------------------------*/
-        /* 🎯 여기에 100ms마다 실행할 캡처 및 처리 로직을 작성하세요.                  */
-        /* 예: 센서 데이터 읽기, Tracker 상태 업데이트 등                          */
+        /* 🎯 여기에 100ms마다 실행할 캡처 및 처리 로직을 작성하세요.       */
+        /* 예: 센서 데이터 읽기, Tracker 상태 업데이트 등                  */
         /*-----------------------------------------------------------------*/
         // printf("[캡처] 데이터를 캡처하는 중...\n"); 
-    
+        if(Motion_Send_enable)
+        {
+            Motion_Send_tick--;
+            if(Motion_Send_tick <= 0)
+            {
+                Motion_Send_tick = (app_config->motion_data_time) * 10;
+                motion_msg_send(MOTION_START_REQUEST,1);
+            }
+        }
         for (int i = 0; i < TRACKER_DEVICE_MAX; i++) {
             if(Time_ratio_state() == SMART_RUN_STABLE)
             {      
                 Tracker_device_time_add(i);
             }
-
-            // Device Null 체크 추가
-            if (Tracker_Device[i] != NULL){
+            if(Tracker_Device[i] != NULL)
+            {
                 if(Tracker_Device[i]->Enable)
                 {
                     Tracker_Device[i]->Disable_Time += 100;
@@ -224,6 +256,7 @@ void vTrackerCaptureTask(void *pvParameters)
                     }  
                 }
             }
+
         }   
 
         

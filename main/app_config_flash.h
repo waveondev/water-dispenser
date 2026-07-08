@@ -25,18 +25,18 @@ typedef struct{
 typedef struct{
     uint8_t conn_ssid[BLE_DEVICENAME_LEN];
     uint8_t conn_password[WIFI_PASSWORD_LEN];
-}wifi_config_t;
+}app_wifi_config_t;
 
 typedef struct{
     uint8_t ble_device_name[BLE_DEVICENAME_LEN];
-}ble_config_t;
+}app_ble_config_t;
 void reset_all_nvs_data(void);
 void app_nvs_save_set(void);
 void wifi_nvs_save_set(void);
 void ble_nvs_save_set(void);
 app_config_t* get_app_config(void);
-wifi_config_t* get_wifi_config(void);
-ble_config_t* get_ble_config(void);
+app_wifi_config_t* get_wifi_config(void);
+app_ble_config_t* get_ble_config(void);
 void load_app_configuration(void);
 
 void load_wifi_configuration(void);

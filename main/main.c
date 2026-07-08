@@ -60,7 +60,6 @@ void app_main(void)
     esp_vfs_dev_uart_set_rx_line_endings(ESP_LINE_ENDINGS_LF);
     ESP_ERROR_CHECK( ret );
 #endif
-    // NVS_Flash_init(); [by.jeon]
 
 
     // =========================================================================
@@ -75,6 +74,7 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    NVS_Flash_init();
 
     // [by.jeon] 가상 하드디스크(SPIFFS) 켜기! (인증서를 읽기 위해 필수)
     filesystem_init();
@@ -91,7 +91,6 @@ void app_main(void)
     opmode_task_init();
     Create_Tracker_Capture_Task();
     ble_task_init();
-    MotionTaskInit();
 
     wifi_init();
 

@@ -7,7 +7,7 @@
 #define HARDWARE_ERR_BIT (1<<13)
 #define SENSE_ERR_BIT   (1<<12)
 #define TOF_DETECT_BIT  (1<<11)
-
+#define CLEAN_MODE_BIT  (1<<10)
 bool TOF_enable(void);
 void led_bit_disable(uint16_t disable);
 void led_bit_enable(uint16_t enable);

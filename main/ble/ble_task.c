@@ -138,10 +138,6 @@ static void ble_spp_server_advertise(void)
     );
 }
 
-void send_motion(void)
-{
-    MotionSetTimer(is_phone_connected);
-}
 /**
  * NimBLE GAP 이벤트 콜백 핸들러 (연결 상태 감시 + [추가] 비콘 스캔 처리)
  */

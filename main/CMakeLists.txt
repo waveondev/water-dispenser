@@ -53,6 +53,7 @@ idf_component_register(
         Fleet-Provisioning-for-AWS-IoT-embedded-sdk
         espressif__cbor
         backoffAlgorithm
+        esp_netif
 )
 
 # target_compile_definitions(${COMPONENT_LIB} PRIVATE

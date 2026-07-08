@@ -59,7 +59,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
         printf("SSID=%s PASS=%s\n", ssid, pass);
 
 
-        wifi_config_t* wifi_config = get_wifi_config();
+        app_wifi_config_t* wifi_config = get_wifi_config();
 
 
         memset(wifi_config->conn_ssid, 0,
