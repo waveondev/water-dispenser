@@ -10,10 +10,6 @@
 static const char *TAG = __FILE__;
 
 
-
-
-
-
 // [쓰기 함수] 
 // len 매개변수는 nvs_set_str 내부에서 자동으로 길이를 계산하므로 사실상 안 써도 무방합니다.
 void write_nvs_memory(const char* name, const char* key, const char* data)

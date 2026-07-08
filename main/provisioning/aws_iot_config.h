@@ -177,7 +177,7 @@
  * However, it is not required for the demo to run.
  */
 #ifndef CLIENT_IDENTIFIER
-    #define CLIENT_IDENTIFIER    DEVICE_SERIAL_NUMBER
+    #define CLIENT_IDENTIFIER    DEVICE_SERIAL_NUMBER 
 #endif
 
 /**

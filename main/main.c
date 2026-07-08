@@ -96,7 +96,7 @@ void app_main(void)
     wifi_init();
 
     //[by.jeon] wifi가 연결이 되는 시점에 aws provisioning를 해야 한다.
-    //aws_iot_task_init();
+    aws_iot_task_init();
 
     //charge_init();
 

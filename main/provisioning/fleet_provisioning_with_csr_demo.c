@@ -183,7 +183,8 @@ static size_t thingNameLength;
  * APIs. When the MQTT publish callback receives an expected Fleet Provisioning
  * accepted payload, it copies it into this buffer.
  */
-static uint8_t payloadBuffer[ NETWORK_BUFFER_SIZE ];
+//static uint8_t payloadBuffer[ NETWORK_BUFFER_SIZE ];
+static uint8_t payloadBuffer[ 8192 ];
 
 /**
  * @brief Length of the payload stored in #payloadBuffer. This is set by the
@@ -617,12 +618,17 @@ int aws_iot_provisioning_main( int argc,
                                            pkcs11configLABEL_CLAIM_CERTIFICATE,
                                            pkcs11configLABEL_CLAIM_PRIVATE_KEY );
 
-            if( status == true )
-            {
-                LogInfo( ( "Establishing MQTT session with claim certificate..." ) );
-                status = EstablishMqttSession( provisioningPublishCallback, p11Session, pkcs11configLABEL_CLAIM_CERTIFICATE, pkcs11configLABEL_CLAIM_PRIVATE_KEY );
-                if( status == true ) connectionEstablished = true;
-            }
+            connectionEstablished = true;
+
+                                           
+            // if( status == true )
+            // {
+            //     LogInfo( ( "Establishing MQTT session with claim certificate..." ) );
+            //     status = EstablishMqttSession( provisioningPublishCallback, p11Session, pkcs11configLABEL_CLAIM_CERTIFICATE, pkcs11configLABEL_CLAIM_PRIVATE_KEY );
+            //     if( status == true ) connectionEstablished = true;
+
+            //     connectionEstablished = true;
+            // }
 
             /**** Call the CreateCertificateFromCsr API ****/
             if( status == true ) status = subscribeToCsrResponseTopics();
@@ -754,7 +760,7 @@ int aws_iot_provisioning_main( int argc,
                         
                         if( pubStatus == true )
                         {
-                            LogInfo( ( "🚀 퍼블리시 성공! [전송 카운트: %d]", i ) );
+                            LogInfo( ( "퍼블리시 성공! [전송 카운트: %d]", i ) );
                             LogInfo( ( "보낸 페이로드: %s", payloadBuf ) );
                         }
 

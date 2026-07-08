@@ -97,7 +97,7 @@ menu "Example Configuration"
 
     config MQTT_NETWORK_BUFFER_SIZE
         int "Size of the network buffer for MQTT packets"
-        range 1024 2048
+        range 1024 16384
         default 1024
         help
             Size of the network buffer for MQTT packets.
