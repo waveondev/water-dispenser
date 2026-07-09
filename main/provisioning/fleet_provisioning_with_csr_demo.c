@@ -78,7 +78,7 @@
 
 #include "nvs_flash.h"  // [NVS 추가] 플래시 메모리 헤더
 #include "nvs.h"        // [NVS 추가] 플래시 메모리 헤더
-
+#include "esp_mac.h"
 /**
  * These configurations are required. Throw compilation error if it is not
  * defined.
@@ -554,7 +554,15 @@ int aws_iot_provisioning_main( int argc,
     /* Silence compiler warnings about unused variables. */
     ( void ) argc;
     ( void ) argv;
-
+    uint8_t mac_byte[6];
+    char dynamicMacStr[13]; // 12자리 MAC 문자열 + 널 종료 문자(\0)
+    
+    // ESP32의 기본 Wi-Fi MAC 주소를 읽어옵니다.
+    esp_read_mac(mac_byte, ESP_MAC_WIFI_STA);
+    
+    // 읽어온 MAC 주소를 콜론 없이 대문자 16진수 문자열로 포맷팅합니다 (예: "28372F9C283C")
+    snprintf(dynamicMacStr, sizeof(dynamicMacStr), "%02X%02X%02X%02X%02X%02X",
+            mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
     do
     {
         /* Initialize the buffer lengths to their max lengths. */
@@ -644,7 +652,10 @@ int aws_iot_provisioning_main( int argc,
             if( status == true ) unsubscribeFromCsrResponseTopics();
 
             /**** Call the RegisterThing API ****/
-            if( status == true ) status = generateRegisterThingRequest( payloadBuffer, NETWORK_BUFFER_SIZE, ownershipToken, ownershipTokenLength, DEVICE_SERIAL_NUMBER, DEVICE_SERIAL_NUMBER_LENGTH, &payloadLength );
+            char str[100];
+            snprintf(str,sizeof(str),"W100_%s",dynamicMacStr);
+
+            if( status == true ) status = generateRegisterThingRequest( payloadBuffer, NETWORK_BUFFER_SIZE, ownershipToken, ownershipTokenLength, str, strlen(str), &payloadLength );
             if( status == true ) status = subscribeToRegisterThingResponseTopics();
             if( status == true ) status = PublishToTopic( FP_CBOR_REGISTER_PUBLISH_TOPIC( PROVISIONING_TEMPLATE_NAME ), FP_CBOR_REGISTER_PUBLISH_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ), ( char * ) payloadBuffer, payloadLength );
             if( status == true ) status = waitForResponse();
@@ -705,11 +716,10 @@ int aws_iot_provisioning_main( int argc,
                 /* ========================================================== */
                 /* [추가] AWS IoT Core 구독(Subscribe) & 발행(Publish) 동시 테스트 */
                 /* ========================================================== */
-                //const char * subTopic = "$aws/things/W100_28372F9C283C/shadow/update/accepted";
-                //const char * pubTopic = "$aws/things/W100_28372F9C283C/shadow/update"; 
-                const char * subTopic = "things/w100/W100_28372F9C283C/result/registration";
-                // 💡 토픽도 registration에 맞게 수정하실 수 있도록 남겨두었습니다.
-                const char * pubTopic = "things/w100/W100_28372F9C283C/registration"; 
+                static char sub_topic[100];
+
+                snprintf(sub_topic,sizeof(sub_topic),"things/w100/W100_%s/result/registration",dynamicMacStr);
+                const char * subTopic = sub_topic;
 
                 LogInfo( ( "=== 1. MQTT 구독(Subscribe)을 먼저 세팅합니다 ===" ) );
                 bool subStatus = SubscribeToTopic( subTopic, strlen( subTopic ) );
@@ -741,7 +751,8 @@ int aws_iot_provisioning_main( int argc,
                     //cJSON_AddNumberToObject(root, "timestamp", 1747396800); 
 
                     cJSON *data_obj = cJSON_CreateObject();
-                    cJSON_AddStringToObject(data_obj, "mac", "28372F9C283C");
+
+                    cJSON_AddStringToObject(data_obj, "mac", dynamicMacStr);
                     cJSON_AddStringToObject(data_obj, "hw_rev", "r3.1");
                     
                     /* 🚨 필수 추가 필드: registration에는 home_id와 paired_at이 꼭 필요합니다 */
@@ -755,6 +766,11 @@ int aws_iot_provisioning_main( int argc,
                     
                     if (payloadBuf != NULL) 
                     {
+                                        // 💡 토픽도 registration에 맞게 수정하실 수 있도록 남겨두었습니다.
+                        static char pub_topic[100];
+                                                      
+                        snprintf(pub_topic,sizeof(pub_topic),"things/w100/W100_%s/registration",dynamicMacStr);
+                        const char * pubTopic = pub_topic; 
                         /* 데이터 송신 (Publish) */
                         bool pubStatus = PublishToTopic( pubTopic, strlen( pubTopic ), payloadBuf, strlen( payloadBuf ) );
                         

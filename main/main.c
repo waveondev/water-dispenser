@@ -84,7 +84,8 @@ void app_main(void)
     button_task_init();
     init_led_strip();
     LED_task_init();
-    if(sensor_init() == false)
+    sensor_init() ;
+  //  if(== false)
         led_bit_enable(SENSE_ERR_BIT);
 
     

@@ -9,6 +9,7 @@
 #include "app_led.h"
 #include "app_HX711.h"
 #include "ble_tracker_id.h"
+#include "debug_cli.h"
 static QueueHandle_t opModeQueue = NULL;
 
 static const char* TAG = __FILE__;
@@ -151,37 +152,44 @@ static void Opmode_task(void *pvParameter)
                 }
                 break;
         }
-        if(ota_enable() || hardware_error_enable())
+        DBG_Resister_t* DBG_Resister = Debug_Get();
+        if(DBG_Resister->motor)
         {
-            start_motor_with_boost(0, 0);
+
         }
         else
         {
-                switch(current_opmode)
-                {
-                    case OP_MODE_SMART:
+            if(ota_enable() || hardware_error_enable())
+            {
+                start_motor_with_boost(0, 0);
+            }
+            else
+            {
+                    switch(current_opmode)
                     {
-                        if(sensor_detected || sense_enable())
+                        case OP_MODE_SMART:
+                        {
+                            if(sensor_detected || sense_enable())
+                                start_motor_with_boost(100, 0);
+                            else
+                                start_motor_with_boost(0, 0);
+                        }
+                        break;
+                        // 타 모드는 기본 구조 유지
+                        case OP_MODE_NORMAL:
                             start_motor_with_boost(100, 0);
-                        else
+                            break;
+                        case OP_MODE_NIGHT:
+                            start_motor_with_boost(30, 0);
+                            break;
+                        case OP_MODE_SLEEP:
                             start_motor_with_boost(0, 0);
+                            break;
+                        default:
+                            break;
                     }
-                    break;
-                    // 타 모드는 기본 구조 유지
-                    case OP_MODE_NORMAL:
-                        start_motor_with_boost(100, 0);
-                        break;
-                    case OP_MODE_NIGHT:
-                        start_motor_with_boost(90, 0);
-                        break;
-                    case OP_MODE_SLEEP:
-                        start_motor_with_boost(0, 0);
-                        break;
-                    default:
-                        break;
-                }
+            }
         }
-
 
         vTaskDelay(100 / portTICK_PERIOD_MS);
     }

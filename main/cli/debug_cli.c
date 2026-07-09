@@ -79,9 +79,9 @@ BaseType_t prvDebugformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
                 DBG_Resister.DBG_EN = atoi(ag[2]) ? 1 : 0;
             }
-			else if (!strncmp(ag[1], "moter", 5))
+			else if (!strncmp(ag[1], "motor", 5))
 			{
-                DBG_Resister.moter = atoi(ag[2]) ? 1 : 0;
+                DBG_Resister.motor = atoi(ag[2]) ? 1 : 0;
             }
 			else if (!strncmp(ag[1], "tof", 3))
 			{

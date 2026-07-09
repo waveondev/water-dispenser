@@ -18,7 +18,6 @@
 #include "http_ota.h"
 
 #define MQTT_PARSE_TAG "MQTT_PARSE"
-esp_err_t esp_read_mac(uint8_t *mac, esp_mac_type_t type);
 uint8_t Mqtt_Messege_input(uint8_t* data, uint32_t len)
 {
 

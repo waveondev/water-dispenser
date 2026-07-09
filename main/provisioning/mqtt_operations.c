@@ -736,7 +736,7 @@ static bool waitForPacketAck( MQTTContext_t * pMqttContext,
     return xStatus;
 }
 /*-----------------------------------------------------------*/
-
+#include "esp_mac.h"
 bool EstablishMqttSession( MQTTPublishCallback_t publishCallback,
                            CK_SESSION_HANDLE p11Session,
                            char * pClientCertLabel,
@@ -758,7 +758,15 @@ bool EstablishMqttSession( MQTTPublishCallback_t publishCallback,
     /* Initialize the mqtt context and network context. */
     ( void ) memset( pMqttContext, 0U, sizeof( MQTTContext_t ) );
     ( void ) memset( pNetworkContext, 0U, sizeof( NetworkContext_t ) );
+    uint8_t mac_byte[6];
+    char dynamicMacStr[13]; // 12자리 MAC 문자열 + 널 종료 문자(\0)
 
+    // ESP32의 기본 Wi-Fi MAC 주소를 읽어옵니다.
+    esp_read_mac(mac_byte, ESP_MAC_WIFI_STA);
+    
+    // 읽어온 MAC 주소를 콜론 없이 대문자 16진수 문자열로 포맷팅합니다 (예: "28372F9C283C")
+    snprintf(dynamicMacStr, sizeof(dynamicMacStr), "%02X%02X%02X%02X%02X%02X",
+             mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
     returnStatus = connectToBrokerWithBackoffRetries( pNetworkContext,
                                                       p11Session,
                                                       pClientCertLabel,
@@ -829,8 +837,11 @@ bool EstablishMqttSession( MQTTPublishCallback_t publishCallback,
                 /* The client identifier is used to uniquely identify this MQTT client to
                  * the MQTT broker. In a production device the identifier can be something
                  * unique, such as a device serial number. */
-                connectInfo.pClientIdentifier = CLIENT_IDENTIFIER;
-                connectInfo.clientIdentifierLength = CLIENT_IDENTIFIER_LENGTH;
+                char con_info_str[100];
+                snprintf(con_info_str,sizeof(con_info_str),"W100_%s",dynamicMacStr);       
+                
+                connectInfo.pClientIdentifier = con_info_str;
+                connectInfo.clientIdentifierLength = strlen(con_info_str);
 
                 /* The maximum time interval in seconds which is allowed to elapse
                  * between two Control Packets.
