@@ -20,6 +20,7 @@
 #include "motion_task.h"
 #include "ble_tracker_id.h"
 #include "opmode_task.h"
+#include "device_config.h"
 
 static const char *TAG = __FILE__;
 
@@ -533,10 +534,20 @@ static void mac_send_timer_callback(void* arg)
 {
     esp_timer_stop(Mac_sending_timer);
     uint8_t mac[6];
-    uint8_t Str[40];
+    //uint8_t Str[40];
+    char Str[150];
     esp_read_mac(mac,ESP_MAC_WIFI_STA);
-    sprintf((char*)Str, "Wifi MAC %02X%02X%02X%02X%02X%02X", 
-    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    // sprintf((char*)Str, "Wifi MAC %02X%02X%02X%02X%02X%02X", 
+    // mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    // [by.jeon] ble 연결 직후 meta 데이터를 보내야 한다.
+    snprintf(Str, sizeof(Str), 
+             "{\"event_type\":\"meta\",\"data\":{\"serial\":\"%s-%02X%02X%02X%02X%02X%02X\",\"model\":\"%s\",\"hw_rev\":\"%s\",\"fw\":\"%s\"}}", 
+             CONFIG_DEVICE_PREFIX,                               // W100
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],     // MAC Address
+             CONFIG_DEVICE_TYPE,                                 // w100
+             CONFIG_HW_REV,                                      // r1.0
+             CONFIG_FW_VERSION);                                 // v1.0.0
     ble_send_data_to_queue((const uint8_t*)Str, strlen((const char*)Str));
     
 }

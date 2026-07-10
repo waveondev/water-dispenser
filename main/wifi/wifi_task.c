@@ -153,7 +153,6 @@ void wifi_init_sta_static_ip(char* WIFI_SSID, char* WIFI_PASS)
 #define WIFI_MAX_VALUE 30
 static wifi_ap_record_t ap_list[WIFI_MAX_VALUE];
 
-
 uint16_t remove_duplicate_best_rssi(wifi_ap_record_t *list, uint16_t count)
 {
     uint16_t new_count = 0;
@@ -206,7 +205,7 @@ uint16_t wifi_scan_start(void)
         .show_hidden = false, // 숨겨진 SSID도 스캔
         .scan_type = WIFI_SCAN_TYPE_ACTIVE,
         .scan_time.active.min = 0,
-        .scan_time.active.max = 0
+        .scan_time.active.max = 0 편견을 가지고 한거야? 난 잘 모르겠는데..
     };
 
     memset(ap_list,0,sizeof(ap_list));
@@ -306,7 +305,7 @@ uint16_t wifi_scan_start(void)
 
         ESP_LOGI(TAG, "[스캔 %d회차 결과] 현재까지 중복 제거 후 수집된 AP: %d개 / 목표: %d개", 
                  scan_iter, total_found_count, WIFI_MAX_VALUE);
-
+                 
         // ⭐️ [조기 탈출 조건] 목표한 개수(WIFI_MAX_VALUE)를 다 채웠다면 3번 다 안 돌고 즉시 탈출!
         if (total_found_count >= WIFI_MAX_VALUE) {
             ESP_LOGI(TAG, "🎯 목표한 개수(%d개)를 모두 채워 스캔을 조기 종료합니다.", WIFI_MAX_VALUE);
