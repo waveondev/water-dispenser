@@ -15,13 +15,14 @@ app_config_t app_config =
     .pump_clean_duration = 180,
     .filter_life_days = 200,
     .splash_delta_g = 50,
-    .gate_way_rssi_th = -55,
+    .gate_way_rssi_th = -85,
     .hx1_scale = 1000.0f,
     .hx1_offset = 0,
     .case_raw_data = 0,
     .tof_sense_threshold_l = 250,
     .tof_sense_threshold_r = 250,
     .motion_data_time = 1800,
+    .EFFECTIVE_DWELL_TIME = 5,
 };
 
 app_wifi_config_t wifi_config = 
@@ -86,6 +87,7 @@ void dump_all_configurations(void)
     ESP_LOGI(TAG, "  - tof_sense_threshold_l: %ld", app_config.tof_sense_threshold_l);
     ESP_LOGI(TAG, "  - tof_sense_threshold_r: %ld", app_config.tof_sense_threshold_r);
     ESP_LOGI(TAG, "  - motion_data_time     : %ld", app_config.motion_data_time);
+    ESP_LOGI(TAG, "  - EFFECTIVE_DWELL_TIME  : %ld", app_config.EFFECTIVE_DWELL_TIME);
     ESP_LOGI(TAG, "--------------------------------------------------");
 
     // 2. Wi-Fi 설정 출력
@@ -217,8 +219,8 @@ void load_ble_configuration(void)
         // 기본값 세팅 후 NVS에 최초로 구워두기
         write_nvs_blob(APP_NAMESPACE, APP_KEY_BLE_CONFIG, &ble_config, sizeof(app_ble_config_t));
     } else {
-        ESP_LOGI(TAG,"[BLE] NVS에서 시스템 설정 로드 성공! (ssid = %s, pass = %s)\r\n", 
-                          wifi_config.conn_ssid, wifi_config.conn_password);
+        ESP_LOGI(TAG,"[BLE] NVS에서 시스템 설정 로드 성공! (device name = %s)\r\n", 
+                          ble_config.ble_device_name);
     }
 }
 

@@ -43,7 +43,8 @@ bool sensor_init(void)
 {
     static uint8_t ucParameterToPass;
     TaskHandle_t xHandle = NULL;
-    bool ret = false;
+    bool ret = true; 
+    int error_count = 0 ;
     adc_init();
     ret = HX711_init();
     #if 1
@@ -51,6 +52,7 @@ bool sensor_init(void)
     {
         ESP_LOGE(TAG, "HX711 Error\r\n");
         //return ret;
+        error_count++;
     }
     #endif
     ret = TOF_VL53L0X_init();
@@ -59,6 +61,7 @@ bool sensor_init(void)
     {
         ESP_LOGE(TAG, "TOF Error\r\n");
        // return ret;
+       error_count++;
     }
     #endif
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
@@ -73,5 +76,8 @@ bool sensor_init(void)
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         ESP_LOGE(TAG, "Error creating Sensor_task on Core 1");
     }
-    return true;
+    if(error_count)
+        return false;
+    else
+        return true;
 }

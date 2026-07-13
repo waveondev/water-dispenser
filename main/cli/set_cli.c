@@ -5,7 +5,8 @@
 #include "app_HX711.h"
 #include "opmode_task.h"
 #include "app_config_flash.h"
-
+#include "ble_parse.h"
+#include "ble_task.h"
 BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
     const char *pcParameter;
@@ -121,7 +122,14 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
 				reset_all_nvs_data();
 			}
-		
+			else if (!strncmp(ag[1], "bleota", 6))
+			{
+				motion_msg_send(OTA_MODE_REQUEST,1);
+			}
+			else if (!strncmp(ag[1], "motion", 6))
+			{
+				motion_msg_send(MOTION_START_REQUEST,1);
+			}		
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

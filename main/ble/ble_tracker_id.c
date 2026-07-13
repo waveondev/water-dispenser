@@ -209,7 +209,19 @@ void MotionSetTimer(bool status)
         Motion_Send_tick = 50;
     }
 }
-
+bool GetTracker_Id_active(void)
+{
+    for (int i = 0; i < TRACKER_DEVICE_MAX; i++) {
+        if(Tracker_Device[i] != NULL)
+        {
+            if(Tracker_Device[i]->Enable)
+            {
+                return true;
+            }
+        }
+    }   
+    return false;
+}
 /**
  * @brief 100ms 주기로 실행될 Tracker Capture 태스크 함수
  */

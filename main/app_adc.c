@@ -76,19 +76,22 @@ void ADC_Sensing(void)
         int raw_ch0 = 0;
         int mv_ch0 = 0;
         esp_err_t err_ch0;
-
+        DBG_Resister_t* DBG_Resister = Debug_Get();
         // --- 채널 0 (GPIO 6 - ADC1) 읽기 ---
         err_ch0 = adc_oneshot_read(adc0_handle, CH0_ADC_CHANNEL, &raw_ch0);
         #if 1
         if (err_ch0 == ESP_OK) {
             if (do_cali_ch0) {
                 adc_cali_raw_to_voltage(cali_ch0_handle, raw_ch0, &mv_ch0);
-           //     ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d | Voltage: %4d mV (%.2f V)\r\n", raw_ch0, mv_ch0, (float)mv_ch0 / 1000.0f);
+                if(DBG_Resister->adc)
+                    ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d | Voltage: %4d mV (%.2f V)\r\n", raw_ch0, mv_ch0, (float)mv_ch0 / 1000.0f);
             } else {
-           //     ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d (No Calibration)\r\n", raw_ch0);
+                if(DBG_Resister->adc)
+                    ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d (No Calibration)\r\n", raw_ch0);
             }
         } else {
-            //ESP_LOGE(TAG, "Failed to read GPIO 6 (%s)", esp_err_to_name(err_ch0));
+            if(DBG_Resister->adc)
+                ESP_LOGE(TAG, "Failed to read GPIO 6 (%s)", esp_err_to_name(err_ch0));
         }
             #endif
 }

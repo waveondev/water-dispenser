@@ -21,10 +21,9 @@
 #include "ble_tracker_id.h"
 #include "opmode_task.h"
 #include "device_config.h"
-
 static const char *TAG = __FILE__;
 
-#define DEVICE_NAME "Wave_Test3"
+#define DEVICE_NAME "Wave_Peri2"
 #define MY_UUID128_BASE(XX, YY) \
     BLE_UUID128_DECLARE(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, \
                         0xF3, 0x93, 0xB5, 0xA3, YY, XX, 0x40, 0x6E)
@@ -232,7 +231,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         //    * 만약 -55보다 신호가 쌘 것(-50, -40 dBm 등)을 원하신 거라면 `>`로 부호를 바꿔주세요.
         // -----------------------------------------------------------------
         if (event->disc.rssi < app_config->gate_way_rssi_th) {
-     //       return 0; // -55보다 큰 신호는 여기서 즉시 차단
+            return 0; // -55보다 큰 신호는 여기서 즉시 차단
         }
 
         // -----------------------------------------------------------------
@@ -258,12 +257,6 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             // 이번 패킷에 이름은 없지만 기존 캐시 리스트에 저장된 이름이 있다면 가져옵니다.
             strcpy(current_packet_name, dev_list[idx].name);
         }
-
-        // ⚡️ 이름이 "Wave_Tracker"인지 검사
-        if (strcmp(current_packet_name, "Wave_Tracker") != 0) {
-            return 0; // Wave_Tracker가 아니면 즉시 차단
-        }
-
         // -----------------------------------------------------------------
         // 3. ⚡️ Service UUID 16-bit 검사 (0x1234 인지 확인)
         // -----------------------------------------------------------------
@@ -383,7 +376,14 @@ static int ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, stru
     case BLE_GATT_ACCESS_OP_WRITE_CHR: 
     { // 🟢 중괄호 추가로 switch-unreachable 변수선언 문제 해결
         uint16_t data_len = OS_MBUF_PKTLEN(ctxt->om);
-        
+        int8_t rssi = 0;
+        // 현재 연결 핸들(conn_handle)의 RSSI를 조회합니다.
+        int rc = ble_gap_conn_rssi(conn_handle, &rssi);
+        if (rc == 0) {
+            printf("BLE Write Received - Data Len: %d, RSSI: %d dBm\n", data_len, rssi);
+        } else {
+            printf("BLE Write Received - Data Len: %d, (Failed to get RSSI, rc=%d)\n", data_len, rc);
+        }     
         if (data_len > 0 && ble_rx_queue != NULL) {
             ble_data_msg_t msg;
             msg.len = (data_len > 128) ? 128 : data_len; 
@@ -549,7 +549,6 @@ static void mac_send_timer_callback(void* arg)
              CONFIG_HW_REV,                                      // r1.0
              CONFIG_FW_VERSION);                                 // v1.0.0
     ble_send_data_to_queue((const uint8_t*)Str, strlen((const char*)Str));
-    
 }
 
 void motion_msg_send(uint8_t cmd,uint8_t sub_cmd)

@@ -18,6 +18,7 @@ typedef struct{
     uint32_t tof_sense_threshold_l;
     uint32_t tof_sense_threshold_r;
     uint32_t motion_data_time;
+    uint32_t EFFECTIVE_DWELL_TIME;
 }app_config_t;
 
 

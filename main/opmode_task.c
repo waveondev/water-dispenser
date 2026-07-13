@@ -10,6 +10,7 @@
 #include "app_HX711.h"
 #include "ble_tracker_id.h"
 #include "debug_cli.h"
+#include <math.h>
 static QueueHandle_t opModeQueue = NULL;
 
 static const char* TAG = __FILE__;
@@ -84,42 +85,58 @@ static void Opmode_task(void *pvParameter)
     ESP_LOGI(TAG, "Starting Opmode_task");
     
 
-
+    app_config_t* app_config = get_app_config();
     static uint32_t smart_timer_target = 0; // 각 상태별 마감 시한 틱 저장
     float start_weight = 0;
+
     while (1) {
         bool sensor_detected = VL53L0X_Detect();
         uint32_t current_tick = xTaskGetTickCount();
+
         switch (smart_state)
         {
-            case SMART_IDLE:
-                
-                if (sensor_detected) 
-                {
-                    // 💡 1. 센서 감지 즉시 모터 가동! 그리고 5초 검증 타이머 시작
-                    start_weight = loadcell_data_get();
-                    smart_timer_target = current_tick + (5000 / portTICK_PERIOD_MS);
-                    smart_state = SMART_RUN_VERIFY;
-                    ESP_LOGI(TAG, "SMART: Sensor detected! Motor ON immediately. Verifying 5s...");
-                }
-                break;
+           case SMART_IDLE:
+            if (sensor_detected) 
+            {
+                // 💡 1. 센서 감지 즉시 시작 무게 저장
+                start_weight = loadcell_data_get();
 
-            case SMART_RUN_VERIFY:
-                // 5초가 가기 전에 센서가 끊기면 칼같이 끄고 대기 상태로 복귀
-                if (!sensor_detected) 
-                {
-                    smart_state = SMART_IDLE;
-                    ESP_LOGI(TAG, "SMART: Sensor lost before 5s. Motor STOPPED.");
-                    break;
-                }
+                smart_timer_target = current_tick + ((app_config->EFFECTIVE_DWELL_TIME*1000) / portTICK_PERIOD_MS);
+                smart_state = SMART_RUN_VERIFY;
+                ESP_LOGI(TAG, "SMART: Sensor detected! Motor ON immediately. Verifying 5s...");
+            }
+            break;
 
-                // 5초 동안 센서가 짱짱하게 잘 버텼는지 확인
-                if ((int32_t)(smart_timer_target - current_tick) <= 0) 
-                {
-                    smart_state = SMART_RUN_STABLE;
-                    ESP_LOGI(TAG, "SMART: 5-second verification SUCCESS. Stable running...");
-                }
+        case SMART_RUN_VERIFY:
+            // 5초가 가기 전에 센서가 끊기면 칼같이 끄고 대기 상태로 복귀
+            if (!sensor_detected) 
+            {
+                smart_state = SMART_IDLE;
+                ESP_LOGI(TAG, "SMART: Sensor lost before 5s. Motor STOPPED.");
                 break;
+            }
+
+            // 💡 2. [실시간 튐 감지] 현재 로드셀 무게 읽기
+            float current_w = loadcell_data_get();
+
+            // 💡 시작 무게(또는 직전 데이터)와 비교해 급격하게 50g 이상 위아래로 튀었는지 검사
+            // (fabs를 써서 +50g 스파이크나 -50g 드롭을 모두 잡아냅니다)
+             
+            if (fabs(current_w - start_weight) >= app_config->splash_delta_g) 
+            {
+                smart_state = SMART_IDLE; // 조건 만족 안 하므로 즉시 버림(탈출)
+                ESP_LOGE(TAG, "SMART: Abnormal weight spike detected! (Start: %.2fg, Current: %.2fg). Motor SHUTDOWN.", start_weight, current_w);
+                break; // 즉시 case 탈출
+            }
+
+            // 3. 5초 동안 센서가 짱짱하게 잘 버텼는지 확인
+            if ((int32_t)(smart_timer_target - current_tick) <= 0) 
+            {
+                // 5초 동안 급격하게 튀지 않고 무사히 통과 완료!
+                smart_state = SMART_RUN_STABLE;
+                ESP_LOGI(TAG, "SMART: 5-second verification SUCCESS. Stable running...");
+            }
+            break;
 
             case SMART_RUN_STABLE:
 
@@ -170,14 +187,14 @@ static void Opmode_task(void *pvParameter)
                         case OP_MODE_SMART:
                         {
                             if(sensor_detected || sense_enable())
-                                start_motor_with_boost(100, 0);
+                                start_motor_with_boost(85, 0);
                             else
                                 start_motor_with_boost(0, 0);
                         }
                         break;
                         // 타 모드는 기본 구조 유지
                         case OP_MODE_NORMAL:
-                            start_motor_with_boost(100, 0);
+                            start_motor_with_boost(85, 0);
                             break;
                         case OP_MODE_NIGHT:
                             start_motor_with_boost(30, 0);

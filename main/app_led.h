@@ -18,4 +18,5 @@ void LED_task_init(void);
 bool ota_enable(void);
 bool hardware_error_enable(void);
 bool sense_enable(void);
+void wifi_connect_success(void);
 #endif
