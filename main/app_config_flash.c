@@ -13,7 +13,8 @@ app_config_t app_config =
 {
     .op_mode = OP_MODE_NORMAL,
     .pump_clean_duration = 180,
-    .filter_life_days = 200,
+    .filter_life_days = 60,
+    .min_weight_threshold = 200,
     .splash_delta_g = 50,
     .gate_way_rssi_th = -85,
     .hx1_scale = 1000.0f,
@@ -23,6 +24,7 @@ app_config_t app_config =
     .tof_sense_threshold_r = 250,
     .motion_data_time = 1800,
     .EFFECTIVE_DWELL_TIME = 5,
+    .env_mode = "dev"
 };
 
 app_wifi_config_t wifi_config = 

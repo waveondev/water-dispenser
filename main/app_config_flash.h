@@ -19,6 +19,8 @@ typedef struct{
     uint32_t tof_sense_threshold_r;
     uint32_t motion_data_time;
     uint32_t EFFECTIVE_DWELL_TIME;
+    char env_mode[16];               // "dev" 또는 "prod" 저장용
+    char mqtt_url[128];              // (선택) 서버 주소 저장용
 }app_config_t;
 
 

@@ -317,17 +317,30 @@ void HX711_Sensing(void)
         
         float avg_val = moving_average_calc();
         DBG_Resister_t *DBG_Resister = Debug_Get();
+        // 💡 구조체 멤버에서 안전하게 값을 지역 변수로 먼저 꺼냅니다.
+        // 이렇게 하면 비교 시점에 메모리 불일치로 인한 오작동을 차단할 수 있습니다.
+        float safe_min_threshold = (float)app_config->min_weight_threshold; 
+        int32_t safe_case_raw = (int32_t)app_config->case_raw_data;
+
+        // 디버깅 로그로 복사된 실제 값을 찍어서 200이 맞는지 확실히 검증합니다.
+        ESP_LOGI("DEBUG", "avg_val: %.2f | safe_min: %.2f | raw: %d | safe_case_raw: %d", 
+                avg_val, safe_min_threshold, raw, safe_case_raw);
+
 
         if(DBG_Resister->HX711)
         {
             ESP_LOGI(TAG, " Raw: %.2f g | Filtered: %.2f g (raw_bits: %d)\r\n", w, moving_average_calc(), raw);
         }
-        if(avg_val < 200.0f || raw < app_config->case_raw_data)
+        // 💡 이제 안전한 로컬 변수끼리만 비교합니다.
+        if (avg_val < safe_min_threshold || raw < safe_case_raw)
         {
-
             led_bit_enable(HARDWARE_ERR_BIT);
-        }
-        if(hardware_error_enable() && avg_val > 201.0f && raw > app_config->case_raw_data)
+        }       
+        // 💡 3. 에러 해제 조건식도 안전한 로컬 변수로 교체합니다.
+        // 흔들림 방지(히스테리시스)를 위해 임계값(200)보다 1g 큰 safe_min_threshold + 1.0f(즉, 201.0f)로 대칭을 맞춥니다.
+        float safe_release_threshold = safe_min_threshold + 1.0f; 
+
+        if(hardware_error_enable() && avg_val > safe_release_threshold && raw > safe_case_raw)
         {
             led_bit_disable(HARDWARE_ERR_BIT);
         }

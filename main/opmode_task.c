@@ -103,7 +103,7 @@ static void Opmode_task(void *pvParameter)
 
                 smart_timer_target = current_tick + ((app_config->EFFECTIVE_DWELL_TIME*1000) / portTICK_PERIOD_MS);
                 smart_state = SMART_RUN_VERIFY;
-                ESP_LOGI(TAG, "SMART: Sensor detected! Motor ON immediately. Verifying 5s...");
+                ESP_LOGI(TAG, "음수 시작 Verifying 5s... start_weight = %.2fg", start_weight);
             }
             break;
 
@@ -122,9 +122,9 @@ static void Opmode_task(void *pvParameter)
             // 💡 시작 무게(또는 직전 데이터)와 비교해 급격하게 50g 이상 위아래로 튀었는지 검사
             // (fabs를 써서 +50g 스파이크나 -50g 드롭을 모두 잡아냅니다)
              
-            if (fabs(current_w - start_weight) >= app_config->splash_delta_g) 
+            if (fabsf(current_w - start_weight) >= app_config->splash_delta_g) 
             {
-                smart_state = SMART_IDLE; // 조건 만족 안 하므로 즉시 버림(탈출)
+                smart_state = SMART_IDLE; // 즉시 대기 상태로 복귀
                 ESP_LOGE(TAG, "SMART: Abnormal weight spike detected! (Start: %.2fg, Current: %.2fg). Motor SHUTDOWN.", start_weight, current_w);
                 break; // 즉시 case 탈출
             }
@@ -165,7 +165,7 @@ static void Opmode_task(void *pvParameter)
                     smart_state = SMART_IDLE; // 완전히 끝내고 대기 상태로 복귀
                     float diff_weight = start_weight - loadcell_data_get();
                     Tracker_waterintake_end((uint32_t)(diff_weight*100));
-                    ESP_LOGI(TAG, "SMART: 3-second off confirmed. Cycle fully finished. %.2f",diff_weight );
+                    ESP_LOGI(TAG, "음수 종료 end_weight = %.2fg, diff_weight = %.2fg",loadcell_data_get() ,diff_weight );
                 }
                 break;
         }

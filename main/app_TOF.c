@@ -13,6 +13,7 @@
 #include "vl53l0x_api.h"
 #include "vl53l0x_platform.h"
 #include "app_config_flash.h"
+#if 1
 uint32_t _trace_level;
 int _modules;
 static const char *TAG = __FILE__;
@@ -296,3 +297,123 @@ bool TOF_VL53L0X_init(void)
 
     return (g_tof0_ok && g_tof1_ok);
 }
+
+
+#else
+
+#include <stdio.h>
+#include <string.h>
+#include "esp_log.h"
+#include "driver/i2c.h"  // 🔴 구형 레거시 드라이버 헤더
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+static const char *TAG = "VCNL3030_LEGACY";
+
+#define I2C_MASTER_NUM             I2C_NUM_0
+#define I2C_MASTER_SDA_IO          GPIO_NUM_21
+#define I2C_MASTER_SCL_IO          GPIO_NUM_22
+#define I2C_MASTER_FREQ_HZ         100000      // 100kHz
+
+#define VCNL3030_ADDR              0x41
+#define PS_CONF1_2                 0x03
+#define PS_CONF3_MS                0x04
+#define PS_DATA                    0x08
+
+/**
+ * @brief 레거시 방식의 16비트 레지스터 쓰기 함수
+ *        i2c_master_write_to_device API 활용
+ */
+esp_err_t vcnl3030_write_reg(uint8_t reg_addr, uint16_t value) {
+    uint8_t write_buf[3];
+    write_buf[0] = reg_addr;
+    write_buf[1] = (uint8_t)(value & 0xFF);         // Low Byte
+    write_buf[2] = (uint8_t)((value >> 8) & 0xFF);  // High Byte
+
+    // 마지막 인자는 풀업 저항 상태 등에 따른 타임아웃 틱 수 (100ms)
+    return i2c_master_write_to_device(I2C_MASTER_NUM, VCNL3030_ADDR, write_buf, sizeof(write_buf), pdMS_TO_TICKS(100));
+}
+
+/**
+ * @brief 레거시 방식의 16비트 레지스터 읽기 함수
+ *        보여주신 코드에 포함된 i2c_master_write_read_device API 활용
+ */
+esp_err_t vcnl3030_read_reg(uint8_t reg_addr, uint16_t *value) {
+    uint8_t read_buf[2];
+    
+    // reg_addr를 먼저 쓰고(1바이트), 연이어 read_buf로 2바이트를 읽어옴
+    esp_err_t err = i2c_master_write_read_device(I2C_MASTER_NUM, VCNL3030_ADDR, 
+                                                 &reg_addr, 1, 
+                                                 read_buf, 2, 
+                                                 pdMS_TO_TICKS(100));
+    if (err == ESP_OK) {
+        *value = (read_buf[1] << 8) | read_buf[0];  // High << 8 | Low
+    }
+    return err;
+}
+
+/**
+ * @brief 센서 초기 설정 (200mA 전류 및 16비트 해상도 설정)
+ */
+esp_err_t vcnl3030_init(void) {
+    esp_err_t err;
+
+    // PS_CONF1_2 설정 (0x0800): 16비트 해상도 모드 활성화 및 전원 켜기
+    err = vcnl3030_write_reg(PS_CONF1_2, 0x0800);
+    if (err != ESP_OK) return err;
+
+    // PS_CONF3_MS 설정 (0x0700): IR LED 전류 최대(200mA) 튜닝
+    err = vcnl3030_write_reg(PS_CONF3_MS, 0x0700);
+    if (err != ESP_OK) return err;
+
+    return ESP_OK;
+}
+
+bool VL53L0X_Detect(void)
+{
+    return false;
+}
+void VL53L0X_Sensing(void)
+{
+        uint16_t prox_raw = 0;
+        if (vcnl3030_read_reg(PS_DATA, &prox_raw) == ESP_OK) {
+            ESP_LOGI(TAG, "Proximity RAW: %d", prox_raw);
+        } else {
+            ESP_LOGE(TAG, "I2C 통신 오류");
+        }
+        
+}
+
+bool TOF_VL53L0X_init(void)
+{
+    ESP_LOGI(TAG, "구형 i2c.h 드라이버 방식으로 VCNL3030X01 테스트 시작");
+
+    i2c_config_t i2c_bus0_cfg = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = PIN_TOF0_I2C_SDA,
+        .sda_pullup_en = GPIO_PULLUP_DISABLE,
+        .scl_io_num = PIN_TOF0_I2C_SCL,
+        .scl_pullup_en = GPIO_PULLUP_DISABLE,
+        .master.clk_speed = 100000, // 400kHz
+    };
+
+    // 2. 파라미터 반영 및 드라이버 설치
+    ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &i2c_bus0_cfg));
+    
+    // 마스터 모드는 내부 버퍼가 필요 없으므로 rx_buf, tx_buf 길이를 0으로 설정
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, i2c_bus0_cfg.mode, 0, 0, 0));
+    ESP_LOGI(TAG, "레거시 I2C 마스터 드라이버 초기화 성공");
+
+    // 3. 센서 초기화 함수 실행
+    if (vcnl3030_init() != ESP_OK) {
+        ESP_LOGE(TAG, "센서 연결 실패! 하드웨어를 확인하세요.");
+        return false;
+    }
+    ESP_LOGI(TAG, "센서 레지스터 설정 완료 (200mA)");
+
+    // 4. 데이터 폴링 루프
+
+    return true;
+
+}
+#endif

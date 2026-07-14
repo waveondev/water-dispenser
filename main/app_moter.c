@@ -375,7 +375,8 @@ static void motor_boost_task(void *pvParameters)
             while(duration_sec_buf)
             {
                 duration_sec_buf--;
-                vTaskDelay(1000);
+                ESP_LOGI("SENDER", "Clean %d ",duration_sec_buf);
+                vTaskDelay(pdMS_TO_TICKS(1000));
             }
             led_bit_disable(CLEAN_MODE_BIT); 
         }

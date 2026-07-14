@@ -262,7 +262,7 @@ void vTrackerCaptureTask(void *pvParameters)
                 if(Tracker_Device[i]->Enable)
                 {
                     Tracker_Device[i]->Disable_Time += 100;
-                    if(Tracker_Device[i]->Disable_Time >= 2000)
+                    if(Tracker_Device[i]->Disable_Time >= 3000)
                     {
                         Tracker_Device_disable(i);
                     }  

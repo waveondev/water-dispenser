@@ -23,7 +23,7 @@
 #include "device_config.h"
 static const char *TAG = __FILE__;
 
-#define DEVICE_NAME "Wave_Peri2"
+#define DEVICE_NAME "Wave_Test2"
 #define MY_UUID128_BASE(XX, YY) \
     BLE_UUID128_DECLARE(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, \
                         0xF3, 0x93, 0xB5, 0xA3, YY, XX, 0x40, 0x6E)
@@ -49,7 +49,9 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg);
 static uint16_t current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static bool is_phone_connected = false;
 static QueueHandle_t ble_rx_queue = NULL;
-static QueueHandle_t ble_tx_queue = NULL; // 🔴 이름을 수신용(rx)에서 송신용(tx) 개념으로
+static QueueHandle_t ble_tx_queue = NULL; // 이름을 수신용(rx)에서 송신용(tx) 개념으로
+
+uint16_t g_ble_max_payload = 20; // ble로 최대 보낼 수 있는 Length 저장
 
 static void ble_spp_server_print_conn_desc(struct ble_gap_conn_desc *desc)
 {
@@ -157,7 +159,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         ESP_LOGE(TAG, "BLE_GAP_EVENT_CONNECT");
         
         current_conn_handle = event->connect.conn_handle;
-        MotionSetTimer(is_phone_connected);
+        //MotionSetTimer(is_phone_connected); by.jeon 이 타이머를 왜 돌리는거죠?
         if (event->connect.status == 0) {
 
 
@@ -386,7 +388,7 @@ static int ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, stru
         }     
         if (data_len > 0 && ble_rx_queue != NULL) {
             ble_data_msg_t msg;
-            msg.len = (data_len > 128) ? 128 : data_len; 
+            msg.len = (data_len > BLE_MSG_MAX_LEN) ? BLE_MSG_MAX_LEN : data_len; 
             
             ble_hs_mbuf_to_flat(ctxt->om, msg.data, msg.len, NULL);
             xQueueSend(ble_rx_queue, &msg, 0);
@@ -481,10 +483,10 @@ bool ble_send_data_to_queue(const uint8_t *data, uint16_t len)
 
     ble_data_msg_t my_packet;
 
-    // 3. 방어 코드: 구조체 배열 크기(128바이트)를 넘지 않도록 길이 제한
-    if (len > 128) {
-        my_packet.len = 128;
-        printf("[BLE TX FUNC] 경고: 데이터 크기가 128바이트를 초과하여 잘라냅니다.\n");
+    // 3. 방어 코드: 구조체 배열 크기(512바이트)를 넘지 않도록 길이 제한
+    if (len > 512) {
+        my_packet.len = 512;
+        printf("[BLE TX FUNC] 경고: 데이터 크기가 512바이트를 초과하여 잘라냅니다.\n");
     } else {
         my_packet.len = len;
     }
@@ -521,7 +523,21 @@ static void ble_tx_processing_task(void *pvParameters)
         // 내가 폰으로 보낼 데이터가 큐에 들어올 때까지 대기
         if (xQueueReceive(ble_tx_queue, &msg, portMAX_DELAY) == pdTRUE) {
             if (is_phone_connected && current_conn_handle != BLE_HS_CONN_HANDLE_NONE) {
-                ble_server_send_notify(current_conn_handle, msg.data, msg.len);
+
+                uint16_t offset = 0;
+                while (offset < msg.len) { // MTU 길이만큼 데이터를 나눠서 보낸다.
+                    // 이번 턴에 보낼 길이: 남은 길이와 MTU 최대치 중 작은 값
+                    uint16_t send_len = (msg.len - offset > g_ble_max_payload) ? g_ble_max_payload : (msg.len - offset);
+                    
+                    // msg.data의 offset 위치부터 send_len 만큼 잘라서 쏘기
+                    ble_server_send_notify(current_conn_handle, &msg.data[offset], send_len);
+                    printf("[TX 태스크] %d 바이트 중 %d 바이트 쪼개서 전송 완료 (offset: %d)\n", msg.len, send_len, offset);
+                    
+                    offset += send_len;
+                    
+                    // 연속 전송 시 BLE 컨트롤러 큐 오버플로우 방지 (필수)
+                    vTaskDelay(pdMS_TO_TICKS(15));
+                }
                 printf("[TX 태스크] 스마트폰으로 %d 바이트 Notify 전송 완료\n", msg.len);
             } else {
                 printf("[TX 태스크] 경고: 스마트폰이 연결되어 있지 않아 전송 취소\n");
