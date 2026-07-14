@@ -23,6 +23,7 @@ app_config_t app_config =
     .tof_sense_threshold_r = 250,
     .motion_data_time = 1800,
     .EFFECTIVE_DWELL_TIME = 5,
+    .env_mode = "dev"
 };
 
 app_wifi_config_t wifi_config = 

@@ -240,6 +240,9 @@ static bool unsubscribeFromRegisterThingResponseTopics( void );
 #define NVS_REG_NAMESPACE                      "iot_storage"
 #define NVS_REG_KEY                            "is_prov_done"
 
+// 외부 BLE 암호화 전송 함수 선언
+extern void ble_send_encrypted_event(const char *event_type, const char *plain_data);
+
 static bool read_nvs_registration_flag(void)
 {
     nvs_handle_t my_handle;
@@ -312,6 +315,50 @@ static void provisioningPublishCallback( MQTTPublishInfo_t * pPublishInfo,
         LogInfo( ( "▶ 토픽: %.*s", ( int ) pPublishInfo->topicNameLength, pPublishInfo->pTopicName ) );
         LogInfo( ( "▶ 내용: %.*s", ( int ) pPublishInfo->payloadLength, ( const char * ) pPublishInfo->pPayload ) );
         /* ========================================================== */
+
+        if ( pPublishInfo->pPayload != NULL && pPublishInfo->payloadLength > 0 )
+        {
+            // 수신 데이터 파싱을 위해 임시 널 종료 문자 처리된 버퍼 생성
+            char *temp_payload = malloc(pPublishInfo->payloadLength + 1);
+            if (temp_payload != NULL)
+            {
+                memcpy(temp_payload, pPublishInfo->pPayload, pPublishInfo->payloadLength);
+                temp_payload[pPublishInfo->payloadLength] = '\0';
+
+                // JSON 파싱 시작
+                cJSON *root = cJSON_Parse(temp_payload);
+                if (root != NULL)
+                {
+                    cJSON *event_type = cJSON_GetObjectItem(root, "event_type");
+                    cJSON *result = cJSON_GetObjectItem(root, "result");
+
+                    // 2. "event_type":"registration", "result":"ok" 기기 등록인지 확인
+                    if (event_type && result && 
+                        strcmp(event_type->valuestring, "registration") == 0 &&
+                        strcmp(result->valuestring, "ok") == 0)
+                    {
+                        LogInfo( ( "[BLE_SEC] 백엔드 등록 성공 수신 완료! 앱에 prov_complete 전송" ) );
+
+                        // MAC 주소를 동적으로 획득하여 thing_name 조립
+                        uint8_t mac_byte[6];
+                        char dynamicMacStr[13];
+                        esp_read_mac(mac_byte, ESP_MAC_WIFI_STA);
+                        snprintf(dynamicMacStr, sizeof(dynamicMacStr), "%02X%02X%02X%02X%02X%02X",
+                                mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
+
+                        char payload_buf[128];
+                        // 앱 규격: {"thing_name": "W100_AABBCCDDEEFF"}[cite: 7, 9, 14]
+                        snprintf(payload_buf, sizeof(payload_buf), "{\"thing_name\":\"W100_%s\"}", dynamicMacStr);
+
+                        // 3. 앱에 암호화된 최종 완료 통보 쏘기
+                        ble_send_encrypted_event("prov_complete", payload_buf);
+                    }
+                    cJSON_Delete(root);
+                }
+                free(temp_payload);
+            }
+        }
+
     }
     else
     {

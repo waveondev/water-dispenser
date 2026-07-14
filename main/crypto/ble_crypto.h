@@ -32,8 +32,8 @@ esp_err_t ble_crypto_compute_session_key(const char *app_base64_pubkey);
  * 
  * @param ciphertext 복호화할 암호문
  * @param cipher_len 암호문의 길이
- * @param iv 12바이트 고유 Nonce[cite: 7]
- * @param tag 16바이트 인증 태그[cite: 7]
+ * @param iv 12바이트 고유 Nonce
+ * @param tag 16바이트 인증 태그
  * @param out_plaintext 복호화된 평문이 저장될 버퍼
  * @param out_len 복호화된 평문의 실제 길이
  * @return esp_err_t 성공 시 ESP_OK
@@ -47,8 +47,8 @@ esp_err_t ble_crypto_decrypt(const uint8_t *ciphertext, size_t cipher_len,
  * 
  * @param plaintext 암호화할 평문
  * @param plain_len 평문의 길이
- * @param out_iv 생성된 12바이트 Nonce가 저장될 버퍼[cite: 7]
- * @param out_tag 생성된 16바이트 인증 태그가 저장될 버퍼[cite: 7]
+ * @param out_iv 생성된 12바이트 Nonce가 저장될 버퍼
+ * @param out_tag 생성된 16바이트 인증 태그가 저장될 버퍼
  * @param out_ciphertext 암호문이 저장될 버퍼
  * @return esp_err_t 성공 시 ESP_OK
  */

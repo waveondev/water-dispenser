@@ -6,10 +6,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define BLE_MSG_MAX_LEN    512
+
 // 큐로 주고받을 데이터 구조체
 typedef struct {
     uint16_t len;
-    uint8_t data[128]; 
+    uint8_t data[BLE_MSG_MAX_LEN]; 
 } ble_data_msg_t;
 /* Attributes State Machine */
 
