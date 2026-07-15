@@ -17,7 +17,7 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
     int  offset=0;
     int j;
     int	val32 = 0;
-	
+	app_wifi_config_t* wifi_config = get_wifi_config();
 	/* Remove compile time warnings about unused parameters, and check the
 	write buffer is not NULL.  NOTE - for simplicity, this example assumes the
 	write buffer length is adequate, so does not check for buffer overflows. */
@@ -129,7 +129,15 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			else if (!strncmp(ag[1], "motion", 6))
 			{
 				motion_msg_send(MOTION_START_REQUEST,1);
-			}		
+			}	
+			else if (!strncmp(ag[1], "rm", 2))
+			{
+				if (!strncmp(ag[2], "wifi", 4))
+				{
+					memset(wifi_config, 0,sizeof(app_wifi_config_t));
+					wifi_nvs_save_set();
+				}					
+			}						
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

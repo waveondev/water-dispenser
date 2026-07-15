@@ -73,6 +73,7 @@ mv_ch0 > 800
 
 void ADC_Sensing(void)
 {
+    #if 1
         int raw_ch0 = 0;
         int mv_ch0 = 0;
         esp_err_t err_ch0;
@@ -94,9 +95,10 @@ void ADC_Sensing(void)
                 ESP_LOGE(TAG, "Failed to read GPIO 6 (%s)", esp_err_to_name(err_ch0));
         }
             #endif
+            #endif
 }
 void adc_init(void) {
-
+#if 1
     adc_oneshot_unit_init_cfg_t init_cfg0 = { .unit_id = ADC_UNIT_1 };
  
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_cfg0, &adc0_handle));
@@ -111,6 +113,7 @@ void adc_init(void) {
 
 
     ESP_LOGI(TAG, "Dual ADC Initialized successfully ");
+    #endif
 }
 
 

@@ -164,7 +164,14 @@ static void save_app_configuration(void)
         ESP_LOGE(TAG, "[CONFIG] 검증을 위해 데이터를 읽어오는 중 에러 발생 (%s)", esp_err_to_name(err));
     }
 }
+void erase_wifi_configuration(void)
+{
+    // 1. NVS에서 시스템 구조체 통째로 읽어오기 시도
+    memset(&wifi_config,0,sizeof(wifi_config));
 
+    write_nvs_blob(APP_NAMESPACE, APP_KEY_WIFI_CONFIG, &wifi_config, sizeof(wifi_config));
+ 
+}
 void load_wifi_configuration(void)
 {
     // 1. NVS에서 시스템 구조체 통째로 읽어오기 시도

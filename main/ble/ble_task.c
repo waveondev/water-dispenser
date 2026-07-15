@@ -155,7 +155,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         MODLOG_DFLT(INFO, "connection %s; status=%d \n",
                     event->connect.status == 0 ? "established" : "failed", event->connect.status);
         is_phone_connected = true;
-        ESP_ERROR_CHECK(esp_timer_start_periodic(Mac_sending_timer, 1000000));
+        ESP_ERROR_CHECK(esp_timer_start_periodic(Mac_sending_timer, 3000000));
         ESP_LOGE(TAG, "BLE_GAP_EVENT_CONNECT");
         
         current_conn_handle = event->connect.conn_handle;
@@ -387,11 +387,29 @@ static int ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, stru
             printf("BLE Write Received - Data Len: %d, (Failed to get RSSI, rc=%d)\n", data_len, rc);
         }     
         if (data_len > 0 && ble_rx_queue != NULL) {
+            // 1. 구조체 변수를 스택에 임시 선언
             ble_data_msg_t msg;
-            msg.len = (data_len > BLE_MSG_MAX_LEN) ? BLE_MSG_MAX_LEN : data_len; 
-            
-            ble_hs_mbuf_to_flat(ctxt->om, msg.data, msg.len, NULL);
-            xQueueSend(ble_rx_queue, &msg, 0);
+
+            // 2. 실제 복사할 데이터 길이 계산 및 구조체 입력
+            msg.len = data_len; 
+
+            // 3. ★ 매우 중요: 힙(Heap) 영역에 실제 데이터를 담을 공간 할당!
+            msg.data = (uint8_t *)malloc(msg.len);
+            if (msg.data == NULL) {
+                ESP_LOGE("BLE_RX", "Failed to allocate memory for RX data!");
+                return 0; // 메모리가 부족할 때 NimBLE에 에러 반환
+            }
+
+            // 4. mbuf 내부의 이진 데이터를 방금 할당한 플랫 버퍼(msg.data)로 복사
+            uint16_t copied_len = 0;
+            ble_hs_mbuf_to_flat(ctxt->om, msg.data, msg.len, &copied_len);
+
+            // 5. 큐로 구조체 메시지 송신 (구조체 내부의 '포인터 주소값'만 복사되어 전달됩니다)
+            if (xQueueSend(ble_rx_queue, &msg, 0) != pdPASS) {
+                ESP_LOGW("BLE_RX", "Queue full! Dropping packet and freeing memory.");
+                // 큐가 꽉 차서 전송에 실패했다면, 메모리가 공중에 붕 뜨지 않게 여기서 즉시 해제해 주어야 합니다!
+                free(msg.data); 
+            }
         }
         break;
     } // 🟢 블록 마감
@@ -459,8 +477,40 @@ void ble_server_send_notify(uint16_t conn_handle, uint8_t *data, uint16_t len)
     struct os_mbuf *om;
     om = ble_hs_mbuf_from_flat(data, len);
     if (om != NULL) {
-        ble_gatts_notify_custom(conn_handle, ble_spp_svc_gatt_notify_val_handle, om);
+        esp_err_t err = ble_gatts_notify_custom(conn_handle, ble_spp_svc_gatt_notify_val_handle, om);
+
+            if (err != ESP_OK) {
+                // [4] 에러 분기 처리
+                switch (err) {
+                    case ESP_ERR_INVALID_STATE:
+                        // 주로 상대방 기기(스마트폰 등)가 Notification을 On(구독)하지 않았을 때 발생
+                        ESP_LOGW(TAG, "Notify failed: Client has not enabled notifications (CCCD not registered).");
+                        break;
+
+                    case ESP_ERR_NO_MEM:
+                        // BLE 링버퍼나 패킷 큐가 가득 찼을 때 (너무 빠르게 연속으로 보낼 때 발생)
+                        ESP_LOGE(TAG, "Notify failed: Out of memory / BLE TX Buffer Congested! Slow down the transfer rate.");
+                        // 팁: 여기서 조금 대기(vTaskDelay)했다가 재시도(Retry)하는 로직을 추가할 수도 있습니다.
+                        break;
+
+                    case ESP_ERR_INVALID_ARG:
+                        ESP_LOGE(TAG, "Notify failed: Invalid parameter (check handle or data length).");
+                        break;
+
+                    default:
+                        // 정의되지 않은 기타 시스템 에러
+                        ESP_LOGE(TAG, "Notify failed with system error code: 0x%X (%s)", err, esp_err_to_name(err));
+                        break;
+                }
+                return;
+            }
+
+            // 성공 시 가볍게 디버깅 로그 (필요할 때만 켭니다)
+            ESP_LOGD(TAG, "Notification sent successfully. Len: %d", len);
+            //return ESP_OK;
+            return;
     }
+    ESP_LOGD(TAG, "om is NULL");
 }
 /**
  * @brief 스마트폰으로 보낼 데이터를 BLE 송신 큐에 집어넣는 함수
@@ -481,26 +531,29 @@ bool ble_send_data_to_queue(const uint8_t *data, uint16_t len)
         return false;
     }
 
-    ble_data_msg_t my_packet;
+    ble_data_msg_t msg;
 
     // 3. 방어 코드: 구조체 배열 크기(512바이트)를 넘지 않도록 길이 제한
-    if (len > 512) {
-        my_packet.len = 512;
-        printf("[BLE TX FUNC] 경고: 데이터 크기가 512바이트를 초과하여 잘라냅니다.\n");
-    } else {
-        my_packet.len = len;
-    }
+    msg.len = len;
+    
 
+    // 3. ★ 매우 중요: 힙(Heap) 영역에 실제 데이터를 담을 공간 할당!
+    msg.data = (uint8_t *)malloc(msg.len);
+    if (msg.data == NULL) {
+        ESP_LOGE("BLE_RX", "Failed to allocate memory for RX data!");
+        return false; // 메모리가 부족할 때 NimBLE에 에러 반환
+    }
     // 4. 데이터 실제 복사
-    memcpy(my_packet.data, data, my_packet.len);
+    memcpy(msg.data, data, msg.len);
 
     // 5. 큐로 전송 (포트 대기 시간은 0으로 설정하여 현재 태스크가 멈추지 않게 함)
-    if (xQueueSend(ble_tx_queue, &my_packet, 0) == pdTRUE) {
-        return true;
-    } else {
-        printf("[BLE TX FUNC] 에러: 송신 큐가 가득 차서 데이터를 넣지 못했습니다.\n");
+    if (xQueueSend(ble_tx_queue, &msg, 0) != pdTRUE) {
+        ESP_LOGW("BLE_RX", "Queue full! Dropping packet and freeing memory.");
+        // 큐가 꽉 차서 전송에 실패했다면, 메모리가 공중에 붕 뜨지 않게 여기서 즉시 해제해 주어야 합니다!
+        free(msg.data); 
         return false;
     }
+    return true;
 }
 static void ble_rx_processing_task(void *pvParameters)
 {
@@ -509,8 +562,8 @@ static void ble_rx_processing_task(void *pvParameters)
 
     while (1) {
         if (xQueueReceive(ble_rx_queue, &msg, portMAX_DELAY) == pdTRUE) {
-
             BLE_Receive_data(msg.data, msg.len);
+            free(msg.data);   
         }
     }
 }
@@ -542,6 +595,7 @@ static void ble_tx_processing_task(void *pvParameters)
             } else {
                 printf("[TX 태스크] 경고: 스마트폰이 연결되어 있지 않아 전송 취소\n");
             }
+            free(msg.data);   
         }
     }
 }
@@ -564,6 +618,7 @@ static void mac_send_timer_callback(void* arg)
              CONFIG_DEVICE_TYPE,                                 // w100
              CONFIG_HW_REV,                                      // r1.0
              CONFIG_FW_VERSION);                                 // v1.0.0
+    printf("send %s ", Str);
     ble_send_data_to_queue((const uint8_t*)Str, strlen((const char*)Str));
 }
 
@@ -596,7 +651,7 @@ void motion_msg_send(uint8_t cmd,uint8_t sub_cmd)
     ble_send_data_to_queue((uint8_t*)&Motion_Packet,sizeof(Motion_Packet));
     // 설정값이 0보다 클 때만 타이머 실행 (안전성 강화)
 }
-
+#include "esp_bt.h" // 필요한 헤더 포함
 void ble_task_init(void)
 {
     esp_err_t ret;
@@ -614,7 +669,13 @@ void ble_task_init(void)
     ble_hs_cfg.sync_cb = ble_spp_server_on_sync;
     ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
-
+    esp_err_t err = esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P15);
+    
+    if (err == ESP_OK) {
+        printf("BLE TX Power set successfully!\n");
+    } else {
+        printf("Failed to set BLE TX Power: %d\n", err);
+    }
     #ifndef CONFIG_EXAMPLE_IO_TYPE
     #define CONFIG_EXAMPLE_IO_TYPE 3 
     #endif

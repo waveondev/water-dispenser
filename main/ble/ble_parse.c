@@ -98,20 +98,34 @@ void ble_send_encrypted_event(const char* event_type, const char* plain_data) {
                               iv, sizeof(iv), NULL, 0, 
                               (const unsigned char*)plain_data, 
                               ciphertext, sizeof(tag), tag);
-
-    // 3. IV, Ciphertext, Tag를 Base64로 인코딩
+// 3. IV, Ciphertext, Tag를 Base64로 인코딩
     size_t iv_b64_len, ct_b64_len, tag_b64_len;
     unsigned char iv_b64[32] = {0}, tag_b64[32] = {0};
-    unsigned char *ct_b64 = (unsigned char *)malloc(plain_len * 2 + 16); 
+    
+    // Base64 인코딩 결과물 크기는 보통 입력 크기의 약 1.33배에 여유 패딩을 주면 충분합니다.
+    size_t ct_b64_alloc_len = plain_len * 2 + 16;
+    unsigned char *ct_b64 = (unsigned char *)malloc(ct_b64_alloc_len); 
+    if (ct_b64 == NULL) {
+        free(ciphertext);
+        mbedtls_gcm_free(&gcm);
+        return;
+    }
 
     mbedtls_base64_encode(iv_b64, sizeof(iv_b64), &iv_b64_len, iv, sizeof(iv));
     mbedtls_base64_encode(tag_b64, sizeof(tag_b64), &tag_b64_len, tag, sizeof(tag));
-    mbedtls_base64_encode(ct_b64, plain_len * 2 + 16, &ct_b64_len, ciphertext, plain_len);
+    mbedtls_base64_encode(ct_b64, ct_b64_alloc_len, &ct_b64_len, ciphertext, plain_len);
+    size_t final_json_len = 70 + strlen(event_type) + iv_b64_len + ct_b64_len + tag_b64_len;
 
-    // 4. 최종 JSON 포맷팅 ({"event_type": "...", "data": {"iv": "...", "ciphertext": "...", "tag": "..."}})
-    // 버퍼 사이즈는 넉넉하게 512로
-    char final_json[512];
-    snprintf(final_json, sizeof(final_json), 
+    char* final_json = (char *)malloc(final_json_len);
+    if (final_json == NULL) {
+        ESP_LOGE("BLE_SEC", "Failed to allocate memory for final_json!");
+        free(ciphertext);
+        free(ct_b64);
+        mbedtls_gcm_free(&gcm);
+        return;
+    }
+
+    snprintf(final_json, final_json_len, 
              "{\"event_type\":\"%s\",\"data\":{\"iv\":\"%s\",\"ciphertext\":\"%s\",\"tag\":\"%s\"}}", 
              event_type, iv_b64, ct_b64, tag_b64);
 
@@ -123,6 +137,7 @@ void ble_send_encrypted_event(const char* event_type, const char* plain_data) {
     // 6. 메모리 정리
     free(ciphertext);
     free(ct_b64);
+    free(final_json);
     mbedtls_gcm_free(&gcm);
 }
 

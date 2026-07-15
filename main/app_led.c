@@ -1,7 +1,7 @@
 #include "app_led.h"
 #include "led_strip.h"
 #include "gpio_util.h"
-#define LED_NUMBERS  6   // 연결된 네오픽셀 LED 총 개수 (예: 3개)
+#define LED_NUMBERS  4   // 연결된 네오픽셀 LED 총 개수 (예: 3개)
 #define LED_BRIGHTNESS_MAX    180
 #define LED_BRIGHTNESS_CENTER 100
 
@@ -278,7 +278,7 @@ static void LED_task(void *pvParameter)
             // [우선순위 1] 특수 비트가 하나라도 켜져 있는 상태라면
             if (led_status_resister != 0) {
                 last_op_mode = -1; // 모드 무효화
-                #if 0
+                #if 1
                 if((led_status_resister & HARDWARE_ERR_BIT) || (led_status_resister & SENSE_ERR_BIT))
                 {
                     set_rgb_led(LED_BRIGHTNESS_MAX,0 , 0, 0); 

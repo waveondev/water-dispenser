@@ -307,113 +307,140 @@ bool TOF_VL53L0X_init(void)
 #include "driver/i2c.h"  // 🔴 구형 레거시 드라이버 헤더
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_adc/adc_oneshot.h"
+static const char *TAG = "IR_TEST";
+#ifndef PIN_ONOFF_PIN
+#define PIN_ONOFF_PIN 14
+#endif
+#ifndef PIN_OUTPUT_PIN
+#define PIN_OUTPUT_PIN 6
+#endif
 
-static const char *TAG = "VCNL3030_LEGACY";
-
-#define I2C_MASTER_NUM             I2C_NUM_0
-#define I2C_MASTER_SDA_IO          GPIO_NUM_21
-#define I2C_MASTER_SCL_IO          GPIO_NUM_22
-#define I2C_MASTER_FREQ_HZ         100000      // 100kHz
-
-#define VCNL3030_ADDR              0x41
-#define PS_CONF1_2                 0x03
-#define PS_CONF3_MS                0x04
-#define PS_DATA                    0x08
-
-/**
- * @brief 레거시 방식의 16비트 레지스터 쓰기 함수
- *        i2c_master_write_to_device API 활용
- */
-esp_err_t vcnl3030_write_reg(uint8_t reg_addr, uint16_t value) {
-    uint8_t write_buf[3];
-    write_buf[0] = reg_addr;
-    write_buf[1] = (uint8_t)(value & 0xFF);         // Low Byte
-    write_buf[2] = (uint8_t)((value >> 8) & 0xFF);  // High Byte
-
-    // 마지막 인자는 풀업 저항 상태 등에 따른 타임아웃 틱 수 (100ms)
-    return i2c_master_write_to_device(I2C_MASTER_NUM, VCNL3030_ADDR, write_buf, sizeof(write_buf), pdMS_TO_TICKS(100));
-}
-
-/**
- * @brief 레거시 방식의 16비트 레지스터 읽기 함수
- *        보여주신 코드에 포함된 i2c_master_write_read_device API 활용
- */
-esp_err_t vcnl3030_read_reg(uint8_t reg_addr, uint16_t *value) {
-    uint8_t read_buf[2];
-    
-    // reg_addr를 먼저 쓰고(1바이트), 연이어 read_buf로 2바이트를 읽어옴
-    esp_err_t err = i2c_master_write_read_device(I2C_MASTER_NUM, VCNL3030_ADDR, 
-                                                 &reg_addr, 1, 
-                                                 read_buf, 2, 
-                                                 pdMS_TO_TICKS(100));
-    if (err == ESP_OK) {
-        *value = (read_buf[1] << 8) | read_buf[0];  // High << 8 | Low
-    }
-    return err;
-}
-
-/**
- * @brief 센서 초기 설정 (200mA 전류 및 16비트 해상도 설정)
- */
-esp_err_t vcnl3030_init(void) {
-    esp_err_t err;
-
-    // PS_CONF1_2 설정 (0x0800): 16비트 해상도 모드 활성화 및 전원 켜기
-    err = vcnl3030_write_reg(PS_CONF1_2, 0x0800);
-    if (err != ESP_OK) return err;
-
-    // PS_CONF3_MS 설정 (0x0700): IR LED 전류 최대(200mA) 튜닝
-    err = vcnl3030_write_reg(PS_CONF3_MS, 0x0700);
-    if (err != ESP_OK) return err;
-
-    return ESP_OK;
-}
+#ifndef PIN_ONOFF2_PIN
+#define PIN_ONOFF2_PIN 8
+#endif
+#ifndef PIN_OUTPUT2_PIN
+#define PIN_OUTPUT2_PIN 7
+#endif
 
 bool VL53L0X_Detect(void)
 {
     return false;
 }
+
+
+#define CH1_ADC_UNIT            ADC_UNIT_1
+#define CH1_ADC_CHANNEL         ADC_CHANNEL_5  
+#define EXAMPLE_ADC_ATTEN       ADC_ATTEN_DB_12 
+
+
+
+static adc_cali_handle_t cali_ch1_handle = NULL;
+static bool do_cali_ch1 = false;
+adc_oneshot_unit_handle_t adc1_handle;
+
 void VL53L0X_Sensing(void)
 {
-        uint16_t prox_raw = 0;
-        if (vcnl3030_read_reg(PS_DATA, &prox_raw) == ESP_OK) {
-            ESP_LOGI(TAG, "Proximity RAW: %d", prox_raw);
-        } else {
-            ESP_LOGE(TAG, "I2C 통신 오류");
-        }
-        
+
+
+        // [2] IR LED 끄기 (Low)
+        //gpio_set_level(PIN_ONOFF_PIN, 0);
+        //gpio_set_level(PIN_ONOFF2_PIN, 1);
+        //vTaskDelay(pdMS_TO_TICKS(10)); // 꺼질 때까지 대기
+
+        int rx_val_when_off = gpio_get_level(PIN_OUTPUT2_PIN);
+       // gpio_set_level(PIN_ONOFF2_PIN, 0);
+
+
+
+
+       // gpio_set_level(PIN_ONOFF_PIN, 1);
+
+        // [2] LED가 완전히 켜지고 전압이 안정화될 때까지 '아주 미세하게' 대기합니다.
+        // 50ms는 너무 깁니다. 1~2ms 정도가 가장 적당합니다. (esp_rom_delay_us를 써도 좋습니다.)
+        vTaskDelay(pdMS_TO_TICKS(2)); 
+
+        // [3] LED가 켜져 있는 바로 그 순간에 수신부 ADC 값을 잽싸게 읽습니다.
+        int raw_ch0 = 0;
+        esp_err_t err_ch0;
+        err_ch0 = adc_oneshot_read(adc1_handle, CH1_ADC_CHANNEL, &raw_ch0);
+
+       // gpio_set_level(PIN_ONOFF_PIN, 0);
+        vTaskDelay(pdMS_TO_TICKS(10)); // 꺼질 때까지 대기
+
+
+
+
+        ESP_LOGI(TAG, "TX [ON] -> RX Level: %d(%d) ",rx_val_when_off,raw_ch0);
 }
+
 
 bool TOF_VL53L0X_init(void)
 {
-    ESP_LOGI(TAG, "구형 i2c.h 드라이버 방식으로 VCNL3030X01 테스트 시작");
-
-    i2c_config_t i2c_bus0_cfg = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = PIN_TOF0_I2C_SDA,
-        .sda_pullup_en = GPIO_PULLUP_DISABLE,
-        .scl_io_num = PIN_TOF0_I2C_SCL,
-        .scl_pullup_en = GPIO_PULLUP_DISABLE,
-        .master.clk_speed = 100000, // 400kHz
+// 1. 송신 핀 설정 (Output)
+    gpio_config_t io_conf_tx = {
+        .pin_bit_mask = (1ULL << PIN_ONOFF_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
     };
+    gpio_config(&io_conf_tx);
+    gpio_set_level(PIN_ONOFF_PIN, 1);
+    // 2. 수신 핀 설정 (Input + 내부 풀업 활성화)
+    // 외부에 10kΩ 풀업 저항이 없다면 아래 내부 풀업 설정을 필수로 켜주어야 합니다.
+    gpio_config_t io_conf_rx = {
+        .pin_bit_mask = (1ULL << PIN_OUTPUT_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE, // 내부 풀업 사용
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf_rx);
 
-    // 2. 파라미터 반영 및 드라이버 설치
-    ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &i2c_bus0_cfg));
-    
-    // 마스터 모드는 내부 버퍼가 필요 없으므로 rx_buf, tx_buf 길이를 0으로 설정
-    ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, i2c_bus0_cfg.mode, 0, 0, 0));
-    ESP_LOGI(TAG, "레거시 I2C 마스터 드라이버 초기화 성공");
+        
+// 1. 송신 핀 설정 (Output)
+    gpio_config_t io_conf_tx2 = {
+        .pin_bit_mask = (1ULL << PIN_ONOFF2_PIN),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf_tx2);
 
-    // 3. 센서 초기화 함수 실행
-    if (vcnl3030_init() != ESP_OK) {
-        ESP_LOGE(TAG, "센서 연결 실패! 하드웨어를 확인하세요.");
-        return false;
-    }
-    ESP_LOGI(TAG, "센서 레지스터 설정 완료 (200mA)");
+    gpio_set_level(PIN_ONOFF2_PIN, 0);
 
-    // 4. 데이터 폴링 루프
+        // 2. 수신 핀 설정 (Input + 내부 풀업 활성화)
+    // 외부에 10kΩ 풀업 저항이 없다면 아래 내부 풀업 설정을 필수로 켜주어야 합니다.
+    gpio_config_t io_conf_rx2 = {
+        .pin_bit_mask = (1ULL << PIN_OUTPUT2_PIN),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE, // 내부 풀업 사용
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+    gpio_config(&io_conf_rx2);
 
+#if 1
+    adc_oneshot_unit_init_cfg_t init_cfg0 = { .unit_id = ADC_UNIT_1 };
+ 
+    adc_oneshot_new_unit(&init_cfg0, &adc1_handle);
+
+    adc_oneshot_chan_cfg_t chan_cfg = {
+        .bitwidth = ADC_BITWIDTH_DEFAULT, 
+        .atten = EXAMPLE_ADC_ATTEN,
+    };
+    adc_oneshot_config_channel(adc1_handle, CH1_ADC_CHANNEL, &chan_cfg);
+
+    //do_cali_ch1 = init_adc_calibration(CH1_ADC_UNIT, CH1_ADC_CHANNEL, EXAMPLE_ADC_ATTEN, &cali_ch1_handle);
+
+
+    ESP_LOGI(TAG, "Dual ADC Initialized successfully ");
+    #endif
     return true;
-
 }
+
+
+
 #endif

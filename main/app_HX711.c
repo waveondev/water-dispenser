@@ -323,8 +323,8 @@ void HX711_Sensing(void)
         int32_t safe_case_raw = (int32_t)app_config->case_raw_data;
 
         // 디버깅 로그로 복사된 실제 값을 찍어서 200이 맞는지 확실히 검증합니다.
-        ESP_LOGI("DEBUG", "avg_val: %.2f | safe_min: %.2f | raw: %d | safe_case_raw: %d", 
-                avg_val, safe_min_threshold, raw, safe_case_raw);
+        //ESP_LOGI("DEBUG", "avg_val: %.2f | safe_min: %.2f | raw: %d | safe_case_raw: %d", 
+                //avg_val, safe_min_threshold, raw, safe_case_raw);
 
 
         if(DBG_Resister->HX711)
