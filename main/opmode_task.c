@@ -11,6 +11,7 @@
 #include "ble_tracker_id.h"
 #include "debug_cli.h"
 #include <math.h>
+#include "aws_iot_task.h"
 static QueueHandle_t opModeQueue = NULL;
 
 static const char* TAG = __FILE__;
@@ -100,7 +101,7 @@ static void Opmode_task(void *pvParameter)
             {
                 // 💡 1. 센서 감지 즉시 시작 무게 저장
                 start_weight = loadcell_data_get();
-
+                mqtt_queue_send(MESSEGE_ACCESS);
                 smart_timer_target = current_tick + ((app_config->EFFECTIVE_DWELL_TIME*1000) / portTICK_PERIOD_MS);
                 smart_state = SMART_RUN_VERIFY;
                 ESP_LOGI(TAG, "음수 시작 Verifying 5s... start_weight = %.2fg", start_weight);
@@ -165,6 +166,7 @@ static void Opmode_task(void *pvParameter)
                     smart_state = SMART_IDLE; // 완전히 끝내고 대기 상태로 복귀
                     float diff_weight = start_weight - loadcell_data_get();
                     Tracker_waterintake_end((uint32_t)(diff_weight*100));
+                    mqtt_queue_send(MESSEGE_DRINK);
                     ESP_LOGI(TAG, "음수 종료 end_weight = %.2fg, diff_weight = %.2fg",loadcell_data_get() ,diff_weight );
                 }
                 break;

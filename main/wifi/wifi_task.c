@@ -11,7 +11,6 @@
 
 #include "protocol_examples_common.h"
 #include "example_common_private.h"
-#include "mqtt_main.h"
 #include "app_led.h"
 #include "ble_task.h"
 #include "app_config_flash.h"

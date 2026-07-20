@@ -7,6 +7,9 @@
 #include "aws_iot_task.h"
 #include "aws_iot_config.h"
 #include "wifi_task.h"
+#include "mqtt_operations.h"
+
+#include "tx_mqtt.h"
 
 // #include "core_mqtt.h"
 // #include "fleet_provisioning_with_csr_demo.h" 
@@ -14,8 +17,17 @@
 static const char *TAG = "aws_iot_task";
 extern EventGroupHandle_t s_wifi_event_group;
 static bool is_aws_started = false;
+static QueueHandle_t mqtt_tx_queue = NULL;
 
 extern int aws_iot_provisioning_main( int argc, char ** argv );
+
+void mqtt_queue_send(messege_tx_mqtt_cmd_e cmd)
+{
+    if (xQueueSend(mqtt_tx_queue, &cmd, 0) != pdPASS) {
+        ESP_LOGW("mqtt_tx", "Queue full! Dropping packet and freeing memory.");
+    }
+}
+
 
 static void aws_iot_main_entry(void *pvParameters)
 {
@@ -37,10 +49,16 @@ static void aws_iot_main_entry(void *pvParameters)
 
     aws_iot_provisioning_main(0, NULL);
 
-    // 태스크가 끝나지 않고 계속 MQTT 메시지를 수신/송신하도록 하거나, 
-    // 통신 전담 루프를 돌려야 합니다.
+    ESP_LOGI(TAG,"=== 2. MQTT 루프를 시작합니다 ===");
+
+    messege_tx_mqtt_cmd_e cmd;
+
     for(;;) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        if (xQueueReceive(mqtt_tx_queue, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
+            Send_cJSON_Messege(cmd);
+        }
+        /* 백그라운드에서 지속적으로 수신 버퍼를 감시하며 콜백 함수를 유도합니다 */
+        ProcessLoopWithTimeout(); 
     }
 
     vTaskDelete(NULL); // 만약 루프를 빠져나간다면 태스크 종료
@@ -48,7 +66,12 @@ static void aws_iot_main_entry(void *pvParameters)
 
 void aws_iot_task_init(void)
 {
+    mqtt_tx_queue = xQueueCreate(10, sizeof(messege_tx_mqtt_cmd_e));
+
+
+
     if (is_aws_started == false) {
+
         if (xTaskCreatePinnedToCore(
             aws_iot_main_entry,                  // 태스크 함수
             "aws_iot_task",                // 태스크 이름

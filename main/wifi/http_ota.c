@@ -29,8 +29,6 @@
 #include "esp_wifi.h"
 #endif
 #include "http_ota.h"
-#include "mqtt_main.h"
-#include "mqtt_parse.h"
 #include "app_led.h"
 TaskHandle_t xOTA_Handle = NULL;
 static uint8_t OTA_Enable = 0;
@@ -144,12 +142,8 @@ void simple_ota_example_task(void *pvParameter)
     esp_err_t ret = esp_https_ota(&ota_config);
     if (ret == ESP_OK) {
         ESP_LOGI(TAG, "OTA Succeed, Rebooting...");
-        state = CHARGE_FW_SUCCESS;
-        //MQTT_Send(0,0,NULL,CHARGE_FW_UPDATE_STATE,&state,1);
     } else {
         ESP_LOGE(TAG, "Firmware upgrade failed");
-        state = CHARGE_FW_FAIL;
-        //MQTT_Send(0,0,NULL,CHARGE_FW_UPDATE_STATE,&state,1);
         OTA_Enable = 0;
         led_bit_disable(OTA_START_BIT);
         vTaskDelete(xOTA_Handle);

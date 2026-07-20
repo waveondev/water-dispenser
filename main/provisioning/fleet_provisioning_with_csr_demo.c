@@ -79,6 +79,8 @@
 #include "nvs_flash.h"  // [NVS 추가] 플래시 메모리 헤더
 #include "nvs.h"        // [NVS 추가] 플래시 메모리 헤더
 #include "esp_mac.h"
+#include "rx_mqtt.h"
+#include "aws_iot_task.h"
 /**
  * These configurations are required. Throw compilation error if it is not
  * defined.
@@ -331,27 +333,36 @@ static void provisioningPublishCallback( MQTTPublishInfo_t * pPublishInfo,
                 {
                     cJSON *event_type = cJSON_GetObjectItem(root, "event_type");
                     cJSON *result = cJSON_GetObjectItem(root, "result");
-
-                    // 2. "event_type":"registration", "result":"ok" 기기 등록인지 확인
-                    if (event_type && result && 
-                        strcmp(event_type->valuestring, "registration") == 0 &&
-                        strcmp(result->valuestring, "ok") == 0)
+                    // 1. 객체 존재 여부 + 타입이 문자열인지 + null 포인터가 아닌지 안전하게 검사
+                    if (cJSON_IsString(event_type) && (event_type->valuestring != NULL) &&
+                        cJSON_IsString(result) && (result->valuestring != NULL)) 
                     {
-                        LogInfo( ( "[BLE_SEC] 백엔드 등록 성공 수신 완료! 앱에 prov_complete 전송" ) );
+                        if (strcmp(event_type->valuestring, "registration") == 0)       
+                        {
+                            if(strcmp(result->valuestring, "ok") == 0) 
+                            {
+                                LogInfo( ( "[BLE_SEC] 백엔드 등록 성공 수신 완료! 앱에 prov_complete 전송" ) );
 
-                        // MAC 주소를 동적으로 획득하여 thing_name 조립
-                        uint8_t mac_byte[6];
-                        char dynamicMacStr[13];
-                        esp_read_mac(mac_byte, ESP_MAC_WIFI_STA);
-                        snprintf(dynamicMacStr, sizeof(dynamicMacStr), "%02X%02X%02X%02X%02X%02X",
-                                mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
+                                // MAC 주소를 동적으로 획득하여 thing_name 조립
+                                uint8_t mac_byte[6];
+                                char dynamicMacStr[13];
+                                esp_read_mac(mac_byte, ESP_MAC_WIFI_STA);
+                                snprintf(dynamicMacStr, sizeof(dynamicMacStr), "%02X%02X%02X%02X%02X%02X",
+                                        mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
 
-                        char payload_buf[128];
-                        // 앱 규격: {"thing_name": "W100_AABBCCDDEEFF"}[cite: 7, 9, 14]
-                        snprintf(payload_buf, sizeof(payload_buf), "{\"thing_name\":\"W100_%s\"}", dynamicMacStr);
+                                char payload_buf[128];
+                                // 앱 규격: {"thing_name": "W100_AABBCCDDEEFF"}[cite: 7, 9, 14]
+                                snprintf(payload_buf, sizeof(payload_buf), "{\"thing_name\":\"W100_%s\"}", dynamicMacStr);
 
-                        // 3. 앱에 암호화된 최종 완료 통보 쏘기
-                        ble_send_encrypted_event("prov_complete", payload_buf);
+                                // 3. 앱에 암호화된 최종 완료 통보 쏘기
+                                ble_send_encrypted_event("prov_complete", payload_buf);
+                            }
+                            else
+                            {
+                                LogInfo( ( "[BLE_SEC] 백엔드 등록 실패" ) );
+                            }
+                            // Registration ACK 성공 처리
+                        }
                     }
                     cJSON_Delete(root);
                 }
@@ -577,6 +588,10 @@ static bool unsubscribeFromRegisterThingResponseTopics( void )
  * the Fleet Provisioning library to generate and validate AWS IoT Fleet
  * Provisioning MQTT topics, and use the coreMQTT library to communicate with
  * the AWS IoT Fleet Provisioning APIs. */
+
+#include "topic_list.h"
+
+
 int aws_iot_provisioning_main( int argc,
           char ** argv )
 {
@@ -760,106 +775,23 @@ int aws_iot_provisioning_main( int argc,
                 LogInfo( ( "Sucessfully established connection with provisioned credentials." ) );
                 connectionEstablished = true;
 
-                /* ========================================================== */
-                /* [추가] AWS IoT Core 구독(Subscribe) & 발행(Publish) 동시 테스트 */
-                /* ========================================================== */
-                static char sub_topic[100];
+                mqtt_subscribe_init();
+                bool is_already_registered = read_nvs_registration_flag();
 
-                snprintf(sub_topic,sizeof(sub_topic),"things/w100/W100_%s/result/registration",dynamicMacStr);
-                const char * subTopic = sub_topic;
-
-                LogInfo( ( "=== 1. MQTT 구독(Subscribe)을 먼저 세팅합니다 ===" ) );
-                bool subStatus = SubscribeToTopic( subTopic, strlen( subTopic ) );
-
-                if( subStatus == true )
+                if (is_already_registered == false)
                 {
-                    LogInfo( ( "구독 성공! 이제 서버의 명령을 받을 준비가 되었습니다." ) );
+                    LogInfo( ( "[최초 연결 완료] 백엔드에 기기 등록(REGISTRATION) 요청을 큐에 주입합니다." ) );
+                    mqtt_queue_send(MESSEGE_REGISTRATION);
+                    
+                    // 💡 팁: 백엔드에서 등록 완료 응답(Callback)을 성공적으로 수신하는 시점 
+                    //        또는 이 패킷이 완전히 날아간 직후에 write_nvs_registration_flag(true);를 해주면 완벽합니다.
                 }
-
-                LogInfo( ( "=== 2. MQTT 퍼블리시(Publish) 루프를 시작합니다 ===" ) );
-                for( int i = 1; i <= 1; i++ ) /* 테스트를 위해 20번(약 40초)으로 늘렸습니다 */
+                else
                 {
-                    /* --------------------------------------------------------- */
-                    /* 백엔드 규격에 맞춘 JSON 데이터 조립 (cJSON 적용) */
-                    /* --------------------------------------------------------- */
-                    cJSON *root = cJSON_CreateObject();
-                    /* Root 레벨 필수 필드 추가 */
-                    cJSON_AddStringToObject(root, "id", "123e4567-e89b-12d3-a456-426614174000"); /* 실제로는 uuid 생성 함수 사용 */
-                    cJSON_AddNumberToObject(root, "timestamp", 1747396800); /* 현재 시간 unix epoch seconds */
-
-                    cJSON_AddStringToObject(root, "event_type", "registration");
-                    cJSON_AddStringToObject(root, "env", "alpha");
-                    
-                    /* 🚨 주의: 'w100'이 아니라 'water_dispenser'가 스펙입니다! */
-                    cJSON_AddStringToObject(root, "device_type", "w100"); 
-                    cJSON_AddStringToObject(root, "firmware", "v1.0.0");
-                    
-                    /* 타임스탬프 필수 (현재 시간 epoch sec). 테스트용 하드코딩 시 1747396800 등 활용 */
-                    //cJSON_AddNumberToObject(root, "timestamp", 1747396800); 
-
-                    cJSON *data_obj = cJSON_CreateObject();
-
-                    cJSON_AddStringToObject(data_obj, "mac", dynamicMacStr);
-                    cJSON_AddStringToObject(data_obj, "hw_rev", "r3.1");
-                    
-                    /* 🚨 필수 추가 필드: registration에는 home_id와 paired_at이 꼭 필요합니다 */
-                    cJSON_AddStringToObject(data_obj, "home_id", "home_test_01");
-                    cJSON_AddNumberToObject(data_obj, "paired_at", 1747396800);
-                    
-                    cJSON_AddItemToObject(root, "data", data_obj);
-
-                    /* 공백 없이 압축된 JSON 문자열 생성 */
-                    char *payloadBuf = cJSON_PrintUnformatted(root);
-                    
-                    if (payloadBuf != NULL) 
-                    {
-                                        // 💡 토픽도 registration에 맞게 수정하실 수 있도록 남겨두었습니다.
-                        static char pub_topic[100];
-                                                      
-                        snprintf(pub_topic,sizeof(pub_topic),"things/w100/W100_%s/registration",dynamicMacStr);
-                        const char * pubTopic = pub_topic; 
-                        /* 데이터 송신 (Publish) */
-                        bool pubStatus = PublishToTopic( pubTopic, strlen( pubTopic ), payloadBuf, strlen( payloadBuf ) );
-                        
-                        if( pubStatus == true )
-                        {
-                            LogInfo( ( "퍼블리시 성공! [전송 카운트: %d]", i ) );
-                            LogInfo( ( "보낸 페이로드: %s", payloadBuf ) );
-                        }
-
-                        /* 🚨 중요: 문자열 변환에 사용된 동적 메모리 해제 */
-                        cJSON_free(payloadBuf);
-                    }
-                    
-                    /* 🚨 중요: JSON 객체 껍데기 메모리 통째로 해제 */
-                    cJSON_Delete(root);
-                    /* --------------------------------------------------------- */
-
-                    /* ========================================================== */
-                    /* [무한 청취 루프] 평생 끝나지 않는 실시간 서버 이벤트 대기 모드 */
-                    /* ========================================================== */
-                    LogInfo( ( "=== 3. MQTT 무한 청취 모드 돌입 (서버 명령 실시간 수신) ===" ) );
-                    
-                    while (1)
-                    {
-                        /* 백그라운드에서 지속적으로 수신 버퍼를 감시하며 콜백 함수를 유도합니다 */
-                        ProcessLoopWithTimeout(); 
-                        
-                        /* FreeRTOS의 다른 태스크(하드웨어 제어 등)가 원활히 돌 수 있도록 양보합니다 */
-                        vTaskDelay(pdMS_TO_TICKS(100)); 
-                    }
-                    /* ========================================================== */
-
-                    // /* 💡 핵심: 단순 sleep() 대신, 네트워크 수신 버퍼를 확인하며 대기해야 서버 메시지를 받을 수 있습니다. */
-                    // for( int wait = 0; wait < 20; wait++ )
-                    // {
-                    //     /* 서버로부터 온 메시지가 있는지 확인하고, 있으면 콜백 함수를 즉시 실행합니다 */
-                    //     ProcessLoopWithTimeout(); 
-                    //     usleep( 500000 ); /* 0.5초 대기 (총 4번 반복 = 2초 주기) */
-                    // }
+                    LogInfo( ( "[재부팅 연결 완료] 백엔드에 부트(BOOT) 알림을 큐에 주입합니다." ) );
+                    mqtt_queue_send(MESSEGE_BOOT);
                 }
-                LogInfo( ( "=== 동시 테스트 종료 ===" ) );
-                /* ========================================================== */
+                return EXIT_SUCCESS;
             }
         }
 

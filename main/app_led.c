@@ -147,6 +147,7 @@ void app_tof_sensor_poll_100ms(void)
 
     if (VL53L0X_Detect()) 
     {
+
         is_tof_pressing = false;
         tof_match_start_time = 0;
         led_bit_enable(TOF_DETECT_BIT); 

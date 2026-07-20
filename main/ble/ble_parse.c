@@ -146,7 +146,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
     char buf[256];
     if(len >= sizeof(buf))
         len = sizeof(buf) - 1;
-
+    printf("Code = %s \r\n",data);
     memcpy(buf, data, len);
     buf[len] = '\0';
 
@@ -299,6 +299,17 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                             const char* pwd = (pwd_val && cJSON_IsString(pwd_val)) ? pwd_val->valuestring : "";
 
                             printf("[BLE_SEC] 연결 시작 ➔ SSID: %s\n", ssid);
+                            app_wifi_config_t* wifi_config = get_wifi_config();
+                            memset(wifi_config->conn_ssid, 0,
+                                sizeof(wifi_config->conn_ssid));
+                            memset(wifi_config->conn_password, 0,
+                                sizeof(wifi_config->conn_password));
+                            strncpy((char*)wifi_config->conn_ssid,
+                                    ssid,
+                                    sizeof(wifi_config->conn_ssid)-1);
+                            strncpy((char*)wifi_config->conn_password,
+                                    pwd,
+                                    sizeof(wifi_config->conn_password)-1);
 
                             // 유나님의 기존 연결 로직 구동
                             Wifi_Connect(ssid, pwd);
@@ -306,6 +317,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                             // 결과 판정 및 ACK 전송
                             EventBits_t bits = xEventGroupGetBits(s_wifi_event_group);
                             if (bits & WIFI_CONNECTED_BIT) {
+                                wifi_nvs_save_set();
                                 ble_send_encrypted_event("wifi_result", "{\"result\":\"ok\"}");
                             } else if (bits & WIFI_FAIL_BIT) {
                                 ble_send_encrypted_event("wifi_result", "{\"result\":\"auth_fail\"}");
@@ -403,7 +415,7 @@ void BLE_Receive_data(uint8_t* data, uint16_t len)
         printf("%02X ", data[i]);
     }
     printf("\n");
-    printf("Code = %02x \r\n",Motion_Packet->event_code);
+
     switch(Motion_Packet->event_code)
     {   
         case MOTION_START_RESPONSE:

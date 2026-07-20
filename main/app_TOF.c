@@ -13,6 +13,7 @@
 #include "vl53l0x_api.h"
 #include "vl53l0x_platform.h"
 #include "app_config_flash.h"
+#include "aws_iot_task.h"
 #if 1
 uint32_t _trace_level;
 int _modules;
@@ -165,6 +166,7 @@ bool VL53L0X_Detect(void)
         if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", moving_average_get_R(),tof1_mm);
         else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
         #endif
+
         return true;
     } else {
         return false;

@@ -45,6 +45,7 @@
 #include "config_cli.h"
 #include "set_cli.h"
 #include "debug_cli.h"
+#include "mqtt_cli.h"
 const char jbx_pwd_1[16] = "#80860612";
 
 typedef struct xCOMMAND_INPUT_LIST
@@ -92,6 +93,14 @@ static const CLI_Command_Definition_t xStartStopTrace;
 static const CLI_Command_Definition_t xRunTimeStats;
 #endif
 #if 1
+static const CLI_Command_Definition_t xmqttCommand =
+{
+	"mqtt",
+	"\033[1;33mmqtt\033[0m\r\n  mqtt command\r\n",
+	prvMQTTformationCommand,
+	-1,
+	DEVEL_MODE
+};
 static const CLI_Command_Definition_t xDbgCommand =
 {
 	"dbg",
@@ -242,6 +251,7 @@ static const CLI_Command_Definition_t* CommandList[] =
 	#endif
 	&xConfigCommand,
 	&xDbgCommand,
+	&xmqttCommand,
 	&xResetCommand,
 	NULL
 };
