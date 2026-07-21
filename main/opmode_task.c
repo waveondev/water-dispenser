@@ -126,6 +126,7 @@ static void Opmode_task(void *pvParameter)
             if (fabsf(current_w - start_weight) >= app_config->splash_delta_g) 
             {
                 smart_state = SMART_IDLE; // 즉시 대기 상태로 복귀
+                mqtt_queue_send(MESSEGE_DIAGNOSTICS);
                 ESP_LOGE(TAG, "SMART: Abnormal weight spike detected! (Start: %.2fg, Current: %.2fg). Motor SHUTDOWN.", start_weight, current_w);
                 break; // 즉시 case 탈출
             }

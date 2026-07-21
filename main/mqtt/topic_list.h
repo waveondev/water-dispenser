@@ -22,6 +22,11 @@
 #define SERVER_TX_TOPIC_HEALTH         TOPIC_HEADER "%s/health"
 
 
+#define TRACKER_TOPIC_HEADER "things/tracker/TRACKER_"
+#define TRACKER_RX_TOPIC_ACTIVITY      TRACKER_TOPIC_HEADER "%s/activity"
+#define TRACKER_RX_TOPIC_DIAGNOSTICS   TRACKER_TOPIC_HEADER "%s/diagnostics"
+
+#define TRACKER_RX_TOPIC_HEALTH        TRACKER_TOPIC_HEADER "%s/health"
 
 
 

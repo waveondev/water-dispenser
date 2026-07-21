@@ -65,6 +65,16 @@ void wifi_connect_success(void)
 {
     wifi_conn_enable = 100;
 }
+bool led_bit_status(uint16_t status)
+{
+    // 현재 마스터 버퍼에 해당 비트가 꺼져 있을 때만 (즉, 새로 켜지는 순간에만) 진입!
+    if(led_status_resister & status)
+    {
+        return true;
+    }
+
+    return false;
+}
 void led_bit_enable(uint16_t enable)
 {
     // 현재 마스터 버퍼에 해당 비트가 꺼져 있을 때만 (즉, 새로 켜지는 순간에만) 진입!

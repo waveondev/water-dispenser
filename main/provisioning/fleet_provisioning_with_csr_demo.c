@@ -436,7 +436,7 @@ static void provisioningPublishCallback( MQTTPublishInfo_t * pPublishInfo,
     }
 }
 /*-----------------------------------------------------------*/
-
+#define MQTT_PROCESS_LOOP_TIMEOUT_MS             ( 1000U )
 static bool waitForResponse( void )
 {
     bool status = false;
@@ -444,7 +444,7 @@ static bool waitForResponse( void )
     responseStatus = ResponseNotReceived;
 
     /* responseStatus is updated from the MQTT publish callback. */
-    ( void ) ProcessLoopWithTimeout();
+    ( void ) ProcessLoopWithTimeout(MQTT_PROCESS_LOOP_TIMEOUT_MS);
 
     if( responseStatus == ResponseNotReceived )
     {

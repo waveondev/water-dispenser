@@ -85,6 +85,60 @@ esp_err_t read_nvs_memory(const char* name, const char* key, char* out_data, uin
 
 // [정수형 쓰기 함수]
 
+void write_nvs_uint(const char* name, const char* key, uint32_t value)
+{
+    nvs_handle_t my_handle;
+    esp_err_t err;
+
+    err = nvs_open(name, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "[%s] NVS 열기 실패 (%s)", name, esp_err_to_name(err));
+        return;
+    }
+
+    // 💡 정수 저장 함수는 nvs_set_i32 를 사용합니다.
+    err = nvs_set_u32(my_handle, key, value);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "[%s -> %s] 정수 저장 성공: %d", name, key, value);
+    } else {
+        ESP_LOGE(TAG, "[%s -> %s] 정수 저장 실패 (%s)", name, key, esp_err_to_name(err));
+    }
+
+    err = nvs_commit(my_handle);
+    if (err != ESP_OK) ESP_LOGE(TAG, "커밋 실패!");
+
+    nvs_close(my_handle);
+}
+
+// [정수형 읽기 함수]
+// 기본값을 매개변수(default_value)로 주면, 저장된 게 없을 때 안전하게 그 값을 리턴합니다.
+esp_err_t read_nvs_uint(const char* name, const char* key, uint32_t* default_value)
+{
+    nvs_handle_t my_handle;
+    esp_err_t err;
+
+    err = nvs_open(name, NVS_READONLY, &my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "[%s] NVS 열기 실패 (%s)", name, esp_err_to_name(err));
+        return err; 
+    }
+
+    // 💡 정수 읽기 함수는 nvs_get_i32 를 사용하며, 크기 확인 필요 없이 바로 읽습니다!
+    err = nvs_get_u32(my_handle, key, default_value);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "[%s -> %s] 정수 읽기 성공: %d", name, key, *default_value);
+    } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ESP_LOGW(TAG, "[%s -> %s] 저장된 정수가 없어 기본값(%d)을 사용합니다.", name, key, *default_value);
+    } else {
+        ESP_LOGE(TAG, "[%s -> %s] 정수 읽기 실패 (%s)", name, key, esp_err_to_name(err));
+    }
+
+    nvs_close(my_handle);
+
+    return err; // 읽어온 값(또는 기본값) 리턴
+}
+// [정수형 쓰기 함수]
+
 void write_nvs_int(const char* name, const char* key, int32_t value)
 {
     nvs_handle_t my_handle;

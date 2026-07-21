@@ -1123,8 +1123,24 @@ bool PublishToTopic( const char * pTopicFilter,
     return returnStatus;
 }
 /*-----------------------------------------------------------*/
+/*-----------------------------------------------------------*/
+MQTTStatus_t Mqtt_process(void)
+{
+    MQTTStatus_t eMqttStatus = MQTTSuccess;
 
-bool ProcessLoopWithTimeout( void )
+    eMqttStatus = MQTT_ProcessLoop( &mqttContext );
+
+    if( ( eMqttStatus != MQTTSuccess ) && ( eMqttStatus != MQTTNeedMoreBytes ) )
+    {
+        LogError( ( "MQTT_ProcessLoop returned status = %s.",
+                    MQTT_Status_strerror( eMqttStatus ) ) );
+    }
+
+    return eMqttStatus;
+}
+
+/*-----------------------------------------------------------*/
+bool ProcessLoopWithTimeout( uint32_t Timeout )
 {
     uint32_t ulMqttProcessLoopTimeoutTime;
     uint32_t ulCurrentTime;
@@ -1132,15 +1148,21 @@ bool ProcessLoopWithTimeout( void )
     MQTTStatus_t eMqttStatus = MQTTSuccess;
     bool returnStatus = false;
 
-    ulCurrentTime = mqttContext.getTime();
-    ulMqttProcessLoopTimeoutTime = ulCurrentTime + MQTT_PROCESS_LOOP_TIMEOUT_MS;
+    // Polling 주기 (10ms 추천: CPU 연산 낭비를 막으면서도 네트워크 응답을 민첩하게 감지)
+    const TickType_t xPollIntervalTicks = pdMS_TO_TICKS( 10 );
 
-    /* Call MQTT_ProcessLoop multiple times until the timeout expires or
-     * #MQTT_ProcessLoop fails. */
+    ulCurrentTime = mqttContext.getTime();
+    ulMqttProcessLoopTimeoutTime = ulCurrentTime + Timeout;
+
+    /* 지정한 타임아웃 시간이 다 될 때까지 10ms 단위로 대기하며 ProcessLoop 호출 */
     while( ( ulCurrentTime < ulMqttProcessLoopTimeoutTime ) &&
            ( eMqttStatus == MQTTSuccess || eMqttStatus == MQTTNeedMoreBytes ) )
     {
-        eMqttStatus = MQTT_ProcessLoop( &mqttContext );
+        eMqttStatus = Mqtt_process();
+
+        vTaskDelay( xPollIntervalTicks );
+
+        // 시간 업데이트
         ulCurrentTime = mqttContext.getTime();
     }
 
@@ -1157,4 +1179,3 @@ bool ProcessLoopWithTimeout( void )
 
     return returnStatus;
 }
-/*-----------------------------------------------------------*/

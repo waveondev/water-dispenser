@@ -130,6 +130,10 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
 				motion_msg_send(MOTION_START_REQUEST,1);
 			}	
+			else if (!strncmp(ag[1], "health", 6))
+			{
+				motion_msg_send(HEALTH_DATA_REQUEST,1);
+			}	
 			else if (!strncmp(ag[1], "rm", 2))
 			{
 				if (!strncmp(ag[2], "wifi", 4))

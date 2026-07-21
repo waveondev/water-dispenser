@@ -9,7 +9,7 @@
 #include "esp_log.h"
 #include "app_led.h"
 #include "debug_cli.h"
-
+#include "app_config_flash.h"
 #if 0
 #define MOTOR_IN1_GPIO       (PIN_PUMP_PWM)
 
@@ -283,8 +283,8 @@ rmt_encoder_handle_t copy_encoder = NULL;
 #define LEDC_CH0_MOTOR_IN1   LEDC_CHANNEL_0
 static const char *TAG = __FILE__;
 static int current_target_percentage = 0; 
-
-
+static uint32_t* Motor_Used_Time;
+static esp_timer_handle_t Motor_used_timer;
 
 // 모터 제어 함수 (percentage: 0 ~ 100)
 void set_motor_speed_percent(int percentage) {
@@ -297,6 +297,12 @@ void set_motor_speed_percent(int percentage) {
     uint32_t total_ticks = 1000; // 1000틱 = 50us = 20kHz
     uint32_t high_ticks = (total_ticks * percentage) / 100;
     uint32_t low_ticks = total_ticks - high_ticks;
+
+    if (esp_timer_is_active(Motor_used_timer)) {
+        esp_timer_stop(Motor_used_timer);
+    }
+    if(percentage)
+        ESP_ERROR_CHECK(esp_timer_start_periodic(Motor_used_timer, 1000000));    
 
     // 2. v5.x 방식: 구조체에 직접 레벨(Level)과 지속시간(Duration) 대입
     if (percentage == 100) {
@@ -346,6 +352,11 @@ motor_boost_args_t boost_config;
 
 // 큐 핸들 변수 선언
 static QueueHandle_t motor_queue = NULL;
+static uint32_t* Motor_Used_Time;
+static void motor_used_timer_callback(void* arg)
+{
+    (*Motor_Used_Time)++;
+}
 
 
 static void motor_boost_task(void *pvParameters)
@@ -390,7 +401,16 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
 
 
     if(duration_sec_buf > 0)
+    {
+        if(duration_sec != 0 && target_percentage)
+        {
+            duration_sec_buf = 0;
+            set_motor_speed_percent(0);
+            current_target_percentage = 0;
+        }
         return;
+    }
+
 
     if (target_percentage <= 0) {
        // ESP_LOGI(TAG, "[PUMP] 🛑 모터 즉시 정지 (0%%)");
@@ -436,6 +456,15 @@ void init_motor_ledc(void) {
 
     // 3. RMT 채널 하드웨어 켜기
     ESP_ERROR_CHECK(rmt_enable(pwm_chan));
+
+    Motor_Used_Time = get_motor_time();
+    const esp_timer_create_args_t Motor_Used_timer_args = {
+        .callback = &motor_used_timer_callback,
+        .name = "Motor_used_timer"
+    };
+
+    // 타이머 생성
+    ESP_ERROR_CHECK(esp_timer_create(&Motor_Used_timer_args, &Motor_used_timer));
 
     motor_queue = xQueueCreate(10, sizeof(motor_boost_args_t));
     if(motor_queue == NULL)

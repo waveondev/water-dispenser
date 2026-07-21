@@ -18,8 +18,17 @@ static const char *TAG = "aws_iot_task";
 extern EventGroupHandle_t s_wifi_event_group;
 static bool is_aws_started = false;
 static QueueHandle_t mqtt_tx_queue = NULL;
+static QueueHandle_t tracker_mqtt_queue = NULL;
+static esp_timer_handle_t Health_timer;
 
 extern int aws_iot_provisioning_main( int argc, char ** argv );
+// 15분 = 15분 * 60초 * 1,000,000us
+#define TIMER_15_MIN_IN_US   (15ULL * 60ULL * 1000000ULL)
+
+static void Health_timer_callback(void* arg)
+{
+    mqtt_queue_send(MESSEGE_HEALTH);
+}
 
 void mqtt_queue_send(messege_tx_mqtt_cmd_e cmd)
 {
@@ -27,6 +36,20 @@ void mqtt_queue_send(messege_tx_mqtt_cmd_e cmd)
         ESP_LOGW("mqtt_tx", "Queue full! Dropping packet and freeing memory.");
     }
 }
+
+void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Packet_t* packet)
+{
+    tracker_mqtt_packet_t mqtt_packet;
+    memset(&mqtt_packet,0,sizeof(tracker_mqtt_packet_t));
+    mqtt_packet.cmd = cmd;
+    memcpy(mqtt_packet.mac,mac,sizeof(mqtt_packet.mac));
+    memcpy(&mqtt_packet.packet,packet,sizeof(Motion_Packet_t));
+
+    if (xQueueSend(tracker_mqtt_queue, &mqtt_packet, 0) != pdPASS) {
+        ESP_LOGW("mqtt_tx", "Queue full! Dropping packet and freeing memory.");
+    }
+}
+
 
 
 static void aws_iot_main_entry(void *pvParameters)
@@ -52,13 +75,16 @@ static void aws_iot_main_entry(void *pvParameters)
     ESP_LOGI(TAG,"=== 2. MQTT 루프를 시작합니다 ===");
 
     messege_tx_mqtt_cmd_e cmd;
-
+    tracker_mqtt_packet_t mqtt_packet;
     for(;;) {
         if (xQueueReceive(mqtt_tx_queue, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
             Send_cJSON_Messege(cmd);
         }
+        if (xQueueReceive(tracker_mqtt_queue, &mqtt_packet, pdMS_TO_TICKS(50)) == pdTRUE) {
+            Send_cJSON_Messege_for_tracker(&mqtt_packet);
+        }
         /* 백그라운드에서 지속적으로 수신 버퍼를 감시하며 콜백 함수를 유도합니다 */
-        ProcessLoopWithTimeout(); 
+        ProcessLoopWithTimeout(50); 
     }
 
     vTaskDelete(NULL); // 만약 루프를 빠져나간다면 태스크 종료
@@ -67,10 +93,21 @@ static void aws_iot_main_entry(void *pvParameters)
 void aws_iot_task_init(void)
 {
     mqtt_tx_queue = xQueueCreate(10, sizeof(messege_tx_mqtt_cmd_e));
-
+    tracker_mqtt_queue = xQueueCreate(10, sizeof(tracker_mqtt_packet_t));
 
 
     if (is_aws_started == false) {
+
+
+        const esp_timer_create_args_t Health_timer_args = {
+            .callback = &Health_timer_callback,
+            .name = "Health_timer"
+        };
+
+        // 타이머 생성
+        ESP_ERROR_CHECK(esp_timer_create(&Health_timer_args, &Health_timer));
+
+        ESP_ERROR_CHECK(esp_timer_start_periodic(Health_timer, TIMER_15_MIN_IN_US));
 
         if (xTaskCreatePinnedToCore(
             aws_iot_main_entry,                  // 태스크 함수

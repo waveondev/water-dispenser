@@ -9,6 +9,7 @@
 #define TOF_DETECT_BIT  (1<<11)
 #define CLEAN_MODE_BIT  (1<<10)
 bool TOF_enable(void);
+bool led_bit_status(uint16_t status);
 void led_bit_disable(uint16_t disable);
 void led_bit_enable(uint16_t enable);
 void init_led_strip(void);

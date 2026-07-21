@@ -10,6 +10,8 @@
 #include "app_config_flash.h"
 #include "app_led.h"
 #include "debug_cli.h"
+#include "tx_mqtt.h"
+#include "aws_iot_task.h"
 static const char *TAG = __FILE__;
 // 필터 설정값 (상황에 맞게 조절)
 #define FILTER_ALPHA   0.80f  // 0.0 ~ 1.0 (낮을수록 부드럽지만 반응이 느려짐)
@@ -54,48 +56,59 @@ void insert_to_raw_buffer(float new_data)
         raw_buffer[BUFFER_SIZE - 1] = new_data;
     }
 
-    // 데이터가 쌓이기 시작하면 판정
+    // 데이터가 버퍼 크기만큼 쌓이기 시작하면 판정
     if (current_count >= BUFFER_SIZE) 
     {
+        // =================================================================
         // 2. [물 보충 시작 판정] 
-        // 기준점(가장 오래된 무게 raw_buffer[0])보다 현재 무게(new_data)가 2.0g 이상 증가하면 보충 시작!
-        // (참고: 센서 노이즈로 일시적 감소할 수도 있으므로 안전하게 절대값 fabs를 씁니다)
-        if (fabs(new_data - raw_buffer[0]) >= 3.0f) 
+        // 최근 기준점(raw_buffer[0])보다 현재 무게(new_data)가 3.0g 이상 "실제 증가"했을 때!
+        // (fabs를 제거하여 감소(-g)하는 음수 상황에는 절대로 반응하지 않습니다)
+        // =================================================================
+        if ((new_data - raw_buffer[0]) >= 3.0f) 
         {
-            if(water_refill_flag == 0)
+            if (water_refill_flag == 0)
             {
-                start_water = raw_buffer[0];
+                start_water = raw_buffer[0]; // 보충 시작 직전 무게 픽스
                 water_refill_flag = 1; 
-                ESP_LOGI(TAG, "보충 start (현재무게: %.2fg)", start_water);
+                ESP_LOGI(TAG, "💧 물 보충 시작 감지! (시작 무게: %.2fg, 현재: %.2fg)", start_water, new_data);
             }
         }
 
+        // =================================================================
         // 3. [물 보충 종료 판정]
-        // 플래그가 켜진 상태라면, 최근 들어온 10개의 데이터들이 '현재 데이터'와 비교해 
-        // 2.0g 미만으로 차이가 나는지(즉, 최근 10번 동안 무게 변화가 멈추고 안정되었는지) 확인합니다.
+        // 물이 다 차서 더 이상 g이 안 늘어나고, 최근 10개 데이터가 안정화되었는지 검사
+        // =================================================================
         if (water_refill_flag == 1) 
         {
             int check_count = (current_count < 10) ? current_count : 10;
             int stable_data_count = 0;
 
-            // 맨 뒤(최신)에서부터 최근 10개의 무게 데이터를 검사
+            // 최근 10개의 데이터 변화폭 검사
             for (int i = 0; i < check_count; i++) 
             {
                 int index = current_count - 1 - i;
                 
-                // 최근 기록된 무게들이 현재 최종 무게와 2.0g 미만으로 정체되어 있다면
+                // 현재 무게(new_data)와 최근 10개 측정값들의 차이가 3.0g 미만으로 정체되어 있다면
+                // (즉, 물을 더 이상 붓지 않고 수위가 멈춰있다면)
                 if (fabs(new_data - raw_buffer[index]) < 3.0f) 
                 {
                     stable_data_count++;
                 }
             }
 
-    
-            // 최근 10개의 데이터 모두가 현재 무게 부근에서 안정화되었다면 = 물 보충 완료!
+            // 최근 10개 데이터가 모두 멈춰서 안정화되었고, 
+            // 최종 무게가 시작 무게보다 큰 경우(+g)에만 물 보충 정상 완료 처리!
             if (stable_data_count == check_count) 
             {
-                ESP_LOGI(TAG, "보충 end %.2f",new_data - start_water);
-                water_refill_flag = 0; 
+                float total_refilled = new_data - start_water;
+
+                if (total_refilled >= 3.0f) { // 최소 3g 이상 보충되었을 때만 성공 처리
+                    ESP_LOGI(TAG, "✅ 물 보충 완료! (총 보충량: +%.2fg, 최종무게: %.2fg)", total_refilled, new_data);
+                } else {
+                    ESP_LOGW(TAG, "⚠️ 일시적 노이즈로 보충 취소됨");
+                }
+
+                water_refill_flag = 0; // 플래그 리셋
             }
         }
     }
@@ -332,10 +345,19 @@ void HX711_Sensing(void)
             ESP_LOGI(TAG, " Raw: %.2f g | Filtered: %.2f g (raw_bits: %d)\r\n", w, moving_average_calc(), raw);
         }
         // 💡 이제 안전한 로컬 변수끼리만 비교합니다.
-        if (avg_val < safe_min_threshold || raw < safe_case_raw)
+        if (avg_val < safe_min_threshold) //물그릇 탐지
         {
-            led_bit_enable(HARDWARE_ERR_BIT);
+            if(!led_bit_status(HARDWARE_ERR_BIT))
+            {
+                led_bit_enable(HARDWARE_ERR_BIT);
+                mqtt_queue_send(MESSEGE_DIAGNOSTICS);
+            }       
         }       
+        if(raw < safe_case_raw)// 물부족
+        {
+            if(!led_bit_status(HARDWARE_ERR_BIT))
+                led_bit_enable(HARDWARE_ERR_BIT);
+        }
         // 💡 3. 에러 해제 조건식도 안전한 로컬 변수로 교체합니다.
         // 흔들림 방지(히스테리시스)를 위해 임계값(200)보다 1g 큰 safe_min_threshold + 1.0f(즉, 201.0f)로 대칭을 맞춥니다.
         float safe_release_threshold = safe_min_threshold + 1.0f; 

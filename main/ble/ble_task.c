@@ -23,7 +23,7 @@
 #include "device_config.h"
 static const char *TAG = __FILE__;
 
-#define DEVICE_NAME "Wave_Peri2"
+#define DEVICE_NAME "Wave_Peri1"
 #define MY_UUID128_BASE(XX, YY) \
     BLE_UUID128_DECLARE(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, \
                         0xF3, 0x93, 0xB5, 0xA3, YY, XX, 0x40, 0x6E)
@@ -42,6 +42,8 @@ static uint8_t own_addr_type;
 static uint16_t ble_spp_svc_gatt_notify_val_handle;
 static bool conn_handle_subs[CONFIG_BT_NIMBLE_MAX_CONNECTIONS + 1];
 static esp_timer_handle_t Mac_sending_timer;
+
+
 
 extern void ble_store_config_init(void);
 static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg);
@@ -154,15 +156,17 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
     case BLE_GAP_EVENT_CONNECT:
         MODLOG_DFLT(INFO, "connection %s; status=%d \n",
                     event->connect.status == 0 ? "established" : "failed", event->connect.status);
-        is_phone_connected = true;
-        ESP_ERROR_CHECK(esp_timer_start_periodic(Mac_sending_timer, 3000000));
         ESP_LOGE(TAG, "BLE_GAP_EVENT_CONNECT");
+        is_phone_connected = true;
+        if (esp_timer_is_active(Mac_sending_timer)) {
+            esp_timer_stop(Mac_sending_timer);
+        }
+        ESP_ERROR_CHECK(esp_timer_start_periodic(Mac_sending_timer,    3000000));
+
         
         current_conn_handle = event->connect.conn_handle;
         //MotionSetTimer(is_phone_connected); by.jeon 이 타이머를 왜 돌리는거죠?
         if (event->connect.status == 0) {
-
-
             if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
                 ble_spp_server_print_conn_desc(&desc);
             }
@@ -173,8 +177,11 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         return 0;
 
     case BLE_GAP_EVENT_DISCONNECT:
-            ESP_LOGE(TAG, "BLE_GAP_EVENT_DISCONNECT");
+        ESP_LOGE(TAG, "BLE_GAP_EVENT_DISCONNECT");
         MODLOG_DFLT(INFO, "disconnect; reason=%d \n", event->disconnect.reason);
+        if (esp_timer_is_active(Mac_sending_timer)) {
+            esp_timer_stop(Mac_sending_timer);
+        }
         current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
         is_phone_connected = false;
         MotionSetTimer(is_phone_connected);
@@ -380,6 +387,24 @@ static int ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, stru
         uint16_t data_len = OS_MBUF_PKTLEN(ctxt->om);
         int8_t rssi = 0;
         // 현재 연결 핸들(conn_handle)의 RSSI를 조회합니다.
+
+        struct ble_gap_conn_desc desc;
+        uint8_t peer_mac[6] = {0};
+
+        if (ble_gap_conn_find(conn_handle, &desc) == 0) {
+            // desc.peer_id_addr.val 에 6바이트 MAC 주소가 들어있습니다.
+            memcpy(peer_mac, desc.peer_id_addr.val, 6);
+            
+            // NimBLE의 MAC 주소 배열은 역순(Little-Endian)으로 들어올 수 있으므로
+            // 대문자 16진수 문자열로 출력하여 확인해봅니다.
+            ESP_LOGI("BLE_RX", "Connected Peer MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+                     peer_mac[5], peer_mac[4], peer_mac[3], 
+                     peer_mac[2], peer_mac[1], peer_mac[0]);
+        } else {
+            ESP_LOGW("BLE_RX", "Failed to find connection info for handle: %d", conn_handle);
+        }
+
+
         int rc = ble_gap_conn_rssi(conn_handle, &rssi);
         if (rc == 0) {
             printf("BLE Write Received - Data Len: %d, RSSI: %d dBm\n", data_len, rssi);
@@ -392,7 +417,7 @@ static int ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, stru
 
             // 2. 실제 복사할 데이터 길이 계산 및 구조체 입력
             msg.len = data_len; 
-
+            memcpy(msg.mac,peer_mac,sizeof(msg.mac));
             // 3. ★ 매우 중요: 힙(Heap) 영역에 실제 데이터를 담을 공간 할당!
             msg.data = (uint8_t *)malloc(msg.len);
             if (msg.data == NULL) {
@@ -562,7 +587,7 @@ static void ble_rx_processing_task(void *pvParameters)
 
     while (1) {
         if (xQueueReceive(ble_rx_queue, &msg, portMAX_DELAY) == pdTRUE) {
-            BLE_Receive_data(msg.data, msg.len);
+            BLE_Receive_data(msg.mac, msg.data, msg.len);
             free(msg.data);   
         }
     }
@@ -600,6 +625,8 @@ static void ble_tx_processing_task(void *pvParameters)
     }
 }
 
+
+
 static void mac_send_timer_callback(void* arg)
 {
     esp_timer_stop(Mac_sending_timer);
@@ -634,6 +661,10 @@ void motion_msg_send(uint8_t cmd,uint8_t sub_cmd)
             Motion_Packet.event_code = cmd;
             Motion_Packet.motion_res.req_type = sub_cmd;
         break;
+        case HEALTH_DATA_REQUEST:
+            Motion_Packet.event_code = cmd;
+            Motion_Packet.health_data_req.req_type = sub_cmd;
+        break;    
         case MOTION_DATA_ACK:
             Motion_Packet.event_code = cmd;
             Motion_Packet.motion_ack.ack_seq_no = sub_cmd;
@@ -641,7 +672,8 @@ void motion_msg_send(uint8_t cmd,uint8_t sub_cmd)
         case OTA_MODE_REQUEST:
             Motion_Packet.event_code = cmd;
             Motion_Packet.ota_req.cmd_type = sub_cmd;
-        break;    
+        break;   
+
         default : 
         return;            
     }
@@ -687,13 +719,13 @@ void ble_task_init(void)
     ble_store_config_init();
 
 
-    const esp_timer_create_args_t pairing_timer_args = {
+    const esp_timer_create_args_t mac_sending_timer_args = {
         .callback = &mac_send_timer_callback,
         .name = "mac_sending_timer"
     };
+    ESP_ERROR_CHECK(esp_timer_create(&mac_sending_timer_args, &Mac_sending_timer));
 
-    // 타이머 생성
-    ESP_ERROR_CHECK(esp_timer_create(&pairing_timer_args, &Mac_sending_timer));
+
     ble_rx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
     ble_tx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
 

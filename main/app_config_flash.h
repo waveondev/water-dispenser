@@ -37,9 +37,12 @@ void reset_all_nvs_data(void);
 void app_nvs_save_set(void);
 void wifi_nvs_save_set(void);
 void ble_nvs_save_set(void);
+void motor_nvs_save_set(void);
 app_config_t* get_app_config(void);
 app_wifi_config_t* get_wifi_config(void);
 app_ble_config_t* get_ble_config(void);
+uint32_t* get_motor_time(void);
+
 void load_app_configuration(void);
 
 void load_wifi_configuration(void);

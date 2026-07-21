@@ -11,6 +11,7 @@
 // 큐로 주고받을 데이터 구조체
 typedef struct {
     uint16_t len;
+    uint8_t mac[6];
     uint8_t *data; 
 } ble_data_msg_t;
 /* Attributes State Machine */

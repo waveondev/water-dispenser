@@ -60,9 +60,6 @@ bool mqtt_subscribe_init(void)
     {
         ESP_LOGI(TAG, "=== %d. 메모리 실패 === %s", topic_count, sub_topic);
     }
-
-
-#if 1
     snprintf(sub_topic,sizeof(sub_topic),SERVER_RX_TOPIC_BOOT,dynamicMacStr);
 
     subTopic = topic_copy(sub_topic);
@@ -159,7 +156,6 @@ bool mqtt_subscribe_init(void)
         ESP_LOGI(TAG, "=== %d. 메모리 실패 === %s", topic_count, sub_topic);
     }
 
-#endif
     return true;
 }
   

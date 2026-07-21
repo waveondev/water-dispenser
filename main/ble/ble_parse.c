@@ -10,7 +10,7 @@
 #include "mbedtls/base64.h"
 #include "mbedtls/gcm.h"
 #include "esp_random.h"
-
+#include "aws_iot_task.h"
 #define OTA_URL "https://evtago.s3.ap-northeast-2.amazonaws.com/water-dispenser.bin"
 // 분할 전송 시 사용할 MTU 사이즈를 저장할 전역/정적 변수 [앱에서 받을 수 있는 ble의 사이즈를 저장]
 
@@ -404,7 +404,37 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
 }
 static uint32_t total_count = 0;
 static uint32_t input_count = 0;
-void BLE_Receive_data(uint8_t* data, uint16_t len)
+static esp_timer_handle_t Motion_Timeout_timer = NULL;
+// 1초 뒤 타이머가 만료되면 실행될 콜백 함수
+static void Motion_Timeout_callback(void* arg)
+{
+    //ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
+
+    motion_msg_send(MOTION_START_REQUEST,2);
+    // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
+}
+void Motion_Timer_Set(bool state)
+{
+                // 2. 타이머가 처음 호출된 거라면 타이머를 생성
+    if (Motion_Timeout_timer == NULL) {
+        const esp_timer_create_args_t timer_args = {
+            .callback = &Motion_Timeout_callback,
+            .name = "opmode_delay_timer"
+        };
+        esp_timer_create(&timer_args, &Motion_Timeout_timer);
+    }
+
+    // 💡 이미 타이머가 존재한다는 뜻은, 이전에 버튼을 누른 적이 있다는 것!
+    // 즉, 1초 이내에 다시 들어왔을 확률이 높으므로 기존 타이머를 멈춤.
+    if (esp_timer_is_active(Motion_Timeout_timer)) {
+        esp_timer_stop(Motion_Timeout_timer);
+    }
+    
+    if(state == true)
+        esp_timer_start_once(Motion_Timeout_timer, 5000000);
+}
+
+void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
 {
     Motion_Packet_t* Motion_Packet = (Motion_Packet_t*)data;
     
@@ -419,14 +449,17 @@ void BLE_Receive_data(uint8_t* data, uint16_t len)
     switch(Motion_Packet->event_code)
     {   
         case MOTION_START_RESPONSE:
-            printf("interval = %d Len = %d",Motion_Packet->motion_req.interval, Motion_Packet->motion_req.total_points);
+            printf("interval = %d Len = %d",Motion_Packet->motion_req.interval, Motion_Packet->motion_req.total_points);                    
             if(Motion_Packet->motion_req.total_points != 0)
             {
                     total_count = Motion_Packet->motion_req.total_points + (9-(Motion_Packet->motion_req.total_points%9));
                     input_count = 0;
+                    Motion_Timer_Set(true);
             }
+            
         break;
         case MOTION_DATA:
+
             input_count += 9;
             printf("seq = %d\n", Motion_Packet->motion_data.seq);
 
@@ -439,8 +472,46 @@ void BLE_Receive_data(uint8_t* data, uint16_t len)
             printf("data6: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_6.bit.type, Motion_Packet->motion_data.pack_data_6.bit.data, Motion_Packet->motion_data.pack_data_6.word);
             printf("data7: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_7.bit.type, Motion_Packet->motion_data.pack_data_7.bit.data, Motion_Packet->motion_data.pack_data_7.word);
             printf("data8: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_8.bit.type, Motion_Packet->motion_data.pack_data_8.bit.data, Motion_Packet->motion_data.pack_data_8.word);
+            tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet);
             if(input_count == total_count)
+            {
                 motion_msg_send(MOTION_DATA_ACK,Motion_Packet->motion_data.seq);
+            }
+            else
+                Motion_Timer_Set(true);
+        break;
+        case HEALTH_DATA_RESPONSE:
+                    // event_code 및 health_data_res 내부 구조체 포인터
+                // health_data_res 구조체 직접 접근
+    
+
+                printf("\n================ [ Health Data Res ] ================\n");
+                printf(" Event Code    : 0x%02X (%u)\n", Motion_Packet->event_code, Motion_Packet->event_code);
+                printf(" Struct Size   : %d bytes (Expected: 19 bytes)\n", sizeof(Motion_Packet->health_data_res));
+                printf(" Total Packet  : %d bytes (Expected: 20 bytes)\n", sizeof(Motion_Packet_t));
+                printf("-----------------------------------------------------\n");
+                printf(" Uptime        : %lu sec (%lu hours %lu min)\n", 
+                        (unsigned long)Motion_Packet->health_data_res.uptime_sec, 
+                        (unsigned long)(Motion_Packet->health_data_res.uptime_sec / 3600), 
+                        (unsigned long)((Motion_Packet->health_data_res.uptime_sec % 3600) / 60));
+                        
+                printf(" Bat Level     : %u %%\n", Motion_Packet->health_data_res.Bat_Level);
+                printf(" Bat Voltage   : %u (e.g. %u.%uV)\n", 
+                        Motion_Packet->health_data_res.Bat_Voltage, Motion_Packet->health_data_res.Bat_Voltage / 10, Motion_Packet->health_data_res.Bat_Voltage % 10);
+                        
+                printf(" FW Version    : v%u.%u.%u\n", Motion_Packet->health_data_res.major, Motion_Packet->health_data_res.minor, Motion_Packet->health_data_res.patch);
+                printf(" Target RSSI   : %d dBm\n", Motion_Packet->health_data_res.target_rssi);
+                
+                // 비트필드 fault_flag 상세 출력
+                printf(" Fault Flag    : 0x%02X (Raw Byte)\n", Motion_Packet->health_data_res.fault_flag.byte);
+                printf("  |- Bat Status  : %u\n", Motion_Packet->health_data_res.fault_flag.bit.Bat_Status);
+                printf("  |- IMU Error   : %u\n", Motion_Packet->health_data_res.fault_flag.bit.IMU_Err);
+                printf("  |- BLE Error   : %u\n", Motion_Packet->health_data_res.fault_flag.bit.BLE_Err);
+                printf("  |- Storage Err : %u\n", Motion_Packet->health_data_res.fault_flag.bit.storage);
+                printf("  |- Reset Reason: %u\n", Motion_Packet->health_data_res.fault_flag.bit.reset_reason);
+                
+                printf("\n=====================================================\n\n");
+                tracker_mqtt_queue_send(TRACKER_MESSEGE_HEALTH,mac, Motion_Packet);
         break;
         default:
             BLE_APP_Command(data,len);
