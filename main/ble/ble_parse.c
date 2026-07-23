@@ -457,7 +457,10 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                     Motion_Timer_Set(true);
                     tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet);
             }
-            
+            printf("\n================ [ MOTION_START_RESPONSE ] ================\n");
+            printf(" interval   : %d\n", Motion_Packet->motion_req.interval);
+            printf(" total_points   : %d 개 \n",  Motion_Packet->motion_req.total_points);
+            printf("\n=====================================================\n\n");
         break;
         case MOTION_DATA:
 

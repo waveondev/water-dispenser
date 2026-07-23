@@ -5,7 +5,7 @@
 #include "esp_mac.h"
 #include "mqtt_operations.h"
 #include "aws_iot_task.h"
-
+#include "app_config_flash.h"
 
 static const char *TAG = __FILE__;
 
@@ -188,6 +188,7 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
         break;
         case MESSEGE_DIAGNOSTICS:
             // 2. 공통 스칼라 필드 추가
+
             cJSON_AddNumberToObject(data_obj, "uptime_sec", 174739);
             cJSON_AddNumberToObject(data_obj, "reset_reason", 0);
             cJSON_AddNumberToObject(data_obj, "rssi_dbm", -70);
@@ -202,6 +203,13 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
             cJSON_AddStringToObject(subsystems, "filter.water", "ok");
             cJSON_AddStringToObject(subsystems, "filter.debris", "ok");
             cJSON_AddStringToObject(subsystems, "power",         "ok");
+            if (water_fault_code_send & WATER_LOW_FAULT) {
+               cJSON_AddNumberToObject(subsystems, "water_level", 1);
+            }
+            else
+               cJSON_AddNumberToObject(subsystems, "water_level", 0);    
+            app_config_t* app_config = get_app_config();
+            cJSON_AddNumberToObject(subsystems, "current_mode", app_config->op_mode); // Current Mode 추가        
             cJSON_AddItemToObject(data_obj, "subsystems", subsystems);
 
             // 🔧 수정: W-100 fault_code 적용 (PUMP_ERR)
@@ -222,6 +230,12 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
                 cJSON_AddStringToObject(data_obj, "fault_code", "FILTER_DEBRIS_EXPIRED");
             }
+            else if(water_fault_code_send & WATER_LOW_FAULT)
+            {
+                cJSON_AddStringToObject(data_obj, "alert_level", "critical");
+                cJSON_AddStringToObject(data_obj, "fault_code", "WATER_EMPTY");
+            }
+            
             else
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");

@@ -24,6 +24,8 @@ static void opmode_timer_callback(void* arg)
 {
     //ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
     app_nvs_save_set();
+        water_fault_enable(WATER_MODECHANGE);
+    water_fault_disable(WATER_MODECHANGE);
     // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
 }
 
@@ -51,6 +53,7 @@ void Opmode_Set(void)
         break;
     }
     app_config->op_mode = current_opmode;
+
     {
         // 2. 타이머가 처음 호출된 거라면 타이머를 생성
         if (opmode_timer == NULL) {
@@ -131,7 +134,7 @@ static void Opmode_task(void *pvParameter)
                 splash_count = 0;
                 // 💡 1. 센서 감지 즉시 시작 무게 저장
                 start_weight = loadcell_data_get();
-                mqtt_queue_send(MESSEGE_ACCESS);
+                
                 smart_timer_target = current_tick + ((app_config->EFFECTIVE_DWELL_TIME*1000) / portTICK_PERIOD_MS);
                 smart_state = SMART_RUN_VERIFY;
                 ESP_LOGI(TAG, "음수 시작 Verifying 5s... start_weight = %.2fg", start_weight);
@@ -170,6 +173,7 @@ static void Opmode_task(void *pvParameter)
             if ((int32_t)(smart_timer_target - current_tick) <= 0) 
             {
                 // 5초 동안 급격하게 튀지 않고 무사히 통과 완료!
+                mqtt_queue_send(MESSEGE_ACCESS);
                 smart_state = SMART_RUN_STABLE;
                 ESP_LOGI(TAG, "SMART: 5-second verification SUCCESS. Stable running...");
             }
@@ -201,8 +205,11 @@ static void Opmode_task(void *pvParameter)
                 {
                     smart_state = SMART_IDLE; // 완전히 끝내고 대기 상태로 복귀
                     float diff_weight = start_weight - loadcell_data_get();
-                    Tracker_waterintake_end((uint32_t)(diff_weight*100));
-                    mqtt_queue_send(MESSEGE_DRINK);
+                    if(diff_weight > 0)
+                    {
+                            Tracker_waterintake_end((uint32_t)(diff_weight));
+                            mqtt_queue_send(MESSEGE_DRINK);
+                    }
                     ESP_LOGI(TAG, "음수 종료 end_weight = %.2fg, diff_weight = %.2fg",loadcell_data_get() ,diff_weight );
                 }
                 break;

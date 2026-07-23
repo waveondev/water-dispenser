@@ -37,11 +37,15 @@ void dump_tracker_device_info(const char* label, const Tracker_Device_t* dev)
         return;
     }
     
-    printf("%s:\n", label);
-    printf("  - Device_ID    : %s\n", dev->Device_ID);
-    printf("  - Device_Time  : %ld\n", dev->Device_Time);
-    printf("  - Disable_Time : %ld\n", dev->Disable_Time);
-    printf("  - Enable       : %ld (%s)\n", dev->Enable, dev->Enable ? "TRUE" : "FALSE");
+    printf("%s\n", label);
+    printf("  ├─ Device ID    : %s\n", dev->Device_ID[0] != '\0' ? dev->Device_ID : "(None)");
+    printf("  ├─ Enable State : %s (%ld)\n", dev->Enable ? "ENABLED" : "DISABLED", dev->Enable);
+    printf("  ├─ Time Stats   : Total[%ld s] | Active[%ld s] | Disable[%ld s] | Diff[%ld s]\n", 
+           dev->total_Device_Time, 
+           dev->Device_Time, 
+           dev->Disable_Time, 
+           dev->diff_Time);
+    printf("  └─ Water Intake : %ld mL\n", dev->Water_intake);
 }
 
 // 2. 전체 Tracker_Device 배열 및 UNKNOWN 객체를 덤프하는 함수

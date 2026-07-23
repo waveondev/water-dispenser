@@ -420,7 +420,7 @@ bool HX711_init(void)
 #include "hx711_lib.h"
 static int32_t hx711_data;
 static int32_t hx711_data_buf;
-#define CASE_WEIGHT 120000
+#define CASE_WEIGHT 197700
 hx711_t dev = {
     .dout = PIN_HX711_DOUT,
     .pd_sck = PIN_HX711_SCK,
@@ -432,7 +432,13 @@ void HX711_cal_init(uint16_t cal)
 }
 float loadcell_data_get(void)
 {
-    int32_t case_data = hx711_data_buf - CASE_WEIGHT;
+    int case_weight = 0;
+    app_config_t* app_config = get_app_config();
+    if(app_config->case_raw_data == 0)
+        case_weight = CASE_WEIGHT;
+    else
+        case_weight = app_config->case_raw_data;
+    int32_t case_data = hx711_data_buf - case_weight;
     float Data = (float)case_data / 100.0f;
     return Data;
 }
@@ -452,16 +458,15 @@ void HX711_Sensing(void)
     {
             ESP_LOGI(TAG, "hx711_data: (%d)",hx711_data_buf);
     }
-
+    int case_weight = 0;
     float safe_min_threshold = (float)app_config->min_weight_threshold; 
-    int32_t safe_case_raw = (int32_t)app_config->case_raw_data;
 
     if(DBG_Resister->HX711)
     {
         ESP_LOGI(TAG, " Raw: %.2f g", loadcell_data_get());
     }
 
-    if(loadcell_data_get() < safe_case_raw)//물그릇 탐지
+    if(loadcell_data_get() < 0)//물그릇 탐지
     {
         if(!led_bit_status(HARDWARE_ERR_BIT))
         {
@@ -487,7 +492,7 @@ void HX711_Sensing(void)
     // 흔들림 방지(히스테리시스)를 위해 임계값(200)보다 1g 큰 safe_min_threshold + 1.0f(즉, 201.0f)로 대칭을 맞춥니다.
     float safe_release_threshold = safe_min_threshold + 10.0f; 
 
-    if(hardware_error_enable() && loadcell_data_get() > safe_release_threshold && loadcell_data_get() > safe_case_raw)
+    if(hardware_error_enable() && loadcell_data_get() > safe_release_threshold && loadcell_data_get() > 0)
     {
         led_bit_disable(HARDWARE_ERR_BIT);
         water_fault_disable(WATER_LOW_FAULT);
