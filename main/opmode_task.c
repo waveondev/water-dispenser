@@ -15,7 +15,7 @@
 static QueueHandle_t opModeQueue = NULL;
 
 static const char* TAG = __FILE__;
-#define OPMODE_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
+#define OPMODE_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 static uint32_t current_opmode = OP_MODE_NORMAL;
 static esp_timer_handle_t opmode_timer = NULL;
 
@@ -72,8 +72,37 @@ void Opmode_Set(void)
     }
 
 }
+#if 0
+static esp_timer_handle_t Motion_Timeout_timer = NULL;
+// 1초 뒤 타이머가 만료되면 실행될 콜백 함수
+static void Motion_Timeout_callback(void* arg)
+{
+    //ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
 
+    motion_msg_send(MOTION_START_REQUEST,2);
+    // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
+}
+void Motion_Timer_Set(bool state)
+{
+                // 2. 타이머가 처음 호출된 거라면 타이머를 생성
+    if (Motion_Timeout_timer == NULL) {
+        const esp_timer_create_args_t timer_args = {
+            .callback = &Motion_Timeout_callback,
+            .name = "opmode_delay_timer"
+        };
+        esp_timer_create(&timer_args, &Motion_Timeout_timer);
+    }
 
+    // 💡 이미 타이머가 존재한다는 뜻은, 이전에 버튼을 누른 적이 있다는 것!
+    // 즉, 1초 이내에 다시 들어왔을 확률이 높으므로 기존 타이머를 멈춤.
+    if (esp_timer_is_active(Motion_Timeout_timer)) {
+        esp_timer_stop(Motion_Timeout_timer);
+    }
+    
+    if(state == true)
+        esp_timer_start_once(Motion_Timeout_timer, 5000000);
+}
+#endif
 static smart_state_t smart_state = SMART_IDLE;
 smart_state_t Time_ratio_state(void)
 {
@@ -89,7 +118,7 @@ static void Opmode_task(void *pvParameter)
     app_config_t* app_config = get_app_config();
     static uint32_t smart_timer_target = 0; // 각 상태별 마감 시한 틱 저장
     float start_weight = 0;
-
+    uint8_t splash_count = 0;
     while (1) {
         bool sensor_detected = VL53L0X_Detect();
         uint32_t current_tick = xTaskGetTickCount();
@@ -99,6 +128,7 @@ static void Opmode_task(void *pvParameter)
            case SMART_IDLE:
             if (sensor_detected) 
             {
+                splash_count = 0;
                 // 💡 1. 센서 감지 즉시 시작 무게 저장
                 start_weight = loadcell_data_get();
                 mqtt_queue_send(MESSEGE_ACCESS);
@@ -125,10 +155,15 @@ static void Opmode_task(void *pvParameter)
              
             if (fabsf(current_w - start_weight) >= app_config->splash_delta_g) 
             {
-                smart_state = SMART_IDLE; // 즉시 대기 상태로 복귀
-                mqtt_queue_send(MESSEGE_DIAGNOSTICS);
-                ESP_LOGE(TAG, "SMART: Abnormal weight spike detected! (Start: %.2fg, Current: %.2fg). Motor SHUTDOWN.", start_weight, current_w);
-                break; // 즉시 case 탈출
+                start_weight = current_w;
+                splash_count++;
+                if(splash_count > 2)
+                {
+                    smart_state = SMART_IDLE; // 즉시 대기 상태로 복귀
+                    water_fault_enable(WATER_SPLASHING_FAULT);
+                    break;
+                }  
+                ESP_LOGE(TAG, "SMART: Abnormal weight spike detected! (Start: %.2fg, Current: %.2fg). %d Motor SHUTDOWN.", start_weight, current_w, splash_count);
             }
 
             // 3. 5초 동안 센서가 짱짱하게 잘 버텼는지 확인

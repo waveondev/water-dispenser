@@ -51,17 +51,6 @@ static void filesystem_init(void)
 
 void app_main(void)
 {
-#if 0
-        // TX 변환 끄기: \n 그대로 전송
-    esp_vfs_dev_uart_set_tx_line_endings(ESP_LINE_ENDINGS_LF);
-    esp_vfs_dev_uart_port_set_rx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM,ESP_LINE_ENDINGS_LF);
-    esp_vfs_dev_uart_port_set_tx_line_endings(CONFIG_ESP_CONSOLE_UART_NUM,ESP_LINE_ENDINGS_LF);
-    // RX 쪽도 필요 시 조절 가능
-    esp_vfs_dev_uart_set_rx_line_endings(ESP_LINE_ENDINGS_LF);
-    ESP_ERROR_CHECK( ret );
-#endif
-
-
     // =========================================================================
     // 1️NVS (비휘발성 플래시 메모리) 초기화
     // AWS 프로비저닝 과정에서 발급받은 "고유 인증서"와 "개인키"를 
@@ -76,32 +65,19 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
     NVS_Flash_init();
 
-    // [by.jeon] 가상 하드디스크(SPIFFS) 켜기! (인증서를 읽기 위해 필수)
     filesystem_init();
 
     console_task_init();
     init_motor_ledc();
     button_task_init();
-    init_led_strip();
-    LED_task_init();
-    //sensor_init() ;
-    if(sensor_init()== false)
-        led_bit_enable(SENSE_ERR_BIT);
 
-    
+    LED_task_init();
+    sensor_init();
     opmode_task_init();
     Create_Tracker_Capture_Task();
     ble_task_init();
 
-    wifi_init();
-
-    //[by.jeon] wifi가 연결이 되는 시점에 aws provisioning를 해야 한다.
     aws_iot_task_init();
 
-    //charge_init();
-
-    //mqtt_client_connect()
-    //if(wifi_info_get_used())
-    
-
+    wifi_init();
 }

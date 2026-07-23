@@ -23,7 +23,7 @@
 #include "device_config.h"
 static const char *TAG = __FILE__;
 
-#define DEVICE_NAME "Wave_Peri1"
+#define DEVICE_NAME "Wave_T3"
 #define MY_UUID128_BASE(XX, YY) \
     BLE_UUID128_DECLARE(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, \
                         0xF3, 0x93, 0xB5, 0xA3, YY, XX, 0x40, 0x6E)
@@ -54,6 +54,7 @@ static QueueHandle_t ble_rx_queue = NULL;
 static QueueHandle_t ble_tx_queue = NULL; // 이름을 수신용(rx)에서 송신용(tx) 개념으로
 
 uint16_t g_ble_max_payload = 20; // ble로 최대 보낼 수 있는 Length 저장
+#define BLE_TRX_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 
 static void ble_spp_server_print_conn_desc(struct ble_gap_conn_desc *desc)
 {
@@ -733,7 +734,7 @@ void ble_task_init(void)
     if (xTaskCreatePinnedToCore(
             ble_rx_processing_task,                  // 태스크 함수
             "ble_rx_task",                // 태스크 이름
-            4096,       // 스택 크기
+            BLE_TRX_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 3,      // 우선순위
             NULL,                  // 태스크 핸들
@@ -745,7 +746,7 @@ void ble_task_init(void)
     if (xTaskCreatePinnedToCore(
             ble_tx_processing_task,                  // 태스크 함수
             "ble_tx_task",                // 태스크 이름
-            4096,       // 스택 크기
+            BLE_TRX_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 3,      // 우선순위
             NULL,                  // 태스크 핸들

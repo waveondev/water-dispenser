@@ -2826,8 +2826,8 @@ MQTTStatus_t MQTT_Publish( MQTTContext_t * pContext,
     uint8_t mqttHeader[ 7U ];
 
     /* Validate arguments. */
+    
     MQTTStatus_t status = validatePublishParams( pContext, pPublishInfo, packetId );
-
     if( status == MQTTSuccess )
     {
         /* Get the remaining length and packet size.*/

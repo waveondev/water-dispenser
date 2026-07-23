@@ -114,10 +114,12 @@ BaseType_t prvDebugformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			else if (!strncmp(ag[1], "nvs", 3))
 			{
 				dump_all_configurations();
+				print_all_nvs_keys();
             }			
 			else if (!strncmp(ag[1], "tracker", 7))
 			{
 				dump_tracker_all_devices();
+
 			}
 					
 			/* There are more parameters to return after this one. */

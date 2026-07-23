@@ -9,6 +9,7 @@ typedef struct{
     uint32_t op_mode;
     uint32_t pump_clean_duration;
     uint32_t filter_life_days;
+    uint32_t moter_life_days;
     uint32_t min_weight_threshold;
     uint32_t splash_delta_g;
     int32_t gate_way_rssi_th;
@@ -38,11 +39,12 @@ void app_nvs_save_set(void);
 void wifi_nvs_save_set(void);
 void ble_nvs_save_set(void);
 void motor_nvs_save_set(void);
+void filter_nvs_save_set(void);
 app_config_t* get_app_config(void);
 app_wifi_config_t* get_wifi_config(void);
 app_ble_config_t* get_ble_config(void);
 uint32_t* get_motor_time(void);
-
+uint32_t* get_filter_time(void);
 void load_app_configuration(void);
 
 void load_wifi_configuration(void);

@@ -21,7 +21,7 @@ typedef struct{
     uint32_t Enable;
     uint32_t Water_intake;
 }Tracker_Device_t;
-
+#define TRACKER_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 #define TRACKER_DEVICE_MAX 20
 Tracker_Device_t* Tracker_Device[TRACKER_DEVICE_MAX];
 Tracker_Device_t Tracker_UNKNOWN = 
@@ -137,7 +137,7 @@ bool Tracker_device_time_add(int i)
         if (Tracker_Device[i]->Enable) {
 
             Tracker_Device[i]->Device_Time += 100;
-            printf("[%s] total time %ld \n", Tracker_Device[i]->Device_ID, Tracker_Device[i]->Device_Time);
+            //printf("[%s] total time %ld \n", Tracker_Device[i]->Device_ID, Tracker_Device[i]->Device_Time);
             ret = true;
         }
     }
@@ -286,7 +286,7 @@ void Create_Tracker_Capture_Task(void)
     if (xTaskCreatePinnedToCore(
             vTrackerCaptureTask,                  // 태스크 함수
             "tracker_capture",                // 태스크 이름
-            2048,       // 스택 크기
+            TRACKER_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 1,      // 우선순위
             NULL,                  // 태스크 핸들

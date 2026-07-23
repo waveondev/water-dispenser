@@ -25,7 +25,16 @@ static float filtered_weight = 0.0f; // 현재 필터링된 최종 무게값
 [SENSOR] Weight: 347.7 g (raw: 346721) 모터+물통
 [SENSOR] Weight: 379.8 g (raw: 366308) 전체
 
+I (795771) ./main/app_config_flash.c:   - HX1 Scale Factor     : 126.67
+I (795771) ./main/app_config_flash.c:   - HX1 Tare Offset      : 385928
+I (795781) ./main/app_config_flash.c:   - case_raw_data        : 386878
+
+I (1743541) ./main/app_config_flash.c:   - HX1 Scale Factor     : 182.23
+I (1743541) ./main/app_config_flash.c:   - HX1 Tare Offset      : 260188
+I (1743551) ./main/app_config_flash.c:   - case_raw_data        : 261253
+
 #endif
+#if 0
 typedef struct  { uint32_t t; float w; }WSample;
 #define BUFFER_SIZE  10
 
@@ -102,10 +111,10 @@ void insert_to_raw_buffer(float new_data)
             {
                 float total_refilled = new_data - start_water;
 
-                if (total_refilled >= 3.0f) { // 최소 3g 이상 보충되었을 때만 성공 처리
-                    ESP_LOGI(TAG, "✅ 물 보충 완료! (총 보충량: +%.2fg, 최종무게: %.2fg)", total_refilled, new_data);
+                if (total_refilled >= 10.0f) { // 최소 3g 이상 보충되었을 때만 성공 처리
+                    ESP_LOGI(TAG, "물 보충 완료! (총 보충량: +%.2fg, 최종무게: %.2fg)", total_refilled, new_data);
                 } else {
-                    ESP_LOGW(TAG, "⚠️ 일시적 노이즈로 보충 취소됨");
+                    ESP_LOGW(TAG, "일시적 노이즈로 보충 취소됨");
                 }
 
                 water_refill_flag = 0; // 플래그 리셋
@@ -345,18 +354,23 @@ void HX711_Sensing(void)
             ESP_LOGI(TAG, " Raw: %.2f g | Filtered: %.2f g (raw_bits: %d)\r\n", w, moving_average_calc(), raw);
         }
         // 💡 이제 안전한 로컬 변수끼리만 비교합니다.
-        if (avg_val < safe_min_threshold) //물그릇 탐지
+        if (avg_val < safe_min_threshold) // 물부족
         {
             if(!led_bit_status(HARDWARE_ERR_BIT))
             {
                 led_bit_enable(HARDWARE_ERR_BIT);
-                mqtt_queue_send(MESSEGE_DIAGNOSTICS);
+                water_fault_enable(WATER_LOW_FAULT);
+                
             }       
         }       
-        if(raw < safe_case_raw)// 물부족
+        if(raw < safe_case_raw)//물그릇 탐지
         {
             if(!led_bit_status(HARDWARE_ERR_BIT))
+            {
                 led_bit_enable(HARDWARE_ERR_BIT);
+                water_fault_enable(WATER_BOWL_DETACHED_FAULT);
+            }
+
         }
         // 💡 3. 에러 해제 조건식도 안전한 로컬 변수로 교체합니다.
         // 흔들림 방지(히스테리시스)를 위해 임계값(200)보다 1g 큰 safe_min_threshold + 1.0f(즉, 201.0f)로 대칭을 맞춥니다.
@@ -402,4 +416,93 @@ bool HX711_init(void)
     vTaskDelay(pdMS_TO_TICKS(500));
     return hx711_read_raw(&raw);
 }
+#else
+#include "hx711_lib.h"
+static int32_t hx711_data;
+static int32_t hx711_data_buf;
+#define CASE_WEIGHT 120000
+hx711_t dev = {
+    .dout = PIN_HX711_DOUT,
+    .pd_sck = PIN_HX711_SCK,
+    .gain = HX711_GAIN_A_64
+};
+void HX711_cal_init(uint16_t cal)
+{
+
+}
+float loadcell_data_get(void)
+{
+    int32_t case_data = hx711_data_buf - CASE_WEIGHT;
+    float Data = (float)case_data / 100.0f;
+    return Data;
+}
+void HX711_Sensing(void)
+{
+    esp_err_t r;
+    DBG_Resister_t *DBG_Resister = Debug_Get();
+    app_config_t* app_config = get_app_config();
+    r = hx711_read_average(&dev, 5, &hx711_data);
+    if (r != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Could not read data: %d (%s)", r, esp_err_to_name(r));
+        return;
+    }
+    hx711_data_buf = hx711_data;
+    if(DBG_Resister->HX711)
+    {
+            ESP_LOGI(TAG, "hx711_data: (%d)",hx711_data_buf);
+    }
+
+    float safe_min_threshold = (float)app_config->min_weight_threshold; 
+    int32_t safe_case_raw = (int32_t)app_config->case_raw_data;
+
+    if(DBG_Resister->HX711)
+    {
+        ESP_LOGI(TAG, " Raw: %.2f g", loadcell_data_get());
+    }
+
+    if(loadcell_data_get() < safe_case_raw)//물그릇 탐지
+    {
+        if(!led_bit_status(HARDWARE_ERR_BIT))
+        {
+            led_bit_enable(HARDWARE_ERR_BIT);
+            water_fault_enable(WATER_BOWL_DETACHED_FAULT);
+        }
+    }
+    else
+    {
+        // 💡 이제 안전한 로컬 변수끼리만 비교합니다.
+        if (loadcell_data_get() < safe_min_threshold) // 물부족
+        {
+            if(!led_bit_status(HARDWARE_ERR_BIT))
+            {
+                led_bit_enable(HARDWARE_ERR_BIT);
+                water_fault_enable(WATER_LOW_FAULT);
+                
+            }       
+        }       
+    }
+
+    // 💡 3. 에러 해제 조건식도 안전한 로컬 변수로 교체합니다.
+    // 흔들림 방지(히스테리시스)를 위해 임계값(200)보다 1g 큰 safe_min_threshold + 1.0f(즉, 201.0f)로 대칭을 맞춥니다.
+    float safe_release_threshold = safe_min_threshold + 10.0f; 
+
+    if(hardware_error_enable() && loadcell_data_get() > safe_release_threshold && loadcell_data_get() > safe_case_raw)
+    {
+        led_bit_disable(HARDWARE_ERR_BIT);
+        water_fault_disable(WATER_LOW_FAULT);
+        water_fault_disable(WATER_BOWL_DETACHED_FAULT);
+    }
+}
+
+
+bool HX711_init(void)
+{
+
+    hx711_init(&dev);
+    return true;
+}
+#endif
+
+
 

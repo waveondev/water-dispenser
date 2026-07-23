@@ -10,6 +10,8 @@
 #include "app_led.h"
 #include "debug_cli.h"
 #include "app_config_flash.h"
+#include "tx_mqtt.h"
+#include "aws_iot_task.h"
 #if 0
 #define MOTOR_IN1_GPIO       (PIN_PUMP_PWM)
 
@@ -353,9 +355,50 @@ motor_boost_args_t boost_config;
 // 큐 핸들 변수 선언
 static QueueHandle_t motor_queue = NULL;
 static uint32_t* Motor_Used_Time;
+static uint32_t* Filter_Used_Time;
+#define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)
+static volatile bool filter_send_flag = false; // volatile 추가
+static volatile bool moter_send_flag = false; // volatile 추가
+
+void motor_change(void)
+{
+    (*Motor_Used_Time) = 0;
+    motor_nvs_save_set();
+    water_fault_disable(WATER_FILTER_WATER_EX);
+    moter_send_flag = false;
+}
+void filter_change(void)
+{
+    (*Filter_Used_Time) = 0;
+    filter_nvs_save_set();
+    water_fault_disable(WATER_FILTER_DEBRIS_EX);
+    filter_send_flag = false;
+}
 static void motor_used_timer_callback(void* arg)
 {
+
+    app_config_t* app_config = get_app_config();
     (*Motor_Used_Time)++;
+    if(*Motor_Used_Time >= (app_config->moter_life_days *SECONDS_IN_DAYS) )
+    {
+        water_fault_enable(WATER_FILTER_WATER_EX);
+        if(moter_send_flag == false)
+        {
+            moter_send_flag = true;
+            motor_nvs_save_set();
+        }
+    }
+
+    (*Filter_Used_Time)++;
+    if(*Filter_Used_Time >= (app_config->filter_life_days *SECONDS_IN_DAYS) )
+    {
+        water_fault_enable(WATER_FILTER_DEBRIS_EX);
+        if(filter_send_flag == false)
+        {
+            filter_send_flag = true;
+            filter_nvs_save_set();
+        }
+    }
 }
 
 
@@ -436,7 +479,7 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
         ESP_LOGE("SENDER", "큐가 가득 차서 전송 실패 (Timeout)!");
     }
 }
-#define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 4)
+#define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 
 void init_motor_ledc(void) {
     // 1. RMT TX 채널 설정 (DMA 활성화)
@@ -458,6 +501,8 @@ void init_motor_ledc(void) {
     ESP_ERROR_CHECK(rmt_enable(pwm_chan));
 
     Motor_Used_Time = get_motor_time();
+    Filter_Used_Time = get_filter_time();
+
     const esp_timer_create_args_t Motor_Used_timer_args = {
         .callback = &motor_used_timer_callback,
         .name = "Motor_used_timer"

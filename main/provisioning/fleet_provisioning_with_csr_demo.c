@@ -81,6 +81,7 @@
 #include "esp_mac.h"
 #include "rx_mqtt.h"
 #include "aws_iot_task.h"
+#include "app_nvs.h"
 /**
  * These configurations are required. Throw compilation error if it is not
  * defined.
@@ -235,59 +236,10 @@ static bool unsubscribeFromRegisterThingResponseTopics( void );
 
 /*-----------------------------------------------------------*/
 
-/*-----------------------------------------------------------*/
-/* [NVS 추가] 헬퍼 함수: 플래시 메모리에서 등록 상태 읽기 */
-/*-----------------------------------------------------------*/
-/* [NVS 추가] NVS 저장용 네임스페이스 및 키 정의 */
-#define NVS_REG_NAMESPACE                      "iot_storage"
-#define NVS_REG_KEY                            "is_prov_done"
 
 // 외부 BLE 암호화 전송 함수 선언
 extern void ble_send_encrypted_event(const char *event_type, const char *plain_data);
 
-static bool read_nvs_registration_flag(void)
-{
-    nvs_handle_t my_handle;
-    esp_err_t err;
-    uint8_t is_provisioned = 0; // 0 = 미등록, 1 = 등록완료
-
-    err = nvs_open(NVS_REG_NAMESPACE, NVS_READONLY, &my_handle);
-    if (err != ESP_OK) {
-        LogInfo(("NVS namespace not found. Treating as NOT provisioned."));
-        return false; 
-    }
-
-    err = nvs_get_u8(my_handle, NVS_REG_KEY, &is_provisioned);
-    nvs_close(my_handle);
-
-    if (err == ESP_OK && is_provisioned == 1) {
-        return true;
-    }
-    return false;
-}
-
-/*-----------------------------------------------------------*/
-/* [NVS 추가] 헬퍼 함수: 플래시 메모리에 등록 완료 상태 쓰기 */
-/*-----------------------------------------------------------*/
-static void write_nvs_registration_flag(bool done)
-{
-    nvs_handle_t my_handle;
-    esp_err_t err;
-    uint8_t is_provisioned = done ? 1 : 0;
-
-    err = nvs_open(NVS_REG_NAMESPACE, NVS_READWRITE, &my_handle);
-    if (err != ESP_OK) {
-        LogError(("Failed to open NVS for writing."));
-        return;
-    }
-
-    err = nvs_set_u8(my_handle, NVS_REG_KEY, is_provisioned);
-    if (err == ESP_OK) {
-        nvs_commit(my_handle);
-        LogInfo(("Successfully saved Provisioning Flag to NVS."));
-    }
-    nvs_close(my_handle);
-}
 
 /*-----------------------------------------------------------*/
 
@@ -734,66 +686,49 @@ int aws_iot_provisioning_main( int argc,
                 DisconnectMqttSession();
                 connectionEstablished = false;
             }
-
-            /* 🚨 [NVS 핵심] 모든 프로비저닝이 완벽히 끝나면 NVS에 등록 성공(true)을 영구 기록합니다. */
             if ( status == true )
             {
-                write_nvs_registration_flag( true );
-                LogInfo( ( "기기 등록 성공! 다음 부팅부터는 이 과정을 건너뜁니다." ) );
-
-                /* ========================================================== */
-                /* [해결책] 새 인증서로 재접속하기 전에 AWS 동기화 시간을 벌어줍니다. */
-                /* ========================================================== */
-                LogInfo( ( "AWS 측 인증서 활성화 및 동기화를 위해 3초 대기합니다..." ) );
-                LogInfo( ( "재접속 직전 힙 메모리 여유: %u bytes", esp_get_free_heap_size() ) );
-                
                 vTaskDelay(pdMS_TO_TICKS(3000)); /* 3초 대기 */
-            }
-        }
 
-    
-
-        /**** Connect to AWS IoT Core with provisioned certificate ************/
-
-        if( status == true )
-        {
-            LogInfo( ( "Establishing MQTT session with provisioned certificate..." ) );
-            status = EstablishMqttSession( provisioningPublishCallback,
-                                           p11Session,
-                                           pkcs11configLABEL_DEVICE_CERTIFICATE_FOR_TLS,
-                                           pkcs11configLABEL_DEVICE_PRIVATE_KEY_FOR_TLS );
-
-            if( status != true )
-            {
-                LogError( ( "Failed to establish MQTT session with provisioned "
-                            "credentials. Verify on your AWS account that the "
-                            "new certificate is active and has an attached IoT "
-                            "Policy that allows the \"iot:Connect\" action." ) );
-            }
-            else
-            {
-                LogInfo( ( "Sucessfully established connection with provisioned credentials." ) );
-                connectionEstablished = true;
-
-                mqtt_subscribe_init();
-                bool is_already_registered = read_nvs_registration_flag();
-
-                if (is_already_registered == false)
+                LogInfo( ( "Establishing MQTT session with provisioned certificate..." ) );
+                status = EstablishMqttSession( provisioningPublishCallback,
+                                            p11Session,
+                                            pkcs11configLABEL_DEVICE_CERTIFICATE_FOR_TLS,
+                                            pkcs11configLABEL_DEVICE_PRIVATE_KEY_FOR_TLS );
+                /* 🚨 [NVS 핵심] 모든 프로비저닝이 완벽히 끝나면 NVS에 등록 성공(true)을 영구 기록합니다. */
+                if( status != true )
                 {
-                    LogInfo( ( "[최초 연결 완료] 백엔드에 기기 등록(REGISTRATION) 요청을 큐에 주입합니다." ) );
-                    mqtt_queue_send(MESSEGE_REGISTRATION);
-                    
-                    // 💡 팁: 백엔드에서 등록 완료 응답(Callback)을 성공적으로 수신하는 시점 
-                    //        또는 이 패킷이 완전히 날아간 직후에 write_nvs_registration_flag(true);를 해주면 완벽합니다.
-                }
+                    LogError( ( "Failed to establish MQTT session with provisioned "
+                                "credentials. Verify on your AWS account that the "
+                                "new certificate is active and has an attached IoT "
+                                "Policy that allows the \"iot:Connect\" action." ) );
+                }            
                 else
                 {
-                    LogInfo( ( "[재부팅 연결 완료] 백엔드에 부트(BOOT) 알림을 큐에 주입합니다." ) );
-                    mqtt_queue_send(MESSEGE_BOOT);
+
+
+                    LogInfo( ( "Sucessfully established connection with provisioned credentials." ) );
+                    connectionEstablished = true;
+                    if (is_already_registered == false)
+                    {
+                        write_nvs_registration_flag( true );
+                        LogInfo( ( "[최초 연결 완료] 백엔드에 기기 등록(REGISTRATION) 요청을 큐에 주입합니다." ) );
+                        mqtt_queue_send(MESSEGE_REGISTRATION);
+                        // 💡 팁: 백엔드에서 등록 완료 응답(Callback)을 성공적으로 수신하는 시점 
+                        //        또는 이 패킷이 완전히 날아간 직후에 write_nvs_registration_flag(true);를 해주면 완벽합니다.
+                    }
+                    else
+                    {
+                        LogInfo( ( "[재부팅 연결 완료] 백엔드에 부트(BOOT) 알림을 큐에 주입합니다." ) );
+                        mqtt_queue_send(MESSEGE_BOOT);
+                    }
+                    mqtt_subscribe_init();
+                    return EXIT_SUCCESS;
                 }
-                return EXIT_SUCCESS;
             }
+
         }
+
 
         /**** Finish **********************************************************/
 

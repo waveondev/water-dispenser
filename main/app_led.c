@@ -15,7 +15,7 @@
 #include "debug_cli.h"
 static led_strip_handle_t led_strip;
 static const char *TAG = __FILE__;
-#define LED_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
+#define LED_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 
 
 static uint16_t led_status_resister = 0;
@@ -264,9 +264,10 @@ static void LED_task(void *pvParameter)
     uint8_t toggle_time = 0;
     bool toggle_flag = false;
     static uint32_t _100ms_count = 0;
+
+    init_led_strip();
     set_rgb_led(0,0,0,LED_BRIGHTNESS_MAX);
-    vTaskDelay(5000 / portTICK_PERIOD_MS);
-    
+    vTaskDelay(pdMS_TO_TICKS(5000));
     ESP_LOGI(TAG, "Starting LED_task (Pure Event Driven Mode)");
     DBG_Resister_t *DBG_Resister = Debug_Get();
     while (1) {
@@ -312,7 +313,6 @@ static void LED_task(void *pvParameter)
                     Breathing_Setup(1,2,0,255,0,0,0,255,0,0);
                     Breathing_LED();
                 }         
-
             }
             // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용
             else {

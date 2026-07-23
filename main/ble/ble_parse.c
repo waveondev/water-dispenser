@@ -455,6 +455,7 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                     total_count = Motion_Packet->motion_req.total_points + (9-(Motion_Packet->motion_req.total_points%9));
                     input_count = 0;
                     Motion_Timer_Set(true);
+                    tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet);
             }
             
         break;

@@ -41,7 +41,7 @@ typedef struct
 void Send_cJSON_Messege(messege_tx_mqtt_cmd_e cmd);
 
 void Send_cJSON_Messege_for_tracker(tracker_mqtt_packet_t* tracker_mqtt_packet);
-
-
+void water_fault_enable(uint16_t status);
+void water_fault_disable(uint16_t status);
 #endif
 

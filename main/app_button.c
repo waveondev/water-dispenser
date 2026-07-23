@@ -13,7 +13,7 @@
 #include "ble_task.h"
 #include "app_led.h"
 static const char *TAG = "BUTTON_CTRL";
-#define BUTTON_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
+#define BUTTON_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 
 // 설정 타임아웃 (밀리초)
 #define DEBOUNCE_TIME_MS      50
