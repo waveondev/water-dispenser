@@ -132,6 +132,7 @@ static void Opmode_task(void *pvParameter)
             if (sensor_detected) 
             {
                 splash_count = 0;
+                water_fault_disable(WATER_SPLASHING_FAULT);
                 // 💡 1. 센서 감지 즉시 시작 무게 저장
                 start_weight = loadcell_data_get();
                 

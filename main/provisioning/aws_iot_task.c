@@ -60,8 +60,6 @@ void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Pac
     }
 }
 
-
-
 static void aws_iot_main_entry(void *pvParameters)
 {
     ESP_LOGI(TAG, "AWS IoT 전담 태스크가 시작!");
@@ -95,7 +93,10 @@ static void aws_iot_main_entry(void *pvParameters)
 
     ESP_LOGI(TAG, "인터넷 연결 확인됨! AWS Fleet Provisioning 프로세스를 시작합니다.");
 
-    aws_iot_provisioning_main(0, NULL);
+    while(aws_iot_provisioning_main(0, NULL) != EXIT_SUCCESS)
+    {
+        vTaskDelay(pdMS_TO_TICKS(3000)); /* 3초 대기 */
+    }
 
     ESP_LOGI(TAG,"=== 2. MQTT 루프를 시작합니다 ===");
 

@@ -849,18 +849,20 @@ bool loadClaimCredentials( CK_SESSION_HANDLE p11Session,
     
     bool status;
     //char claimCert[ CLAIM_CERT_BUFFER_LENGTH ] = { 0 };
-    char* claimCert = (char*)malloc(CLAIM_CERT_BUFFER_LENGTH);
+
+    char* claimCert = (char*)calloc(1,CLAIM_CERT_BUFFER_LENGTH);
     if(claimCert == NULL)
         return false;
     size_t claimCertLength = 0;
+
+
     //char claimPrivateKey[ CLAIM_PRIVATE_KEY_BUFFER_LENGTH ] = { 0 };
-    char* claimPrivateKey = (char*)malloc(CLAIM_PRIVATE_KEY_BUFFER_LENGTH);
+    char* claimPrivateKey = (char*)calloc(1,CLAIM_PRIVATE_KEY_BUFFER_LENGTH);
     if(claimPrivateKey == NULL)
     {
         free(claimCert);
         return false;
     }
-        
     size_t claimPrivateKeyLength = 0;
     CK_RV ret;
 
@@ -893,7 +895,8 @@ bool loadClaimCredentials( CK_SESSION_HANDLE p11Session,
                                     pClaimCertLabel );
         status = ( ret == CKR_OK );
     }
-
+    free(claimCert);
+    free(claimPrivateKey);
     return status;
 }
 

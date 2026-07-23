@@ -14,6 +14,9 @@ Motion_Packet_t health_res;
 static uint16_t water_fault_code = 0;
 static uint16_t water_fault_code_send = 0;
 static uint16_t water_fault_code_buf = 0;
+#define WATER_MAJOR 1
+#define WATER_MINOR 1
+#define WATER_PATCH 1
 void water_fault_enable(uint16_t status)
 {
     water_fault_code |= status;
@@ -88,9 +91,10 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd)
         cJSON_Delete(root);
         return NULL;
     }
+    char str[20];
     if(TRACKER_MESSEGE_ACTIVITY <= cmd)
     {
-        char str[20];
+
         snprintf(str, sizeof(str), "v%d.%d.%d",health_res.health_data_res.major,
                                                 health_res.health_data_res.minor,
                                                 health_res.health_data_res.patch
@@ -99,7 +103,11 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd)
     }
     else
     {
-        cJSON_AddStringToObject(root, "firmware", "v1.0.0");
+        snprintf(str, sizeof(str), "v%d.%d.%d",WATER_MAJOR,
+                                        WATER_MINOR,
+                                        WATER_PATCH
+                    );
+        cJSON_AddStringToObject(root, "firmware", str);
     }
 
     cJSON_AddNumberToObject(root, "timestamp", current_timestamp); /* 현재 시간 unix epoch seconds */
@@ -235,13 +243,18 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
                 cJSON_AddStringToObject(data_obj, "alert_level", "critical");
                 cJSON_AddStringToObject(data_obj, "fault_code", "WATER_EMPTY");
             }
-            
+            else if(water_fault_code_send & WATER_SPLASHING_FAULT)
+            {
+                cJSON_AddStringToObject(data_obj, "alert_level", "normal");
+                cJSON_AddStringToObject(data_obj, "fault_code", "SPLASHING");
+                cJSON_AddStringToObject(data_obj, "alert_type", "SPLASHING");
+            }
             else
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
                 cJSON_AddStringToObject(data_obj, "fault_code", "PUMP_ERR");
             }
-                
+
             cJSON_AddStringToObject(data_obj, "affected_subsystem", "motor.pump");
 
             // context 객체
