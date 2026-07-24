@@ -426,9 +426,22 @@ hx711_t dev = {
     .pd_sck = PIN_HX711_SCK,
     .gain = HX711_GAIN_A_64
 };
+static uint16_t hx711_cal_enable = 0;
+
+static void HX711_cal_process(void)
+{
+    app_config_t* app_config = get_app_config();
+
+    int32_t cal_data = 0;
+
+    while(hx711_read_average(&dev, 100, &cal_data) != ESP_OK){}
+    app_config->case_raw_data = cal_data;
+    app_nvs_save_set();
+    ESP_LOGI(TAG, "Tare offset set to %d\r\n", app_config->hx1_offset);
+}
 void HX711_cal_init(uint16_t cal)
 {
-
+    hx711_cal_enable = 1;
 }
 float loadcell_data_get(void)
 {
@@ -447,7 +460,12 @@ void HX711_Sensing(void)
     esp_err_t r;
     DBG_Resister_t *DBG_Resister = Debug_Get();
     app_config_t* app_config = get_app_config();
-    r = hx711_read_average(&dev, 5, &hx711_data);
+    if(hx711_cal_enable)
+    {
+        hx711_cal_enable = 0;
+        HX711_cal_process();
+    }
+    r = hx711_read_average(&dev, 10, &hx711_data);
     if (r != ESP_OK)
     {
         ESP_LOGE(TAG, "Could not read data: %d (%s)", r, esp_err_to_name(r));
