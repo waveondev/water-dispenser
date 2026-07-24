@@ -923,28 +923,30 @@ bool DisconnectMqttSession( void )
     bool returnStatus = false;
     MQTTContext_t * pMqttContext = &mqttContext;
     NetworkContext_t * pNetworkContext = &networkContext;
-
     assert( pMqttContext != NULL );
     assert( pNetworkContext != NULL );
-
-    if( mqttSessionEstablished == true )
+    // 🚨 [핵심 수정] MQTT Context가 정상적으로 연결/초기화된 상태일 때만 MQTT_Disconnect 실행!
+    // pMqttContext->getTime 이 NULL이 아니고, mqttSessionEstablished가 true일 때만 부릅니다.
+    if( ( mqttSessionEstablished == true ) && ( pMqttContext != NULL ) && ( pMqttContext->getTime != NULL ) )
     {
         /* Send DISCONNECT. */
         mqttStatus = MQTT_Disconnect( pMqttContext );
 
         if( mqttStatus != MQTTSuccess )
         {
-            LogError( ( "Sending MQTT DISCONNECT failed with status=%u.",
-                        mqttStatus ) );
+            LogError( ( "Sending MQTT DISCONNECT failed with status=%u.", mqttStatus ) );
         }
         else
         {
-            /* MQTT DISCONNECT sent successfully. */
             returnStatus = true;
         }
     }
+    
+    // MQTT 세션 상태 플래그 꺼주기
+    mqttSessionEstablished = false;
 
     /* End TLS session, then close TCP connection. */
+    // TLS/TCP 소켓 해제는 MQTTContext 초기화 여부와 상관없이 무조건 안전하게 해제!
     ( void ) Mbedtls_Pkcs11_Disconnect( pNetworkContext );
 
     return returnStatus;

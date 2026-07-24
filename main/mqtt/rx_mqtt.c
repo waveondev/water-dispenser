@@ -41,6 +41,7 @@ bool mqtt_subscribe_init(void)
     {
         for(int i=0;i<topic_count;i++)
             free(topic_str[i]);
+        topic_count = 0;
     }
 
     snprintf(sub_topic,sizeof(sub_topic),SERVER_RX_TOPIC_REGISTRATION,dynamicMacStr);

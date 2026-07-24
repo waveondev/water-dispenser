@@ -193,6 +193,12 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 				else
 				 	motor_change();
 			}	
+			else if (!strncmp(ag[1], "wificon", 7))
+			{
+				app_wifi_config_t* wifi_config = get_wifi_config();
+				Wifi_Connect((char*)wifi_config->conn_ssid,(const char*)wifi_config->conn_password);
+			}	
+
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

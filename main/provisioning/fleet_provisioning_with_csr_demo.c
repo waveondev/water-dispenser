@@ -549,16 +549,24 @@ int aws_iot_provisioning_main( int argc,
 {
     bool status = false;
     /* Buffer for holding the CSR. */
-    char csr[ CSR_BUFFER_LENGTH ] = { 0 };
+    char* csr = (char*)calloc(1, CSR_BUFFER_LENGTH);
+    //char csr[ CSR_BUFFER_LENGTH ] = { 0 };
+
     size_t csrLength = 0;
     /* Buffer for holding received certificate until it is saved. */
-    char certificate[ CERT_BUFFER_LENGTH ];
+
+    //char certificate[ CERT_BUFFER_LENGTH ];
+    char* certificate = (char*)calloc(1, CERT_BUFFER_LENGTH);
+
     size_t certificateLength;
     /* Buffer for holding the certificate ID. */
     char certificateId[ CERT_ID_BUFFER_LENGTH ];
     size_t certificateIdLength;
     /* Buffer for holding the certificate ownership token. */
-    char ownershipToken[ OWNERSHIP_TOKEN_BUFFER_LENGTH ];
+    //char ownershipToken[ OWNERSHIP_TOKEN_BUFFER_LENGTH ];
+
+    char* ownershipToken = (char*)calloc(1, OWNERSHIP_TOKEN_BUFFER_LENGTH);
+
     size_t ownershipTokenLength;
     bool connectionEstablished = false;
     CK_SESSION_HANDLE p11Session;
@@ -642,16 +650,6 @@ int aws_iot_provisioning_main( int argc,
 
             connectionEstablished = true;
 
-                                           
-            // if( status == true )
-            // {
-            //     LogInfo( ( "Establishing MQTT session with claim certificate..." ) );
-            //     status = EstablishMqttSession( provisioningPublishCallback, p11Session, pkcs11configLABEL_CLAIM_CERTIFICATE, pkcs11configLABEL_CLAIM_PRIVATE_KEY );
-            //     if( status == true ) connectionEstablished = true;
-
-            //     connectionEstablished = true;
-            // }
-
             /**** Call the CreateCertificateFromCsr API ****/
             if( status == true ) status = subscribeToCsrResponseTopics();
             if( status == true ) status = generateKeyAndCsr( p11Session, pkcs11configLABEL_DEVICE_PRIVATE_KEY_FOR_TLS, pkcs11configLABEL_DEVICE_PUBLIC_KEY_FOR_TLS, csr, CSR_BUFFER_LENGTH, &csrLength );
@@ -723,6 +721,10 @@ int aws_iot_provisioning_main( int argc,
                         mqtt_queue_send(MESSEGE_BOOT);
                     }
                     mqtt_subscribe_init();
+                    pkcs11CloseSession( p11Session );
+                    free(csr);
+                    free(certificate);
+                    free(ownershipToken);                    
                     return EXIT_SUCCESS;
                 }
             }
@@ -769,7 +771,9 @@ int aws_iot_provisioning_main( int argc,
     {
         LogInfo( ( "Demo completed successfully." ) );
     }
-
+    free(csr);
+    free(certificate);
+    free(ownershipToken);
     return ( status == true ) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 /*-----------------------------------------------------------*/

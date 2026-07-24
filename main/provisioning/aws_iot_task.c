@@ -20,7 +20,7 @@ static bool is_aws_started = false;
 static QueueHandle_t mqtt_tx_queue = NULL;
 static QueueHandle_t tracker_mqtt_queue = NULL;
 static esp_timer_handle_t Health_timer;
-#define AWS_IOT_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 7)
+#define AWS_IOT_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 4)
 extern int aws_iot_provisioning_main( int argc, char ** argv );
 // 15분 = 15분 * 60초 * 1,000,000us
 #define TIMER_15_MIN_IN_US   (15ULL * 60ULL * 1000000ULL)
@@ -60,60 +60,92 @@ void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Pac
     }
 }
 
+static void aws_loop(void)
+{
+
+}
+
+
 static void aws_iot_main_entry(void *pvParameters)
 {
-    ESP_LOGI(TAG, "AWS IoT 전담 태스크가 시작!");
+    ESP_LOGI(TAG, "AWS IoT 전담 태스크 시작");
 
-    // -------------------------------------------------------------------------
-    // Wi-Fi가 연결되어 IP를 받아올 때까지 이 태스크를 완전히 중지(Block)시킴.
-    // -------------------------------------------------------------------------
-    
-    xEventGroupWaitBits(
-        s_wifi_event_group,   // wifi_task.c가 관리하는 이벤트 그룹
-        WIFI_CONNECTED_BIT,   // IP 할당 완료 비트
-        pdFALSE,              // 비트를 자동으로 지우지 않음 (연결 유지 확인용)
-        pdTRUE,               // 설정한 모든 비트가 켜질 때까지 대기
-        portMAX_DELAY         // ⏳ 연결될 때까지 무한정 대기 (인터넷 안 되면 여기서 대기)
-    );
-
+    // -------------------------------------------------------------
+    // 1. [1회성 초기화] 큐 및 타이머 생성을 루프 밖에서 단 1번만 수행
+    // -------------------------------------------------------------
+    mqtt_tx_queue = xQueueCreate(10, sizeof(messege_tx_mqtt_cmd_e));
+    tracker_mqtt_queue = xQueueCreate(10, sizeof(tracker_mqtt_packet_t));
 
     const esp_timer_create_args_t Health_timer_args = {
         .callback = &Health_timer_callback,
         .name = "Health_timer"
     };
-
-    // 타이머 생성
     ESP_ERROR_CHECK(esp_timer_create(&Health_timer_args, &Health_timer));
 
-    ESP_ERROR_CHECK(esp_timer_start_periodic(Health_timer, TIMER_15_MIN_IN_US));
-
-
-    mqtt_tx_queue = xQueueCreate(10, sizeof(messege_tx_mqtt_cmd_e));
-    tracker_mqtt_queue = xQueueCreate(10, sizeof(tracker_mqtt_packet_t));
-
-    ESP_LOGI(TAG, "인터넷 연결 확인됨! AWS Fleet Provisioning 프로세스를 시작합니다.");
-
-    while(aws_iot_provisioning_main(0, NULL) != EXIT_SUCCESS)
-    {
-        vTaskDelay(pdMS_TO_TICKS(3000)); /* 3초 대기 */
-    }
-
-    ESP_LOGI(TAG,"=== 2. MQTT 루프를 시작합니다 ===");
-
+    int i = 0;
     messege_tx_mqtt_cmd_e cmd;
     tracker_mqtt_packet_t mqtt_packet;
-    for(;;) {
-        if (xQueueReceive(mqtt_tx_queue, &cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
-            Send_cJSON_Messege(cmd);
+
+    // -------------------------------------------------------------
+    // 2. [메인 재연결 루프]
+    // -------------------------------------------------------------
+    while(1)
+    {
+        // Wi-Fi 연결 대기 (IP 할당 확인)
+        xEventGroupWaitBits(
+            s_wifi_event_group,
+            WIFI_CONNECTED_BIT,
+            pdFALSE,
+            pdTRUE,
+            portMAX_DELAY
+        );
+
+
+        xQueueReset(mqtt_tx_queue);
+        xQueueReset(tracker_mqtt_queue);
+
+        // AWS IoT 프로비저닝 및 MQTT 연결
+        while(aws_iot_provisioning_main(0, NULL) != EXIT_SUCCESS)
+        {
+            vTaskDelay(pdMS_TO_TICKS(3000)); /* 3초 대기 */
+            i++;
+            ESP_LOGI(TAG, "provisioning retry count = %d", i);
         }
-        if (xQueueReceive(tracker_mqtt_queue, &mqtt_packet, pdMS_TO_TICKS(10)) == pdTRUE) {
-            Send_cJSON_Messege_for_tracker(&mqtt_packet);
+
+
+        // 2) MQTT 연결이 붙었으니 헬스 타이머 동작 시작!
+        esp_timer_start_periodic(Health_timer, TIMER_15_MIN_IN_US);
+
+        ESP_LOGI(TAG, "=== MQTT 송수신 메인 루프 진입 ===");
+
+        // MQTT 송수신 메인 루프
+        for(;;) {
+            if (xQueueReceive(mqtt_tx_queue, &cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
+                Send_cJSON_Messege(cmd);
+            }
+            if (xQueueReceive(tracker_mqtt_queue, &mqtt_packet, pdMS_TO_TICKS(10)) == pdTRUE) {
+                Send_cJSON_Messege_for_tracker(&mqtt_packet);
+            }
+
+            /* 수신 및 네트워크 연결 감시 */
+            if (ProcessLoopWithTimeout(10) == false) {
+                ESP_LOGE(TAG, "MQTT 연결 끊김 감지!");
+                break; // for 루프 탈출
+            }
         }
-        /* 백그라운드에서 지속적으로 수신 버퍼를 감시하며 콜백 함수를 유도합니다 */
-        ProcessLoopWithTimeout(10); 
+
+        // =========================================================
+        // 🔴 [연결 끊김 시점]
+        // =========================================================
+        // 1) 네트워크가 끊겼으므로 헬스 타이머 즉시 정지!
+        esp_timer_stop(Health_timer);
+
+        // 2) 죽은 TLS/소켓 세션 정리
+        DisconnectMqttSession();
+        xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 
-    vTaskDelete(NULL); // 만약 루프를 빠져나간다면 태스크 종료
+    vTaskDelete(NULL);
 }
 
 void aws_iot_task_init(void)
