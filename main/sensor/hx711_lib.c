@@ -172,7 +172,7 @@ esp_err_t hx711_read_average(hx711_t *dev, size_t times, int32_t *data)
     {
         //CHECK(hx711_wait(dev, 200));
         //CHECK(hx711_read_data(dev, &v));
-        if(hx711_wait(dev, 200) == ESP_OK)
+        if(hx711_wait(dev, 1000) == ESP_OK)
         {
             if(hx711_read_data(dev, &v) == ESP_OK)
             {

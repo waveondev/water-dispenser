@@ -28,15 +28,7 @@ void Sensor_task(void *pvParameter)
     bool ret = true; 
     int error_count = 0 ;
     adc_init();
-    ret = HX711_init();
-    #if 1
-    if(ret == false)
-    {
-        ESP_LOGE(TAG, "HX711 Error\r\n");
-        //return ret;
-        led_bit_enable(SENSE_ERR_BIT);
-    }
-    #endif
+    
     ret = TOF_VL53L0X_init();
     #if 1
     if(ret == false)
@@ -47,14 +39,14 @@ void Sensor_task(void *pvParameter)
     }
     #endif
     while (1) {
-       // if(loadcell_data_get() >)
         ADC_Sensing();
-       // vTaskDelay(300 / portTICK_PERIOD_MS);
         #if 1
-        HX711_Sensing();
         #endif
-        vTaskDelay(150 / portTICK_PERIOD_MS);
         VL53L0X_Sensing();
+
+        //ESP_LOGI(TAG, "gpio_set_level(IR_OUT0) = %d\r\n",gpio_get_level(IR_OUT0));
+        //ESP_LOGI(TAG, "gpio_set_level(IR_OUT1) = %d\r\n",gpio_get_level(IR_OUT1));
+        vTaskDelay(50 / portTICK_PERIOD_MS);
     }
     
 }
@@ -64,6 +56,7 @@ bool sensor_init(void)
     static uint8_t ucParameterToPass;
     TaskHandle_t xHandle = NULL;
 
+    HX711_task_init();
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
     if (xTaskCreatePinnedToCore(
             Sensor_task,                  // 태스크 함수
