@@ -13,6 +13,7 @@
 
 #include "app_TOF.h"
 #include "debug_cli.h"
+#include "app_button.h"
 static led_strip_handle_t led_strip;
 static const char *TAG = __FILE__;
 #define LED_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
@@ -213,6 +214,31 @@ static void Breathing_Setup(uint8_t enable, uint8_t step,
     Breathing_Setting.target_w = target_w;   
 
 }
+
+void Breathing_Debug(uint8_t enable, uint8_t step, 
+                            int16_t current_r,
+                            int16_t current_g,
+                            int16_t current_b,
+                            int16_t current_w,
+
+                            // 목표하는 최대 색상 (상한선 기준값)
+                            uint8_t target_r,
+                            uint8_t target_g,
+                            uint8_t target_b,
+                            uint8_t target_w)
+{
+    memset(&Breathing_Setting, 0,sizeof(Breathing_Setting_t));
+    Breathing_Setting.used = enable;
+    Breathing_Setting.step = step;
+    Breathing_Setting.current_r = current_r;
+    Breathing_Setting.current_g = current_g;
+    Breathing_Setting.current_b = current_b;
+    Breathing_Setting.current_w = current_w;
+    Breathing_Setting.target_r = target_r;
+    Breathing_Setting.target_g = target_g;
+    Breathing_Setting.target_b = target_b;    
+    Breathing_Setting.target_w = target_w;   
+}
 static void Breathing_LED(void)
 {
     if(Breathing_Setting.used == 0)
@@ -283,7 +309,7 @@ static void LED_task(void *pvParameter)
    
         if(DBG_Resister->led)
         {
-
+                Breathing_LED();
         }
         else
         {
@@ -323,12 +349,25 @@ static void LED_task(void *pvParameter)
                 }
                 else
                 {
-                    switch(last_op_mode) {
-                        case OP_MODE_NORMAL: set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX); break;
-                        case OP_MODE_NIGHT:  set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX/2); break;
-                        case OP_MODE_SMART:  set_rgb_led(0,0 , LED_BRIGHTNESS_MAX, 0); break;
-                        case OP_MODE_SLEEP:  set_rgb_led(0, 0, 0, 0);; break;
-                        default: set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX); break;
+                    int button_state = button_press_state();
+                    if(button_state)
+                    {
+                        switch(button_state) {
+                            case 1: set_rgb_led(0, LED_BRIGHTNESS_MAX, 0, 0); break;
+                            case 2:  set_rgb_led(0, 0, LED_BRIGHTNESS_MAX, 0);; break;
+                            case 3:  set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX);; break;
+                            default: break;
+                        }
+                    }
+                    else
+                    {
+                        switch(last_op_mode) {
+                            case OP_MODE_NORMAL: set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX); break;
+                            case OP_MODE_NIGHT:  set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX/2); break;
+                            case OP_MODE_SMART:  set_rgb_led(0,0 , LED_BRIGHTNESS_MAX, 0); break;
+                            case OP_MODE_SLEEP:  set_rgb_led(0, 0, 0, 0);; break;
+                            default: set_rgb_led(0, 0, 0, LED_BRIGHTNESS_MAX); break;
+                        }
                     }
                 }
 

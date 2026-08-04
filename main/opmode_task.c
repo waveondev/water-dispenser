@@ -243,7 +243,7 @@ static void Opmode_task(void *pvParameter)
                             start_motor_with_boost(85, 0);
                             break;
                         case OP_MODE_NIGHT:
-                            start_motor_with_boost(30, 0);
+                            start_motor_with_boost(45, 0);
                             break;
                         case OP_MODE_SLEEP:
                             start_motor_with_boost(0, 0);

@@ -33,44 +33,78 @@ static uint16_t tof0_mm;
 static uint16_t tof1_mm;
 uint32_t ts_tof0_ms = 0;
 uint32_t ts_tof1_ms = 0;
-
 #define FILTER_SIZE 10
+
 static uint32_t TOF_Buf_L[FILTER_SIZE] = {0};
 static uint32_t TOF_Buf_R[FILTER_SIZE] = {0};
-static int buffer_idx_L = 0,    buffer_idx_R = 0;
+
+static int buffer_idx_L = 0; // Left 센서에 쌓인 데이터 개수 (0 ~ 10)
+static int buffer_idx_R = 0; // Right 센서에 쌓인 데이터 개수 (0 ~ 10)
 
 /**
- * @brief 새로운 데이터를 필터 버퍼에 추가하는 함수
+ * @brief Left 센서 새로운 데이터를 필터 버퍼에 추가하는 함수
  * @param new_value 새로 측정된 센서 값
  */
 static void moving_average_update_l(uint16_t new_value) {
-    TOF_Buf_L[buffer_idx_L] = new_value;
-    buffer_idx_L = (buffer_idx_L + 1) % FILTER_SIZE;
-}
-static void moving_average_update_r(uint16_t new_value) {
-    TOF_Buf_R[buffer_idx_R] = new_value;
-    buffer_idx_R = (buffer_idx_R + 1) % FILTER_SIZE;
+    if (buffer_idx_L < FILTER_SIZE) {
+        // 1. 10개가 다 안 찼으면 앞에서부터 순서대로 저장
+        TOF_Buf_L[buffer_idx_L] = new_value;
+        buffer_idx_L++;
+    } else {
+        // 2. 10개가 차면 memmove로 밀고 맨 끝(9번)에 최신 데이터 넣음
+        memmove(&TOF_Buf_L[0], &TOF_Buf_L[1], sizeof(uint32_t) * (FILTER_SIZE - 1));
+        TOF_Buf_L[FILTER_SIZE - 1] = new_value;
+    }
 }
 
 /**
- * @brief 현재 버퍼에 쌓인 데이터들의 평균값을 계산하여 반환하는 함수
- * @return float 최근 FILTER_SIZE 개수의 평균값
+ * @brief Right 센서 새로운 데이터를 필터 버퍼에 추가하는 함수
+ * @param new_value 새로 측정된 센서 값
+ */
+static void moving_average_update_r(uint16_t new_value) {
+    if (buffer_idx_R < FILTER_SIZE) {
+        // 1. 10개가 다 안 찼으면 앞에서부터 순서대로 저장
+        TOF_Buf_R[buffer_idx_R] = new_value;
+        buffer_idx_R++;
+    } else {
+        // 2. 10개가 차면 memmove로 밀고 맨 끝(9번)에 최신 데이터 넣음
+        memmove(&TOF_Buf_R[0], &TOF_Buf_R[1], sizeof(uint32_t) * (FILTER_SIZE - 1));
+        TOF_Buf_R[FILTER_SIZE - 1] = new_value;
+    }
+}
+
+/**
+ * @brief Left 센서 현재 쌓인 개수(buffer_idx_L)만큼만 평균을 계산하는 함수
+ * @return uint16_t 평균값 (데이터가 없으면 0)
  */
 uint16_t moving_average_get_L(void) {
+    if (buffer_idx_L == 0) {
+        return 0; // 0으로 나누기 예방
+    }
+
     uint32_t sum = 0;
-    for (int i = 0; i < FILTER_SIZE; i++) {
+    for (int i = 0; i < buffer_idx_L; i++) {
         sum += TOF_Buf_L[i];
     }
 
-    return (uint16_t)(sum / FILTER_SIZE);
+    return (uint16_t)(sum / buffer_idx_L);
 }
+
+/**
+ * @brief Right 센서 현재 쌓인 개수(buffer_idx_R)만큼만 평균을 계산하는 함수
+ * @return uint16_t 평균값 (데이터가 없으면 0)
+ */
 uint16_t moving_average_get_R(void) {
+    if (buffer_idx_R == 0) {
+        return 0; // 0으로 나누기 예방
+    }
+
     uint32_t sum = 0;
-    for (int i = 0; i < FILTER_SIZE; i++) {
+    for (int i = 0; i < buffer_idx_R; i++) {
         sum += TOF_Buf_R[i];
     }
 
-    return (uint16_t)(sum / FILTER_SIZE);
+    return (uint16_t)(sum / buffer_idx_R);
 }
 // 💡 내부 헬퍼 함수: 단일 센서 ST C API 초기화 및 아크릴 보정 
 static bool init_single_vl53l0x(VL53L0X_Dev_t *pDevice, i2c_port_t i2c_port, const char *sensor_name)

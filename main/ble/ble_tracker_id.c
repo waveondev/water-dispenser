@@ -9,7 +9,6 @@
 #include "app_config_flash.h"
 #include "ble_task.h"
 #include "ble_parse.h"
-TaskHandle_t xTrackerCaptureHandle = NULL;
 static const char *TAG = __FILE__;
 void Tracker_Device_disable(int i);
 

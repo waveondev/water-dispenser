@@ -80,6 +80,25 @@ void bf_LongPress10SecAction(void) {
     //delay(1000); 
     //ESP.restart();
 }
+int button_press_state(void)
+{
+    if(is_pressed == true)
+    {
+        int64_t now = esp_timer_get_time() / 1000; // 현재 시간 (ms)
+        int64_t press_duration = now - pressed_time; // 누르고 있던 총 시간 계산
+
+        if (press_duration >= LONG_PRESS_10S_MS) {
+            return 3;
+        } 
+        else if (press_duration >= LONG_PRESS_5S_MS) {
+            return 2;
+        } 
+        else if (press_duration >= LONG_PRESS_3S_MS) {
+            return 1;
+        } 
+    }
+    return 0;
+}
 // 버튼 상태 및 타이머를 처리하는 메인 태스크
 static void Button_task(void* arg)
 {

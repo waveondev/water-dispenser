@@ -7,6 +7,19 @@
 #include "app_config_flash.h"
 #include "ble_parse.h"
 #include "ble_task.h"
+
+
+extern void Breathing_Debug(uint8_t enable, uint8_t step, 
+                            int16_t current_r,
+                            int16_t current_g,
+                            int16_t current_b,
+                            int16_t current_w,
+
+                            // 목표하는 최대 색상 (상한선 기준값)
+                            uint8_t target_r,
+                            uint8_t target_g,
+                            uint8_t target_b,
+                            uint8_t target_w);
 BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
     const char *pcParameter;
@@ -198,7 +211,15 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 				app_wifi_config_t* wifi_config = get_wifi_config();
 				Wifi_Connect((char*)wifi_config->conn_ssid,(const char*)wifi_config->conn_password);
 			}	
-
+			else if (!strncmp(ag[1], "led", 3))
+			{
+				uint8_t r = (uint8_t)atoi(ag[2]);
+				uint8_t g = (uint8_t)atoi(ag[3]);
+				uint8_t b = (uint8_t)atoi(ag[4]);
+				uint8_t w = (uint8_t)atoi(ag[5]);
+				Breathing_Debug(1,2,0,0,0,0,r,g,b,w);
+			}
+			
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

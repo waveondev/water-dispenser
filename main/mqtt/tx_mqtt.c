@@ -52,7 +52,7 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd)
     cJSON_AddStringToObject(root, "id", "123e4567-e89b-12d3-a456-426614174000"); /* 실제로는 uuid 생성 함수 사용 */
     if(TRACKER_MESSEGE_ACTIVITY <= cmd)
     {
-        cJSON_AddStringToObject(root, "env", "dev");
+        cJSON_AddStringToObject(root, "env", "alpha");
         cJSON_AddStringToObject(root, "device_type", "tracker"); 
     }
     else
