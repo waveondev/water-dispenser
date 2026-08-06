@@ -36,24 +36,29 @@ void Opmode_test_mode(void)
 void Opmode_Set(void)
 {
     app_config_t* app_config = get_app_config();
+    uint8_t LED_Value = 0;
     //start_motor_with_boost(0,0);
     switch(current_opmode)
     {
         case OP_MODE_NORMAL:
             current_opmode = OP_MODE_NIGHT;
+            LED_Value = 127;
         break;
         case OP_MODE_NIGHT:
             current_opmode = OP_MODE_SMART;
+            LED_Value = 255;
         break;
         case OP_MODE_SMART:
             current_opmode = OP_MODE_SLEEP;
+            LED_Value = 255;
         break;
         default:
             current_opmode = OP_MODE_NORMAL;
+            LED_Value = 255;
         break;
     }
     app_config->op_mode = current_opmode;
-
+    LED_Bright_Set(LED_Value);
     {
         // 2. 타이머가 처음 호출된 거라면 타이머를 생성
         if (opmode_timer == NULL) {
@@ -113,108 +118,112 @@ smart_state_t Time_ratio_state(void)
 }
 
 #if 1
-static void Opmode_task(void *pvParameter)
-{
-    ESP_LOGI(TAG, "Starting Opmode_task");
-    
 
-    app_config_t* app_config = get_app_config();
+void Smart_Water(void)
+{
     static uint32_t smart_timer_target = 0; // 각 상태별 마감 시한 틱 저장
     float start_weight = 0;
     uint8_t splash_count = 0;
-    while (1) {
-        bool sensor_detected = VL53L0X_Detect();
-        uint32_t current_tick = xTaskGetTickCount();
-
-        switch (smart_state)
+    bool sensor_detected = VL53L0X_Detect();
+    uint32_t current_tick = xTaskGetTickCount();
+    app_config_t* app_config = get_app_config();
+    switch (smart_state)
+    {
+        case SMART_IDLE:
+        if (sensor_detected) 
         {
-           case SMART_IDLE:
-            if (sensor_detected) 
-            {
-                splash_count = 0;
-                water_fault_disable(WATER_SPLASHING_FAULT);
-                // 💡 1. 센서 감지 즉시 시작 무게 저장
-                start_weight = loadcell_data_get();
-                
-                smart_timer_target = current_tick + ((app_config->EFFECTIVE_DWELL_TIME*1000) / portTICK_PERIOD_MS);
-                smart_state = SMART_RUN_VERIFY;
-                ESP_LOGI(TAG, "음수 시작 Verifying 5s... start_weight = %.2fg", start_weight);
-            }
-            break;
+            splash_count = 0;
+            water_fault_disable(WATER_SPLASHING_FAULT);
+            // 💡 1. 센서 감지 즉시 시작 무게 저장
+            start_weight = loadcell_data_get();
+            
+            smart_timer_target = current_tick + ((app_config->EFFECTIVE_DWELL_TIME*1000) / portTICK_PERIOD_MS);
+            smart_state = SMART_RUN_VERIFY;
+            ESP_LOGI(TAG, "음수 시작 Verifying 5s... start_weight = %.2fg", start_weight);
+        }
+        break;
 
-        case SMART_RUN_VERIFY:
-            // 5초가 가기 전에 센서가 끊기면 칼같이 끄고 대기 상태로 복귀
+    case SMART_RUN_VERIFY:
+        // 5초가 가기 전에 센서가 끊기면 칼같이 끄고 대기 상태로 복귀
+        if (!sensor_detected) 
+        {
+            smart_state = SMART_IDLE;
+            ESP_LOGI(TAG, "SMART: Sensor lost before 5s. Motor STOPPED.");
+            break;
+        }
+
+        // 💡 2. [실시간 튐 감지] 현재 로드셀 무게 읽기
+        float current_w = loadcell_data_get();
+
+        // 💡 시작 무게(또는 직전 데이터)와 비교해 급격하게 50g 이상 위아래로 튀었는지 검사
+        // (fabs를 써서 +50g 스파이크나 -50g 드롭을 모두 잡아냅니다)
+            
+        if (fabsf(current_w - start_weight) >= app_config->splash_delta_g) 
+        {
+            start_weight = current_w;
+            splash_count++;
+            if(splash_count > 2)
+            {
+                smart_state = SMART_IDLE; // 즉시 대기 상태로 복귀
+                water_fault_enable(WATER_SPLASHING_FAULT);
+                break;
+            }  
+            ESP_LOGE(TAG, "SMART: Abnormal weight spike detected! (Start: %.2fg, Current: %.2fg). %d Motor SHUTDOWN.", start_weight, current_w, splash_count);
+        }
+
+        // 3. 5초 동안 센서가 짱짱하게 잘 버텼는지 확인
+        if ((int32_t)(smart_timer_target - current_tick) <= 0) 
+        {
+            // 5초 동안 급격하게 튀지 않고 무사히 통과 완료!
+            mqtt_queue_send(MESSEGE_ACCESS);
+            smart_state = SMART_RUN_STABLE;
+            ESP_LOGI(TAG, "SMART: 5-second verification SUCCESS. Stable running...");
+        }
+        break;
+
+        case SMART_RUN_STABLE:
+
+            // 💡 2. 5초 이상 유지된 이후 센서 감지가 사라지면 "바로 끄기"
             if (!sensor_detected) 
             {
-                smart_state = SMART_IDLE;
-                ESP_LOGI(TAG, "SMART: Sensor lost before 5s. Motor STOPPED.");
-                break;
-            }
-
-            // 💡 2. [실시간 튐 감지] 현재 로드셀 무게 읽기
-            float current_w = loadcell_data_get();
-
-            // 💡 시작 무게(또는 직전 데이터)와 비교해 급격하게 50g 이상 위아래로 튀었는지 검사
-            // (fabs를 써서 +50g 스파이크나 -50g 드롭을 모두 잡아냅니다)
-             
-            if (fabsf(current_w - start_weight) >= app_config->splash_delta_g) 
-            {
-                start_weight = current_w;
-                splash_count++;
-                if(splash_count > 2)
-                {
-                    smart_state = SMART_IDLE; // 즉시 대기 상태로 복귀
-                    water_fault_enable(WATER_SPLASHING_FAULT);
-                    break;
-                }  
-                ESP_LOGE(TAG, "SMART: Abnormal weight spike detected! (Start: %.2fg, Current: %.2fg). %d Motor SHUTDOWN.", start_weight, current_w, splash_count);
-            }
-
-            // 3. 5초 동안 센서가 짱짱하게 잘 버텼는지 확인
-            if ((int32_t)(smart_timer_target - current_tick) <= 0) 
-            {
-                // 5초 동안 급격하게 튀지 않고 무사히 통과 완료!
-                mqtt_queue_send(MESSEGE_ACCESS);
-                smart_state = SMART_RUN_STABLE;
-                ESP_LOGI(TAG, "SMART: 5-second verification SUCCESS. Stable running...");
+                // 💡 3. 꺼진 후 3초 동안 계속 감지 안 되는지 체크 시작
+                smart_timer_target = current_tick + (3000 / portTICK_PERIOD_MS);
+                smart_state = SMART_STOP_CHECK;
+                ESP_LOGI(TAG, "SMART: Sensor lost. Motor STOPPED immediately. Checking 3s stable off...");
             }
             break;
 
-            case SMART_RUN_STABLE:
-
-                // 💡 2. 5초 이상 유지된 이후 센서 감지가 사라지면 "바로 끄기"
-                if (!sensor_detected) 
-                {
-                    // 💡 3. 꺼진 후 3초 동안 계속 감지 안 되는지 체크 시작
-                    smart_timer_target = current_tick + (3000 / portTICK_PERIOD_MS);
-                    smart_state = SMART_STOP_CHECK;
-                    ESP_LOGI(TAG, "SMART: Sensor lost. Motor STOPPED immediately. Checking 3s stable off...");
-                }
+        case SMART_STOP_CHECK:
+            // ⚠️ 3초 버티는 도중에 센서가 다시 감지되었다면? -> 끄기 취소하고 다시 안정 구동으로!
+            if (sensor_detected) 
+            {
+                smart_state = SMART_RUN_STABLE;
+                ESP_LOGI(TAG, "SMART: Sensor came back during 3s check! Motor ON again.");
                 break;
+            }
 
-            case SMART_STOP_CHECK:
-                // ⚠️ 3초 버티는 도중에 센서가 다시 감지되었다면? -> 끄기 취소하고 다시 안정 구동으로!
-                if (sensor_detected) 
+            // 💡 3초 동안 센서가 단 한 번도 들어오지 않고 완벽하게 꺼짐이 유지된 경우
+            if ((int32_t)(smart_timer_target - current_tick) <= 0) 
+            {
+                smart_state = SMART_IDLE; // 완전히 끝내고 대기 상태로 복귀
+                float diff_weight = start_weight - loadcell_data_get();
+                if(diff_weight > 0)
                 {
-                    smart_state = SMART_RUN_STABLE;
-                    ESP_LOGI(TAG, "SMART: Sensor came back during 3s check! Motor ON again.");
-                    break;
+                        Tracker_waterintake_end((uint32_t)(diff_weight));
+                        mqtt_queue_send(MESSEGE_DRINK);
                 }
+                ESP_LOGI(TAG, "음수 종료 end_weight = %.2fg, diff_weight = %.2fg",loadcell_data_get() ,diff_weight );
+            }
+            break;
+    }
+}
 
-                // 💡 3초 동안 센서가 단 한 번도 들어오지 않고 완벽하게 꺼짐이 유지된 경우
-                if ((int32_t)(smart_timer_target - current_tick) <= 0) 
-                {
-                    smart_state = SMART_IDLE; // 완전히 끝내고 대기 상태로 복귀
-                    float diff_weight = start_weight - loadcell_data_get();
-                    if(diff_weight > 0)
-                    {
-                            Tracker_waterintake_end((uint32_t)(diff_weight));
-                            mqtt_queue_send(MESSEGE_DRINK);
-                    }
-                    ESP_LOGI(TAG, "음수 종료 end_weight = %.2fg, diff_weight = %.2fg",loadcell_data_get() ,diff_weight );
-                }
-                break;
-        }
+static void Opmode_task(void *pvParameter)
+{
+    ESP_LOGI(TAG, "Starting Opmode_task");
+    app_config_t* app_config = get_app_config();
+
+    while (1) {
         DBG_Resister_t* DBG_Resister = Debug_Get();
         if(DBG_Resister->motor)
         {
@@ -232,7 +241,8 @@ static void Opmode_task(void *pvParameter)
                     {
                         case OP_MODE_SMART:
                         {
-                            if(sensor_detected || sense_enable())
+                            Smart_Water();
+                            if(VL53L0X_Detect() || sense_enable())
                                 start_motor_with_boost(85, 0);
                             else
                                 start_motor_with_boost(0, 0);
@@ -240,9 +250,11 @@ static void Opmode_task(void *pvParameter)
                         break;
                         // 타 모드는 기본 구조 유지
                         case OP_MODE_NORMAL:
+                            Smart_Water();
                             start_motor_with_boost(85, 0);
                             break;
                         case OP_MODE_NIGHT:
+                            Smart_Water();
                             start_motor_with_boost(45, 0);
                             break;
                         case OP_MODE_SLEEP:

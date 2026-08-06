@@ -59,9 +59,16 @@ void bf_SingleClickAction(void) {
 void bf_DoubleClickAction(void) {
     app_config_t* app_config = get_app_config();
     ESP_LOGI(TAG,"Double Click Action executed\r\n");
-    led_bit_enable(CLEAN_MODE_BIT); 
-    start_motor_with_boost(100, app_config->pump_clean_duration);
 
+    if(Clean_enable() == false)
+    {
+        led_bit_enable(CLEAN_MODE_BIT); 
+        start_motor_with_boost(100, app_config->pump_clean_duration);
+    }
+    else
+    {
+        Clean_Mode_Disable();
+    }
 }
 
 void bf_LongPress3SecAction(void) {

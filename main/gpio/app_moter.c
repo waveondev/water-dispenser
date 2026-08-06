@@ -401,6 +401,11 @@ static void motor_used_timer_callback(void* arg)
     }
 }
 
+void Clean_Mode_Disable(void)
+{
+    duration_sec_buf = 0;
+    led_bit_disable(CLEAN_MODE_BIT); 
+}
 
 static void motor_boost_task(void *pvParameters)
 {
@@ -432,7 +437,7 @@ static void motor_boost_task(void *pvParameters)
                 ESP_LOGI("SENDER", "Clean %d ",duration_sec_buf);
                 vTaskDelay(pdMS_TO_TICKS(1000));
             }
-            led_bit_disable(CLEAN_MODE_BIT); 
+            Clean_Mode_Disable();
         }
     }
 }

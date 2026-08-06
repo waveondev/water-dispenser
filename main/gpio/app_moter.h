@@ -7,6 +7,7 @@ void set_motor_speed_percent(int percentage) ;
 
 void start_motor_with_boost(int target_percentage, int duration_sec);
 void filter_change(void);
+void Clean_Mode_Disable(void);
 void motor_change(void);
 #endif
 
