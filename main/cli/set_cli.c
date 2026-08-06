@@ -89,23 +89,36 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			else if (!strncmp(ag[1], "ledr", 4))
 			{
                 val32 = atoi(ag[2]);
-                set_rgb_led(val32,0,0,0);
+                set_rgb_len_no_Breathing(val32,0,0,0);
             }	
 			else if (!strncmp(ag[1], "ledg", 4))
 			{
                 val32 = atoi(ag[2]);
-				set_rgb_led(0,val32,0,0);
+				set_rgb_len_no_Breathing(0,val32,0,0);
             }			
 			else if (!strncmp(ag[1], "ledb", 4))
 			{
                 val32 = atoi(ag[2]);
-				set_rgb_led(0,0,val32,0);
+				set_rgb_len_no_Breathing(0,0,val32,0);
             }			
 			else if (!strncmp(ag[1], "ledw", 4))
 			{
                 val32 = atoi(ag[2]);
-				set_rgb_led(0,0,0,val32);
+				set_rgb_len_no_Breathing(0,0,0,val32);
             }		
+			else if (!strncmp(ag[1], "led_b", 5))
+			{
+				uint8_t min = atoi(ag[2]);
+				uint8_t max = atoi(ag[3]);
+				uint8_t value = (uint8_t)strtol(ag[4], NULL, 16); 
+
+				uint8_t r = (value & 0x08)? 255 : 0;
+				uint8_t g = (value & 0x04)? 255 : 0;
+				uint8_t b = (value & 0x02)? 255 : 0;
+				uint8_t w = (value & 0x01)? 255 : 0;
+
+				Breathing_Setup_Debug(1,2,min,max, r,g,b,w);
+            }
 			else if (!strncmp(ag[1], "scan", 4))
 			{
                 wifi_scan_start();
@@ -200,14 +213,7 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 				app_wifi_config_t* wifi_config = get_wifi_config();
 				Wifi_Connect((char*)wifi_config->conn_ssid,(const char*)wifi_config->conn_password);
 			}	
-			else if (!strncmp(ag[1], "led", 3))
-			{
-				uint8_t r = (uint8_t)atoi(ag[2]);
-				uint8_t g = (uint8_t)atoi(ag[3]);
-				uint8_t b = (uint8_t)atoi(ag[4]);
-				uint8_t w = (uint8_t)atoi(ag[5]);
-				//Breathing_Debug(1,2,0,0,0,0,r,g,b,w);
-			}
+
 			
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;

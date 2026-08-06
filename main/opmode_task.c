@@ -122,7 +122,7 @@ smart_state_t Time_ratio_state(void)
 void Smart_Water(void)
 {
     static uint32_t smart_timer_target = 0; // 각 상태별 마감 시한 틱 저장
-    float start_weight = 0;
+    static float start_weight = 0;
     uint8_t splash_count = 0;
     bool sensor_detected = VL53L0X_Detect();
     uint32_t current_tick = xTaskGetTickCount();
@@ -160,15 +160,18 @@ void Smart_Water(void)
             
         if (fabsf(current_w - start_weight) >= app_config->splash_delta_g) 
         {
-            start_weight = current_w;
             splash_count++;
+
+            ESP_LOGE(TAG, "SMART: Abnormal weight spike detected! (Start: %.2fg, Current: %.2fg). %d Motor SHUTDOWN.", start_weight, current_w, splash_count);
+            start_weight = current_w;
+
             if(splash_count > 2)
             {
                 smart_state = SMART_IDLE; // 즉시 대기 상태로 복귀
                 water_fault_enable(WATER_SPLASHING_FAULT);
                 break;
             }  
-            ESP_LOGE(TAG, "SMART: Abnormal weight spike detected! (Start: %.2fg, Current: %.2fg). %d Motor SHUTDOWN.", start_weight, current_w, splash_count);
+
         }
 
         // 3. 5초 동안 센서가 짱짱하게 잘 버텼는지 확인

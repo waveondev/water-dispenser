@@ -93,7 +93,7 @@ void led_bit_enable(uint16_t enable)
     if ((led_status_resister & enable) == 0) 
     {
         led_status_resister |= enable;
-        memset(&Breathing_Setting,0,sizeof(Breathing_Setting));
+        //memset(&Breathing_Setting,0,sizeof(Breathing_Setting));
         ESP_LOGE(TAG, "led_status_resister = %08x",led_status_resister);
     }
 }
@@ -104,7 +104,7 @@ void led_bit_disable(uint16_t disable)
     if ((led_status_resister & disable) != 0) 
     {
         led_status_resister &= (~disable);
-        memset(&Breathing_Setting,0,sizeof(Breathing_Setting));
+        //memset(&Breathing_Setting,0,sizeof(Breathing_Setting));
         ESP_LOGE(TAG, "led_status_resister = %08x",led_status_resister);
     }
 }
@@ -143,7 +143,7 @@ void set_led_clear(void) {
 }
 
 
-void set_rgb_led(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
+static void set_rgb_led(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
 {
     static uint8_t R_buf, G_buf, B_buf, W_buf;
     if(R_buf == R && G_buf == G && B_buf == B && W_buf == W)
@@ -161,6 +161,14 @@ void set_rgb_led(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
 
     led_strip_refresh(led_strip); 
 }
+
+void set_rgb_len_no_Breathing(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
+{
+    if(Breathing_Setting.used)
+        memset(&Breathing_Setting, 0, sizeof(Breathing_Setting_t));
+    set_rgb_led(R, G, B, W);
+}
+
 
 void app_tof_sensor_poll_100ms(void)
 {
@@ -197,7 +205,7 @@ void app_tof_sensor_poll_100ms(void)
 }
 
 
-static void Breathing_Setup(uint8_t enable, uint8_t step, 
+void Breathing_Setup(uint8_t enable, uint8_t step, 
                             uint8_t min_bright,  // 💡 최소 밝기 (0~255)
                             uint8_t max_bright,  // 💡 최대 밝기 (0~255)
                             uint8_t target_r,
@@ -224,6 +232,34 @@ static void Breathing_Setup(uint8_t enable, uint8_t step,
     Breathing_Setting.target_b = target_b;    
     Breathing_Setting.target_w = target_w;   
 }
+
+void Breathing_Setup_Debug(uint8_t enable, uint8_t step, 
+                            uint8_t min_bright,  // 💡 최소 밝기 (0~255)
+                            uint8_t max_bright,  // 💡 최대 밝기 (0~255)
+                            uint8_t target_r,
+                            uint8_t target_g,
+                            uint8_t target_b,
+                            uint8_t target_w)
+{
+
+
+    memset(&Breathing_Setting, 0, sizeof(Breathing_Setting_t));
+    Breathing_Setting.used = enable;
+    Breathing_Setting.step = step;
+    
+    // 밝기 하한선/상한선 설정
+    Breathing_Setting.min_brightness = min_bright;
+    Breathing_Setting.max_brightness = max_bright;
+    
+    // 초기 시작 밝기를 min_brightness로 지정
+    Breathing_Setting.brightness = min_bright;
+
+    Breathing_Setting.target_r = target_r;
+    Breathing_Setting.target_g = target_g;
+    Breathing_Setting.target_b = target_b;    
+    Breathing_Setting.target_w = target_w;   
+}
+
 
 static void Breathing_LED(void)
 {
@@ -281,7 +317,7 @@ static void LED_task(void *pvParameter)
     static uint32_t _100ms_count = 0;
 
     init_led_strip();
-    set_rgb_led(0,0,0,LED_brightness_value);
+    set_rgb_len_no_Breathing(0,0,0,LED_brightness_value);
     vTaskDelay(pdMS_TO_TICKS(5000));
     ESP_LOGI(TAG, "Starting LED_task (Pure Event Driven Mode)");
     DBG_Resister_t *DBG_Resister = Debug_Get();
@@ -307,12 +343,11 @@ static void LED_task(void *pvParameter)
                 #if 1
                 if(hardware_error_enable() || sense_enable())
                 {
-                    set_rgb_led(LED_BRIGHTNESS_MAX,0 , 0, 0); 
+                    set_rgb_len_no_Breathing(LED_BRIGHTNESS_MAX,0 , 0, 0); 
                 }
                 else 
                 #endif
                 if (pairing_enable()) {
-                    //Breathing_Setup(1,2,0,0,255,0,255,0,255,0);
                     Breathing_Setup(1,2,0,LED_brightness_value,0,0,255,0);
                     Breathing_LED();
                 }
@@ -321,7 +356,7 @@ static void LED_task(void *pvParameter)
                     Breathing_LED();
                 }                  
                 else if (TOF_enable()){
-                    set_rgb_led(0, LED_brightness_value, 0, 0); 
+                    set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
                 }         
                 else if (Clean_enable()){
                     Breathing_Setup(1,2,0,LED_brightness_value,0,255,0,0);
@@ -333,7 +368,7 @@ static void LED_task(void *pvParameter)
                 if(wifi_conn_enable)
                 {
                     wifi_conn_enable--;
-                    set_rgb_led(0, LED_brightness_value, 0, 0); 
+                    set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
                 }
                 else
                 {
@@ -341,20 +376,20 @@ static void LED_task(void *pvParameter)
                     if(button_state)
                     {
                         switch(button_state) {
-                            case 1: set_rgb_led(0, LED_brightness_value, 0, 0); break;
-                            case 2:  set_rgb_led(0, 0, LED_brightness_value, 0);; break;
-                            case 3:  set_rgb_led(0, 0, 0, LED_brightness_value);; break;
+                            case 1: set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); break;
+                            case 2:  set_rgb_len_no_Breathing(0, 0, LED_brightness_value, 0);; break;
+                            case 3:  set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value);; break;
                             default: break;
                         }
                     }
                     else
                     {
                         switch(last_op_mode) {
-                            case OP_MODE_NORMAL: set_rgb_led(0, 0, 0, LED_brightness_value); break;
-                            case OP_MODE_NIGHT:  set_rgb_led(0, 0, 0, LED_brightness_value); break;
-                            case OP_MODE_SMART:  set_rgb_led(0,0 , LED_brightness_value, 0); break;
-                            case OP_MODE_SLEEP:  set_rgb_led(0, 0, 0, 0);; break;
-                            default: set_rgb_led(0, 0, 0, LED_brightness_value); break;
+                            case OP_MODE_NORMAL: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
+                            case OP_MODE_NIGHT:  set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
+                            case OP_MODE_SMART:  set_rgb_len_no_Breathing(0,0 , LED_brightness_value, 0); break;
+                            case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(0, 0, 0, 0);; break;
+                            default: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
                         }
                     }
                 }
