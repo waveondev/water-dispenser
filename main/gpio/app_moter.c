@@ -345,15 +345,8 @@ void set_motor_speed_percent(int percentage) {
 static TaskHandle_t xMotorBoostTaskHandle = NULL;
 static int duration_sec_buf = 0; // 0이 아니면 현재 "시간 제한 모드"가 작동 중임을 의미
 
-typedef struct {
-    int target_percentage;
-    int duration_sec; 
-} motor_boost_args_t;
-
-motor_boost_args_t boost_config;
-
 // 큐 핸들 변수 선언
-static QueueHandle_t motor_queue = NULL;
+SemaphoreHandle_t motor_semaphore = NULL;
 static uint32_t* Motor_Used_Time;
 static uint32_t* Filter_Used_Time;
 #define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)
@@ -409,15 +402,12 @@ void Clean_Mode_Disable(void)
 
 static void motor_boost_task(void *pvParameters)
 {
-    motor_boost_args_t received_data;
     while(1)
     {
-        if (xQueueReceive(motor_queue, &received_data, portMAX_DELAY) == pdPASS) {
-            ESP_LOGW("RECEIVER", "큐 수신 완료! -> [모터 구동] 속도: %d%%, 유지시간: %d초", 
-                     received_data.target_percentage, received_data.duration_sec);
+        if (xSemaphoreTake(motor_semaphore, portMAX_DELAY) == pdTRUE) 
+        {
+            ESP_LOGW("RECEIVER", "큐 수신 완료! -> [모터 구동] %d, time = %d",current_target_percentage, duration_sec_buf);
             
-            duration_sec_buf = received_data.duration_sec;
-            current_target_percentage = received_data.target_percentage;
             // 💡 이곳에 이전에 만든 RMT 모터 제어 함수를 넣으면 됩니다!
            // for(int i=0;i<100;i++)
             {
@@ -430,7 +420,7 @@ static void motor_boost_task(void *pvParameters)
                 vTaskDelay(pdMS_TO_TICKS(2000)); // 정확히 1초(1000ms)만 대기
             }
 
-            set_motor_speed_percent(received_data.target_percentage);
+            set_motor_speed_percent(current_target_percentage);
             while(duration_sec_buf)
             {
                 duration_sec_buf--;
@@ -445,8 +435,6 @@ static void motor_boost_task(void *pvParameters)
 
 void start_motor_with_boost(int target_percentage, int duration_sec)
 {
-    motor_boost_args_t send_data;
-
 
     if(duration_sec_buf > 0)
     {
@@ -470,18 +458,12 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
     if (duration_sec == 0 && target_percentage == current_target_percentage) {
         return; 
     }
+    duration_sec_buf = duration_sec;
+    current_target_percentage = target_percentage;
 
-    send_data.target_percentage = target_percentage; // 10%, 20%, 30% ...
-    send_data.duration_sec = duration_sec;       // 2초, 4초, 6초 ...
-
-    ESP_LOGI("SENDER", "큐 전송 시도 -> 속도: %d%%, 시간: %d초", 
-                send_data.target_percentage, send_data.duration_sec);
-    BaseType_t xStatus = xQueueSend(motor_queue, &send_data, pdMS_TO_TICKS(100));
-    
-    if (xStatus == pdPASS) {
-        ESP_LOGI("SENDER", "큐 전송 완료!");
-    } else {
-        ESP_LOGE("SENDER", "큐가 가득 차서 전송 실패 (Timeout)!");
+    if (motor_semaphore != NULL) {
+        xSemaphoreGive(motor_semaphore); // 세마포어에 신호(1) 채우기
+        ESP_LOGI("SENDER", "모터 동작 세마포어 송신!");
     }
 }
 #define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
@@ -516,10 +498,11 @@ void init_motor_ledc(void) {
     // 타이머 생성
     ESP_ERROR_CHECK(esp_timer_create(&Motor_Used_timer_args, &Motor_used_timer));
 
-    motor_queue = xQueueCreate(10, sizeof(motor_boost_args_t));
-    if(motor_queue == NULL)
-    {
-            ESP_LOGI(TAG, "motor_queue fail ");
+// 2. 이진 세마포어 생성 (초기 상태: 0 - 비어있음)
+    motor_semaphore = xSemaphoreCreateBinary();
+    
+    if (motor_semaphore == NULL) {
+        ESP_LOGE("MAIN", "세마포어 생성 실패!");
     }
 
     if (xTaskCreatePinnedToCore(

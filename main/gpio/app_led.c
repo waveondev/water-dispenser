@@ -169,32 +169,15 @@ void set_rgb_len_no_Breathing(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
     set_rgb_led(R, G, B, W);
 }
 
-
 void app_tof_sensor_poll_100ms(void)
 {
-    static uint32_t tof_match_start_time = 0;
-    static bool is_tof_pressing = false;
-
     if (VL53L0X_Detect()) 
     {
-
-        is_tof_pressing = false;
-        tof_match_start_time = 0;
         led_bit_enable(TOF_DETECT_BIT); 
     } 
     else 
     {
         led_bit_disable(TOF_DETECT_BIT); // ⭐️ 손 치우면 즉시 꺼짐 호출
-        if (!is_tof_pressing) {
-            tof_match_start_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-            is_tof_pressing = true;
-        } else {
-            uint32_t elapsed_time = (xTaskGetTickCount() * portTICK_PERIOD_MS) - tof_match_start_time;
-            if (elapsed_time >= 3000) {
-                // ⭐️ 3초 만족 시 호출 -> 내부 가드 덕분에 매번 호출해도 세마포어는 딱 1번만 방출됨!
-               
-            }
-        }
     }
     app_config_t* app_config = get_app_config();
     if(last_op_mode != app_config->op_mode && led_status_resister == 0)
@@ -203,6 +186,7 @@ void app_tof_sensor_poll_100ms(void)
          ESP_LOGE(TAG, "last_op_mode = %08x",last_op_mode);
     }
 }
+
 
 
 void Breathing_Setup(uint8_t enable, uint8_t step, 
@@ -314,7 +298,6 @@ static void LED_task(void *pvParameter)
     
     uint8_t toggle_time = 0;
     bool toggle_flag = false;
-    static uint32_t _100ms_count = 0;
 
     init_led_strip();
     set_rgb_len_no_Breathing(0,0,0,LED_brightness_value);
@@ -322,14 +305,8 @@ static void LED_task(void *pvParameter)
     ESP_LOGI(TAG, "Starting LED_task (Pure Event Driven Mode)");
     DBG_Resister_t *DBG_Resister = Debug_Get();
     while (1) {
-        if(_100ms_count >= (100 / LED_TASK_DELAY))
-        {
-            _100ms_count = 0 ;
-            app_tof_sensor_poll_100ms();
-        }
-        else
-            _100ms_count++;
-        
+
+        app_tof_sensor_poll_100ms(); 
    
         if(DBG_Resister->led)
         {
