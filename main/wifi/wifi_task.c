@@ -79,7 +79,7 @@ void Wifi_Connect(const char* target_ssid, const char* target_password)
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Wi-Fi 설정 적용 실패!");
-        ble_send_data_to_queue((uint8_t*)"CONNECT_AP FAIL", strlen("CONNECT_AP FAIL"));
+        ble_send_data_to_queue(NULL, (uint8_t*)"CONNECT_AP FAIL", strlen("CONNECT_AP FAIL"));
         return;
     }
 

@@ -142,15 +142,15 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			}
 			else if (!strncmp(ag[1], "bleota", 6))
 			{
-				motion_msg_send(OTA_MODE_REQUEST,1);
+				Tracker_All_Send(OTA_MODE_REQUEST,1);
 			}
 			else if (!strncmp(ag[1], "motion", 6))
 			{
-				motion_msg_send(MOTION_START_REQUEST,1);
+				Tracker_All_Send(MOTION_START_REQUEST,1);
 			}	
 			else if (!strncmp(ag[1], "health", 6))
 			{
-				motion_msg_send(HEALTH_DATA_REQUEST,1);
+				Tracker_All_Send(HEALTH_DATA_REQUEST,1);
 			}	
 			else if (!strncmp(ag[1], "rm", 2))
 			{
