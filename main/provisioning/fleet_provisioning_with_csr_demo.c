@@ -82,6 +82,7 @@
 #include "rx_mqtt.h"
 #include "aws_iot_task.h"
 #include "app_nvs.h"
+#include "device_config.h"
 /**
  * These configurations are required. Throw compilation error if it is not
  * defined.
@@ -303,8 +304,7 @@ static void provisioningPublishCallback( MQTTPublishInfo_t * pPublishInfo,
                                         mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
 
                                 char payload_buf[128];
-                                // 앱 규격: {"thing_name": "W100_AABBCCDDEEFF"}[cite: 7, 9, 14]
-                                snprintf(payload_buf, sizeof(payload_buf), "{\"thing_name\":\"W100_%s\"}", dynamicMacStr);
+                                snprintf(payload_buf, sizeof(payload_buf), "{\"thing_name\":\"%s_%s\"}",CONFIG_DEVICE_PREFIX, dynamicMacStr);
 
                                 // 3. 앱에 암호화된 최종 완료 통보 쏘기
                                 ble_send_encrypted_event("prov_complete", payload_buf);
@@ -665,7 +665,7 @@ int aws_iot_provisioning_main( int argc,
 
             /**** Call the RegisterThing API ****/
             char str[100];
-            snprintf(str,sizeof(str),"W100_%s",dynamicMacStr);
+            snprintf(str,sizeof(str),"%s_%s",CONFIG_DEVICE_PREFIX,dynamicMacStr);
 
             if( status == true ) status = generateRegisterThingRequest( payloadBuffer, NETWORK_BUFFER_SIZE, ownershipToken, ownershipTokenLength, str, strlen(str), &payloadLength );
             if( status == true ) status = subscribeToRegisterThingResponseTopics();

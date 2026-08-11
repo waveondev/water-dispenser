@@ -314,66 +314,69 @@ static void LED_task(void *pvParameter)
         }
         else
         {
-            // [우선순위 1] 특수 비트가 하나라도 켜져 있는 상태라면
-            if (led_status_resister != 0) {
-                last_op_mode = -1; // 모드 무효화
-                #if 1
-                if(hardware_error_enable() || sense_enable())
-                {
-                    set_rgb_len_no_Breathing(LED_BRIGHTNESS_MAX,0 , 0, 0); 
+            int button_state = button_press_state();
+            if(button_state)
+            {
+                switch(button_state) {
+                    case 1: set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); break;
+                    case 2:  set_rgb_len_no_Breathing(0, 0, LED_brightness_value, 0);; break;
+                    case 3:  set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value);; break;
+                    default: break;
                 }
-                else 
-                #endif
-                if (pairing_enable()) {
-                    Breathing_Setup(1,2,0,LED_brightness_value,0,0,255,0);
-                    Breathing_LED();
-                }
-                else if (ota_enable()) {
-                    Breathing_Setup(1,2,0,LED_brightness_value,255,0,255,0);
-                    Breathing_LED();
-                }                  
-                else if (TOF_enable()){
-                    set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
-                }         
-                else if (Clean_enable()){
-                    Breathing_Setup(1,2,0,LED_brightness_value,0,255,0,0);
-                    Breathing_LED();
-                }         
             }
-            // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용
-            else {
-                if(wifi_conn_enable)
-                {
-                    wifi_conn_enable--;
-                    set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
-                }
-                else
-                {
-                    int button_state = button_press_state();
-                    if(button_state)
+            else
+            {
+    // [우선순위 1] 특수 비트가 하나라도 켜져 있는 상태라면
+                if (led_status_resister != 0) {
+                    last_op_mode = -1; // 모드 무효화
+                    #if 1
+                    if(hardware_error_enable() || sense_enable())
                     {
-                        switch(button_state) {
-                            case 1: set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); break;
-                            case 2:  set_rgb_len_no_Breathing(0, 0, LED_brightness_value, 0);; break;
-                            case 3:  set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value);; break;
-                            default: break;
-                        }
+                        set_rgb_len_no_Breathing(LED_BRIGHTNESS_MAX,0 , 0, 0); 
+                    }
+                    else 
+                    #endif
+                    if (pairing_enable()) {
+                        Breathing_Setup(1,2,0,LED_brightness_value,0,0,255,0);
+                        Breathing_LED();
+                    }
+                    else if (ota_enable()) {
+                        Breathing_Setup(1,2,0,LED_brightness_value,255,0,255,0);
+                        Breathing_LED();
+                    }                  
+                    else if (TOF_enable()){
+                        set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
+                    }         
+                    else if (Clean_enable()){
+                        Breathing_Setup(1,2,0,LED_brightness_value,0,255,0,0);
+                        Breathing_LED();
+                    }         
+                }
+                // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용
+                else {
+                    if(wifi_conn_enable)
+                    {
+                        wifi_conn_enable--;
+                        set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
                     }
                     else
                     {
-                        switch(last_op_mode) {
-                            case OP_MODE_NORMAL: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
-                            case OP_MODE_NIGHT:  set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
-                            case OP_MODE_SMART:  set_rgb_len_no_Breathing(0,0 , LED_brightness_value, 0); break;
-                            case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(0, 0, 0, 0);; break;
-                            default: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
+
+                        {
+                            switch(last_op_mode) {
+                                case OP_MODE_NORMAL: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
+                                case OP_MODE_NIGHT:  set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
+                                case OP_MODE_SMART:  set_rgb_len_no_Breathing(0,0 , LED_brightness_value, 0); break;
+                                case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(0, 0, 0, 0);; break;
+                                default: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
+                            }
                         }
                     }
-                }
 
-                
-            // ESP_LOGE(TAG, "last_op_mode = %08x",last_op_mode);
-            }
+                    
+                // ESP_LOGE(TAG, "last_op_mode = %08x",last_op_mode);
+                }
+            }            
         }
         // ⭐️ [중요] 처리가 다 끝난 시점에 마스터 버퍼를 업데이트하여 다음 외부 진입을 방어합니다.
         vTaskDelay(pdMS_TO_TICKS(LED_TASK_DELAY));

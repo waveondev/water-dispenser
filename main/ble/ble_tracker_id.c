@@ -9,6 +9,7 @@
 #include "app_config_flash.h"
 #include "ble_task.h"
 #include "ble_parse.h"
+#include "app_sensor.h"
 static const char *TAG = __FILE__;
 void Tracker_Device_disable(int i);
 
@@ -179,7 +180,7 @@ void Tracker_In_ID(dev_info_t* dev_info, char* Tracker_ID)
     int target_index = -1;
     Tracker_Device_t* Tracker_target = Get_Tracker_Device(dev_info->addr);
 
-
+#if 0
     printf(" addr             : ");
     for (int i = 0; i < 6; i++)
     {
@@ -191,6 +192,7 @@ void Tracker_In_ID(dev_info_t* dev_info, char* Tracker_ID)
 
     printf(" name             : %s\n", dev_info->name);
     printf(" rssi             : %d\n", dev_info->rssi);
+#endif
     if(Tracker_target != NULL)
     {
         Tracker_target->Enable = 1;
@@ -198,6 +200,7 @@ void Tracker_In_ID(dev_info_t* dev_info, char* Tracker_ID)
         memcpy(&Tracker_target->dev_info,dev_info,sizeof(dev_info_t));
         return;
     }
+        
     // 🌟 배열을 처음부터 끝까지 스캔하며 중복 검사 및 빈자리 탐색
     for (int i = 0; i < TRACKER_DEVICE_MAX; i++) {
         // 1. 자리가 채워져 있는 경우 -> ID 중복 검사 수행
@@ -221,22 +224,22 @@ void Tracker_In_ID(dev_info_t* dev_info, char* Tracker_ID)
 
     memcpy(&p_dev->dev_info,dev_info,sizeof(dev_info_t));
     // 2. 데이터 초기화 (시간은 0ms부터 시작)
-    strncpy(p_dev->Device_ID, Tracker_ID, sizeof(p_dev->Device_ID) - 1);
+// MAC 주소 6바이트 전체를 포함하여 Device_ID 조합
+    // 예: "MyDevice-A1B2C3D4E5F6"
+    snprintf(p_dev->Device_ID, sizeof(p_dev->Device_ID), "%s-%02X%02X%02X%02X%02X%02X", 
+            Tracker_ID,           
+            p_dev->dev_info.addr[0], 
+            p_dev->dev_info.addr[1], 
+            p_dev->dev_info.addr[2], 
+            p_dev->dev_info.addr[3], 
+            p_dev->dev_info.addr[4], 
+            p_dev->dev_info.addr[5]
+            );
     p_dev->Enable = 1;
     // 4. 전역 배열에 등록
     Tracker_Device[target_index] = p_dev;
-    printf("장치 [%s] 생성 완료 \n", Tracker_ID);
+    printf("장치 [%s] 생성 완료 \n", p_dev->Device_ID);
 }
-
-
-
-
-
-
-
-static bool Motion_Send_enable = false;
-static int Motion_Send_tick = 50;
-
 
 
 bool GetTracker_Id_active(void)

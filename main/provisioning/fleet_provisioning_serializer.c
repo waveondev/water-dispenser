@@ -37,6 +37,7 @@
 #include "fleet_provisioning_serializer.h"
 #include "esp_mac.h"
 
+#include "device_config.h"
 /*-----------------------------------------------------------*/
 
 /**
@@ -285,7 +286,7 @@ bool generateRegisterThingRequest( uint8_t * pBuffer,
     }
     if( cborRet == CborNoError )
     {
-        cborRet = cbor_encode_text_stringz( &parametersEncoder, "w100" );
+        cborRet = cbor_encode_text_stringz( &parametersEncoder, CONFIG_DEVICE_TYPE );
     }
     /* ------------------------------------------------------------------------- */
 

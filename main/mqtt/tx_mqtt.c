@@ -6,7 +6,7 @@
 #include "mqtt_operations.h"
 #include "aws_iot_task.h"
 #include "app_config_flash.h"
-
+#include "device_config.h"
 static const char *TAG = __FILE__;
 
 Motion_Packet_t motion_res;
@@ -58,7 +58,7 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd)
     else
     {
         cJSON_AddStringToObject(root, "env", "alpha");
-        cJSON_AddStringToObject(root, "device_type", "w100"); 
+        cJSON_AddStringToObject(root, "device_type", CONFIG_DEVICE_TYPE); 
     }
     
     switch(cmd)

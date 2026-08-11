@@ -1,12 +1,10 @@
 #ifndef __TOPIC_LIST_H__
 #define __TOPIC_LIST_H__
 
+#include "device_config.h"
 
 
-
-
-
-#define TOPIC_HEADER "things/w100/W100_"
+#define TOPIC_HEADER "things/"CONFIG_DEVICE_TYPE"/"CONFIG_DEVICE_PREFIX"_"
 #define SERVER_RX_TOPIC_REGISTRATION   TOPIC_HEADER "%s/result/registration"
 #define SERVER_RX_TOPIC_BOOT           TOPIC_HEADER "%s/result/boot"
 #define SERVER_RX_TOPIC_ACCESS         TOPIC_HEADER "%s/result/access"

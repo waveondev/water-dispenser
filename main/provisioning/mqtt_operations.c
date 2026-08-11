@@ -61,7 +61,7 @@
 
 /* Clock for timer. */
 #include "clock.h"
-
+#include "device_config.h"
 /**
  * These configurations are required. Throw compilation error if the below
  * configs are not defined.
@@ -838,7 +838,7 @@ bool EstablishMqttSession( MQTTPublishCallback_t publishCallback,
                  * the MQTT broker. In a production device the identifier can be something
                  * unique, such as a device serial number. */
                 char con_info_str[100];
-                snprintf(con_info_str,sizeof(con_info_str),"W100_%s",dynamicMacStr);       
+                snprintf(con_info_str,sizeof(con_info_str),"%s_%s",CONFIG_DEVICE_PREFIX,dynamicMacStr);         
                 
                 connectInfo.pClientIdentifier = con_info_str;
                 connectInfo.clientIdentifierLength = strlen(con_info_str);

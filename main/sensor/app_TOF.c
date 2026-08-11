@@ -337,99 +337,19 @@ bool TOF_VL53L0X_init(void)
 
 #else
 
-#include <stdio.h>
-#include <string.h>
-#include "esp_log.h"
-#include "driver/i2c.h"  // 🔴 구형 레거시 드라이버 헤더
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_adc/adc_oneshot.h"
-static const char *TAG = "IR_TEST";
-
-#ifndef PIN_OUTPUT_PIN
-#define PIN_OUTPUT_PIN 6
-#endif
-#ifndef PIN_OUTPUT2_PIN
-#define PIN_OUTPUT2_PIN 7
-#endif
 bool VL53L0X_Detect(void)
 {
     return false;
 }
 
-// -------------------------------------------------------------
-// ADC 설정 (GPIO 6 = CH1 / GPIO 7 = CH2)
-// -------------------------------------------------------------
-#define CH1_ADC_UNIT        ADC_UNIT_1
-#define CH1_ADC_CHANNEL     ADC_CHANNEL_5       // GPIO 6 번 핀
-#define CH2_ADC_CHANNEL     ADC_CHANNEL_6       // GPIO 7 번 핀 (추가됨)
-#define EXAMPLE_ADC_ATTEN   ADC_ATTEN_DB_12 
-
-static adc_cali_handle_t cali_ch1_handle = NULL;
-static bool do_cali_ch1 = false;
-adc_oneshot_unit_handle_t adc1_handle;
-
 void VL53L0X_Sensing(void)
 {
-    vTaskDelay(pdMS_TO_TICKS(2)); 
-
-    // [1] Channel 5 (GPIO 6) ADC 읽기
-    int raw_ch0 = 0;
-    esp_err_t err_ch0 = adc_oneshot_read(adc1_handle, CH1_ADC_CHANNEL, &raw_ch0);
-
-    // [2] Channel 6 (GPIO 7) ADC 읽기 (GPIO 7 디지털 읽기 대신 ADC 로 변경)
-    int raw_ch1 = 0;
-    esp_err_t err_ch1 = adc_oneshot_read(adc1_handle, CH2_ADC_CHANNEL, &raw_ch1);
-
-    vTaskDelay(pdMS_TO_TICKS(10)); // 꺼질 때까지 대기
-
-    if (err_ch0 == ESP_OK && err_ch1 == ESP_OK) {
-        ESP_LOGI(TAG, "ADC Read -> CH1(GPIO6): %d | CH2(GPIO7): %d", raw_ch0, raw_ch1);
-    } else {
-        ESP_LOGE(TAG, "ADC Read Failed! err0: %d, err1: %d", err_ch0, err_ch1);
-    }
+   
 }
 
 bool TOF_VL53L0X_init(void)
-{
-    // 1. GPIO 6 수신 핀 설정 (필요에 따라 GPIO 사용시 설정 유지)
-    gpio_config_t io_conf_rx = {
-        .pin_bit_mask = (1ULL << PIN_OUTPUT_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&io_conf_rx);
-
-    // 2. GPIO 7 수신 핀 설정
-    gpio_config_t io_conf_rx2 = {
-        .pin_bit_mask = (1ULL << PIN_OUTPUT2_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&io_conf_rx2);
-
-#if 1
-    // 3. ADC Unit 1 생성
-    adc_oneshot_unit_init_cfg_t init_cfg0 = { .unit_id = ADC_UNIT_1 };
-    adc_oneshot_new_unit(&init_cfg0, &adc1_handle);
-
-    adc_oneshot_chan_cfg_t chan_cfg = {
-        .bitwidth = ADC_BITWIDTH_DEFAULT, 
-        .atten = EXAMPLE_ADC_ATTEN,
-    };
-
-    // 4. ADC 채널 설정 (CH1: GPIO6 / CH2: GPIO7)
-    adc_oneshot_config_channel(adc1_handle, CH1_ADC_CHANNEL, &chan_cfg); // GPIO 6
-    adc_oneshot_config_channel(adc1_handle, CH2_ADC_CHANNEL, &chan_cfg); // GPIO 7 (추가됨)
-
-    ESP_LOGI(TAG, "Dual ADC Initialized successfully (GPIO6 & GPIO7)");
-#endif
-
-    return true;
+{    
+    return false;
 }
 
 
