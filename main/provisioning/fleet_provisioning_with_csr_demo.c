@@ -238,12 +238,11 @@ static bool unsubscribeFromRegisterThingResponseTopics( void );
 /*-----------------------------------------------------------*/
 
 
-// 외부 BLE 암호화 전송 함수 선언
-extern void ble_send_encrypted_event(const char *event_type, const char *plain_data);
+
 
 
 /*-----------------------------------------------------------*/
-
+void mqtt_rx_messege(MQTTPublishInfo_t * pPublishInfo);
 static void provisioningPublishCallback( MQTTPublishInfo_t * pPublishInfo,
                                          uint16_t packetIdentifier )
 {
@@ -252,7 +251,6 @@ static void provisioningPublishCallback( MQTTPublishInfo_t * pPublishInfo,
     const char * cborDump;
 
     /* Silence compiler warnings about unused variables. */
-    ( void ) packetIdentifier;
 
     status = FleetProvisioning_MatchTopic( pPublishInfo->pTopicName,
                                            pPublishInfo->topicNameLength, &api );
@@ -270,58 +268,8 @@ static void provisioningPublishCallback( MQTTPublishInfo_t * pPublishInfo,
         LogInfo( ( "▶ 토픽: %.*s", ( int ) pPublishInfo->topicNameLength, pPublishInfo->pTopicName ) );
         LogInfo( ( "▶ 내용: %.*s", ( int ) pPublishInfo->payloadLength, ( const char * ) pPublishInfo->pPayload ) );
         /* ========================================================== */
-
-        if ( pPublishInfo->pPayload != NULL && pPublishInfo->payloadLength > 0 )
-        {
-            // 수신 데이터 파싱을 위해 임시 널 종료 문자 처리된 버퍼 생성
-            char *temp_payload = malloc(pPublishInfo->payloadLength + 1);
-            if (temp_payload != NULL)
-            {
-                memcpy(temp_payload, pPublishInfo->pPayload, pPublishInfo->payloadLength);
-                temp_payload[pPublishInfo->payloadLength] = '\0';
-
-                // JSON 파싱 시작
-                cJSON *root = cJSON_Parse(temp_payload);
-                if (root != NULL)
-                {
-                    cJSON *event_type = cJSON_GetObjectItem(root, "event_type");
-                    cJSON *result = cJSON_GetObjectItem(root, "result");
-                    // 1. 객체 존재 여부 + 타입이 문자열인지 + null 포인터가 아닌지 안전하게 검사
-                    if (cJSON_IsString(event_type) && (event_type->valuestring != NULL) &&
-                        cJSON_IsString(result) && (result->valuestring != NULL)) 
-                    {
-                        if (strcmp(event_type->valuestring, "registration") == 0)       
-                        {
-                            if(strcmp(result->valuestring, "ok") == 0) 
-                            {
-                                LogInfo( ( "[BLE_SEC] 백엔드 등록 성공 수신 완료! 앱에 prov_complete 전송" ) );
-
-                                // MAC 주소를 동적으로 획득하여 thing_name 조립
-                                uint8_t mac_byte[6];
-                                char dynamicMacStr[13];
-                                esp_read_mac(mac_byte, ESP_MAC_WIFI_STA);
-                                snprintf(dynamicMacStr, sizeof(dynamicMacStr), "%02X%02X%02X%02X%02X%02X",
-                                        mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
-
-                                char payload_buf[128];
-                                snprintf(payload_buf, sizeof(payload_buf), "{\"thing_name\":\"%s_%s\"}",CONFIG_DEVICE_PREFIX, dynamicMacStr);
-
-                                // 3. 앱에 암호화된 최종 완료 통보 쏘기
-                                ble_send_encrypted_event("prov_complete", payload_buf);
-                            }
-                            else
-                            {
-                                LogInfo( ( "[BLE_SEC] 백엔드 등록 실패" ) );
-                            }
-                            // Registration ACK 성공 처리
-                        }
-                    }
-                    cJSON_Delete(root);
-                }
-                free(temp_payload);
-            }
-        }
-
+        mqtt_rx_messege(pPublishInfo);
+        
     }
     else
     {

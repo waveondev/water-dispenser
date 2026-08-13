@@ -137,9 +137,6 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
 
             cJSON_AddStringToObject(data_obj, "mac", dynamicMacStr);
             cJSON_AddStringToObject(data_obj, "hw_rev", "r3.1");
-            
-            /* 🚨 필수 추가 필드: registration에는 home_id와 paired_at이 꼭 필요합니다 */
-            cJSON_AddStringToObject(data_obj, "home_id", "home_test_01");
             cJSON_AddNumberToObject(data_obj, "paired_at", 1747396800);
         break;
         case MESSEGE_BOOT:
@@ -561,10 +558,10 @@ void Send_cJSON_Messege_for_tracker(tracker_mqtt_packet_t* tracker_mqtt_packet)
         switch(cmd)
         {
             case TRACKER_MESSEGE_ACTIVITY:
-                snprintf(pub_topic,sizeof(pub_topic),TRACKER_RX_TOPIC_ACTIVITY,dynamicMacStr);
+                snprintf(pub_topic,sizeof(pub_topic),TRACKER_TX_TOPIC_ACTIVITY,dynamicMacStr);
             break;
             case TRACKER_MESSEGE_HEALTH:
-                snprintf(pub_topic,sizeof(pub_topic),TRACKER_RX_TOPIC_HEALTH,dynamicMacStr);
+                snprintf(pub_topic,sizeof(pub_topic),TRACKER_TX_TOPIC_HEALTH,dynamicMacStr);
             break;
             default:
                 pubTopic = NULL;

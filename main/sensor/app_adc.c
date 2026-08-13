@@ -94,8 +94,8 @@ void ADC_Sensing(void)
             if(DBG_Resister->adc)
                 ESP_LOGE(TAG, "Failed to read GPIO 6 (%s)", esp_err_to_name(err_ch0));
         }
-            #endif
-            #endif
+        #endif
+        #endif
 }
 void adc_init(void) {
 #if 1
