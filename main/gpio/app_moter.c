@@ -357,6 +357,7 @@ void motor_change(void)
 {
     (*Motor_Used_Time) = 0;
     motor_nvs_save_set();
+    led_bit_disable(FILTER_WATER_BIT);
     water_fault_disable(WATER_FILTER_WATER_EX);
     moter_send_flag = false;
 }
@@ -364,6 +365,7 @@ void filter_change(void)
 {
     (*Filter_Used_Time) = 0;
     filter_nvs_save_set();
+    led_bit_disable(FILTER_DEBRIS_BIT);
     water_fault_disable(WATER_FILTER_DEBRIS_EX);
     filter_send_flag = false;
 }
@@ -375,6 +377,7 @@ static void motor_used_timer_callback(void* arg)
     if(*Motor_Used_Time >= (app_config->moter_life_days *SECONDS_IN_DAYS) )
     {
         water_fault_enable(WATER_FILTER_WATER_EX);
+        led_bit_enable(FILTER_WATER_BIT);
         if(moter_send_flag == false)
         {
             moter_send_flag = true;
@@ -386,6 +389,7 @@ static void motor_used_timer_callback(void* arg)
     if(*Filter_Used_Time >= (app_config->filter_life_days *SECONDS_IN_DAYS) )
     {
         water_fault_enable(WATER_FILTER_DEBRIS_EX);
+        led_bit_enable(FILTER_DEBRIS_BIT);
         if(filter_send_flag == false)
         {
             filter_send_flag = true;
@@ -397,6 +401,8 @@ static void motor_used_timer_callback(void* arg)
 void Clean_Mode_Disable(void)
 {
     duration_sec_buf = 0;
+    current_target_percentage = 0;
+    set_motor_speed_percent(0);
     led_bit_disable(CLEAN_MODE_BIT); 
 }
 
@@ -404,16 +410,10 @@ static void motor_boost_task(void *pvParameters)
 {
     while(1)
     {
-        if (xSemaphoreTake(motor_semaphore, portMAX_DELAY) == pdTRUE) 
+        if (xSemaphoreTake(motor_semaphore, pdMS_TO_TICKS(1000)) == pdTRUE) 
         {
             ESP_LOGW("RECEIVER", "큐 수신 완료! -> [모터 구동] %d, time = %d",current_target_percentage, duration_sec_buf);
             
-            // 💡 이곳에 이전에 만든 RMT 모터 제어 함수를 넣으면 됩니다!
-           // for(int i=0;i<100;i++)
-            {
-           //     set_motor_speed_percent(i);
-            //    vTaskDelay(pdMS_TO_TICKS(20)); // 정확히 1초(1000ms)만 대기
-            }
             if(current_target_percentage != 100)
             {
                 set_motor_speed_percent(100);
@@ -421,13 +421,14 @@ static void motor_boost_task(void *pvParameters)
             }
 
             set_motor_speed_percent(current_target_percentage);
-            while(duration_sec_buf)
+        }
+        if(duration_sec_buf)
+        {
+            duration_sec_buf--;
+            if(duration_sec_buf == 0)
             {
-                duration_sec_buf--;
-                ESP_LOGI("SENDER", "Clean %d ",duration_sec_buf);
-                vTaskDelay(pdMS_TO_TICKS(1000));
+                Clean_Mode_Disable();
             }
-            Clean_Mode_Disable();
         }
     }
 }
@@ -438,12 +439,6 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
 
     if(duration_sec_buf > 0)
     {
-        if(duration_sec != 0 && target_percentage)
-        {
-            duration_sec_buf = 0;
-            set_motor_speed_percent(0);
-            current_target_percentage = 0;
-        }
         return;
     }
 
@@ -473,7 +468,7 @@ void init_motor_ledc(void) {
     rmt_tx_channel_config_t tx_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
         .gpio_num = MOTOR_IN1_GPIO,             // 👈 출력할 GPIO 15번 핀
-        .mem_block_symbols = 64,    // DMA 내부 블록 사이즈
+        .mem_block_symbols = 48,    // DMA 내부 블록 사이즈
         .resolution_hz = LEDC_FREQUENCY,  // 🌟 20MHz 해상도 (1틱 = 50ns)
         .trans_queue_depth = 4,
         .flags.with_dma = true,     // 🌟 핵심: DMA 통신 켜기
@@ -505,14 +500,13 @@ void init_motor_ledc(void) {
         ESP_LOGE("MAIN", "세마포어 생성 실패!");
     }
 
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             motor_boost_task,                  // 태스크 함수
             "motor_boost_task",                // 태스크 이름
             MOTOR_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 1,      // 우선순위
-            NULL,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         
         ESP_LOGE(TAG, "Error creating motor_boost_task on Core 1");

@@ -200,14 +200,13 @@ void button_task_init(void)
     
     TaskHandle_t xHandle = NULL;
 
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             Button_task,
             "button_task",
             BUTTON_TASK_STACK_SIZE,
             &ucParameterToPass,
             tskIDLE_PRIORITY + 2,
-            &xHandle,
-            1
+            &xHandle
         ) != pdPASS) {
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");
     }

@@ -229,14 +229,13 @@ void ota_main(const char* URL)
 
     TaskHandle_t xHandle = NULL;
     ESP_LOGI(TAG,"simple_ota_example_task task_start");
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             simple_ota_example_task,                  // 태스크 함수
             "ota_example_task",                // 태스크 이름
             8192,       // 스택 크기
             URL_Buffer,        // 파라미터
             tskIDLE_PRIORITY + 3,      // 우선순위
-            &xOTA_Handle,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            &xOTA_Handle
         ) != pdPASS)                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
     {              ESP_LOGE(TAG, "Error creating ota_example_task on Core 1");
     }

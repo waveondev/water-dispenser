@@ -12,11 +12,23 @@ typedef enum{
     MESSEGE_DIAGNOSTICS,
     MESSEGE_HEALTH,
 
-    TRACKER_MESSEGE_ACTIVITY    = 0x80,
+
+    AWS_MESSEGE_AWS_JOBS_GET = 0x80,
+
+
+
+    TRACKER_MESSEGE_ACTIVITY    = 0xF0,
     TRACKER_MESSEGE_DIAGNOSTICS,
     TRACKER_MESSEGE_HEALTH,
 }messege_tx_mqtt_cmd_e;
 
+
+typedef struct
+{
+    messege_tx_mqtt_cmd_e cmd;     
+    void* data;
+    uint32_t data_len;
+}mqtt_packet_t;
 
 typedef struct
 {
@@ -41,7 +53,7 @@ typedef struct
 #define WATER_MODECHANGE                (1<<11)
 
 
-void Send_cJSON_Messege(messege_tx_mqtt_cmd_e cmd);
+void Send_cJSON_Messege(mqtt_packet_t* mqtt_packet);
 
 void Send_cJSON_Messege_for_tracker(tracker_mqtt_packet_t* tracker_mqtt_packet);
 void water_fault_enable(uint16_t status);

@@ -128,11 +128,10 @@ void HX711_Sensing(void)
         // 💡 이제 안전한 로컬 변수끼리만 비교합니다.
         if (loadcell_data_get() < safe_min_threshold) // 물부족
         {
-            if(!led_bit_status(HARDWARE_ERR_BIT))
+            if(!led_bit_status(WATER_LOW_BIT))
             {
-                led_bit_enable(HARDWARE_ERR_BIT);
+                led_bit_enable(WATER_LOW_BIT);
                 water_fault_enable(WATER_LOW_FAULT);
-                
             }       
         }       
     }
@@ -141,11 +140,15 @@ void HX711_Sensing(void)
     // 흔들림 방지(히스테리시스)를 위해 임계값(200)보다 1g 큰 safe_min_threshold + 1.0f(즉, 201.0f)로 대칭을 맞춥니다.
     float safe_release_threshold = safe_min_threshold + 10.0f; 
 
-    if(hardware_error_enable() && loadcell_data_get() > safe_release_threshold && loadcell_data_get() > 0)
+    if(loadcell_data_get() > 0)
     {
         led_bit_disable(HARDWARE_ERR_BIT);
-        water_fault_disable(WATER_LOW_FAULT);
         water_fault_disable(WATER_BOWL_DETACHED_FAULT);
+    }
+    if(loadcell_data_get() > safe_release_threshold)
+    {
+        led_bit_disable(WATER_LOW_BIT);
+        water_fault_disable(WATER_LOW_FAULT);
     }
 }
 
@@ -160,7 +163,8 @@ static void HX711_task(void *pvParameter)
     if(hx711_init(&dev) != ESP_OK)
     {
         ESP_LOGE(TAG, "HX711 Error\r\n");
-        led_bit_enable(SENSE_ERR_BIT);
+        led_bit_enable(LOADCELL_ERR_BIT);
+        water_fault_disable(WATER_LOADCELL_ERR);
     }
     #endif
 
@@ -177,14 +181,13 @@ bool HX711_task_init(void)
 {
 
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             HX711_task,                  // 태스크 함수
             "HX711_task",                // 태스크 이름
             HX711_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 1,      // 우선순위
-            NULL,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         ESP_LOGE(TAG, "Error creating Sensor_task on Core 1");
     }

@@ -47,7 +47,6 @@ void LED_Bright_Set(uint8_t value)
     LED_brightness_value = value;
 }
 
-
 bool TOF_enable(void)
 {
     return (led_status_resister & TOF_DETECT_BIT);
@@ -60,10 +59,6 @@ bool hardware_error_enable(void)
 {
     return (led_status_resister & HARDWARE_ERR_BIT);
 }
-bool sense_enable(void)
-{
-    return (led_status_resister & SENSE_ERR_BIT);
-}
 bool pairing_enable(void)
 {
     return (led_status_resister & PAIRING_BIT);
@@ -72,6 +67,33 @@ bool Clean_enable(void)
 {
     return (led_status_resister & CLEAN_MODE_BIT);
 }
+bool Water_low_enable(void)
+{
+    return (led_status_resister & WATER_LOW_BIT);
+}
+bool Water_empty_enable(void)
+{
+    return (led_status_resister & WATER_EMPTY_BIT);
+}
+bool Loadcell_error_enable(void)
+{
+    return (led_status_resister & LOADCELL_ERR_BIT);
+}
+bool Filter_water_enable(void)
+{
+    return (led_status_resister & FILTER_WATER_BIT);
+}
+bool Filter_debris_enable(void)
+{
+    return (led_status_resister & FILTER_DEBRIS_BIT);
+}
+bool Pump_error_enable(void)
+{
+    return (led_status_resister & PUMP_ERR_BIT);
+}
+
+
+
 
 void wifi_connect_success(void)
 {
@@ -171,7 +193,7 @@ void set_rgb_len_no_Breathing(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
 
 void app_tof_sensor_poll_100ms(void)
 {
-    if (VL53L0X_Detect()) 
+    if (VL53L0X_Detect(true)) 
     {
         led_bit_enable(TOF_DETECT_BIT); 
     } 
@@ -326,13 +348,17 @@ static void LED_task(void *pvParameter)
             }
             else
             {
-    // [우선순위 1] 특수 비트가 하나라도 켜져 있는 상태라면
                 if (led_status_resister != 0) {
-                    last_op_mode = -1; // 모드 무효화
+                    last_op_mode = -1; 
                     #if 1
-                    if(hardware_error_enable() || sense_enable())
+                    if(hardware_error_enable() || Pump_error_enable() || Water_empty_enable() || Loadcell_error_enable())
                     {
                         set_rgb_len_no_Breathing(LED_BRIGHTNESS_MAX,0 , 0, 0); 
+                    }
+                    else if(Water_low_enable() || Filter_water_enable() || Filter_debris_enable())
+                    {
+                        Breathing_Setup(1,2,0,LED_brightness_value,255,0,0,0);
+                        Breathing_LED();
                     }
                     else 
                     #endif
@@ -351,6 +377,7 @@ static void LED_task(void *pvParameter)
                         Breathing_Setup(1,2,0,LED_brightness_value,0,255,0,0);
                         Breathing_LED();
                     }         
+                    
                 }
                 // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용
                 else {
@@ -394,14 +421,13 @@ void LED_task_init(void)
     TaskHandle_t xHandle = NULL;
     static uint8_t ucParameterToPass;
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             LED_task,                  // 태스크 함수
             "LED_task",                // 태스크 이름
             LED_TASK_STACK_SIZE,       // 스택 크기
             &ucParameterToPass,        // 파라미터
             tskIDLE_PRIORITY + 1,      // 우선순위
-            &xHandle,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            &xHandle                  // 태스크 핸들
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");

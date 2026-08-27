@@ -7,6 +7,7 @@
 #include "aws_iot_task.h"
 #include "app_config_flash.h"
 #include "device_config.h"
+#include "ble_tracker_id.h"
 static const char *TAG = __FILE__;
 
 Motion_Packet_t motion_res;
@@ -26,7 +27,7 @@ void water_fault_enable(uint16_t status)
         water_fault_code_buf = water_fault_code;
         ESP_LOGI(TAG,"MESSEGE_DIAGNOSTICS = %04x", water_fault_code_send);
         
-        mqtt_queue_send(MESSEGE_DIAGNOSTICS);
+        mqtt_queue_send(MESSEGE_DIAGNOSTICS,NULL,0);
     }
 }
 
@@ -114,18 +115,39 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd)
 
     return root;
 }
-
-
-static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
+#include "opmode_task.h"
+#include "ble_tracker_id.h"
+#include "esp_wifi.h"
+#include "esp_sntp.h"  // v5.x 호환용
+#include "clock.h"
+#include "math.h"
+static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
 {
     cJSON *data_obj = cJSON_CreateObject();
     uint8_t mac_byte[6];
+    char sub_string[20];
     char dynamicMacStr[13]; // 12자리 MAC 문자열 + 널 종료 문자(\0)
     cJSON *subsystems;
+    uint32_t uptime = Clock_GetTimeMs() / 1000;
+    wifi_ap_record_t ap_info;
+    int8_t rssi = 0;
+    float data_weight = 0;
+    Tracker_Device_t* Tracker_Name = NULL;
+    DRINK_Packet_t *DRINK_Packet = NULL;
+    esp_reset_reason_t reason = esp_reset_reason();
+    double weight = 0;
+    // 현재 연결된 AP 정보 가져오기 (성공 시 ESP_OK 반환)
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) 
+    {
+        ESP_LOGI(TAG, "SSID: %s", ap_info.ssid);
+        ESP_LOGI(TAG, "RSSI: %d dBm", ap_info.rssi); // 예: -55 dBm
+        rssi = ap_info.rssi;
+    } 
+
     if(data_obj == NULL)
         return data_obj;
 
-    switch(cmd)
+    switch(mqtt_packet->cmd)
     {
         case MESSEGE_REGISTRATION:
             // ESP32의 기본 Wi-Fi MAC 주소를 읽어옵니다.
@@ -137,23 +159,50 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
 
             cJSON_AddStringToObject(data_obj, "mac", dynamicMacStr);
             cJSON_AddStringToObject(data_obj, "hw_rev", "r3.1");
-            cJSON_AddNumberToObject(data_obj, "paired_at", 1747396800);
+            time_t now;
+            time(&now); // 1970년 1월 1일 이후 경과된 초(sec)를 'now' 변수에 담음
+            if (now < 1600000000) {
+                // 아직 SNTP 시간 동기화가 안 된 경우
+                // 백엔드 서버가 대신 처리하도록 0을 보내거나 기본값 설정
+                cJSON_AddNumberToObject(data_obj, "paired_at", 0);
+            } else {
+                // 정상 동기화된 경우 현재 시간 전송
+                cJSON_AddNumberToObject(data_obj, "paired_at", (double)now);
+            }
         break;
         case MESSEGE_BOOT:
             cJSON_AddStringToObject(data_obj, "boot_reason", "power_on");
-            cJSON_AddNumberToObject(data_obj, "uptime_sec", 0);
+            cJSON_AddNumberToObject(data_obj, "uptime_sec", uptime);
             
             cJSON_AddStringToObject(data_obj, "power_source", "ADAPTER");
-            cJSON_AddNumberToObject(data_obj, "reset_reason", 0);
-            cJSON_AddStringToObject(data_obj, "last_shutdown_reason", "unknown");            
+            cJSON_AddNumberToObject(data_obj, "reset_reason", reason);
+            cJSON_AddStringToObject(data_obj, "last_shutdown_reason", "unknown");               
         break;
         case MESSEGE_ACCESS:
+            Tracker_Name = GetTracker_Id_Name();
             cJSON_AddStringToObject(data_obj, "access_id", "1234");
-            cJSON_AddStringToObject(data_obj, "source", "sensor");
-            cJSON_AddStringToObject(data_obj, "beacon_id", "UNKNOWN");
-            cJSON_AddNumberToObject(data_obj, "rssi_dbm", 0);
+            if(Tracker_Name != NULL)
+            {
+                cJSON_AddStringToObject(data_obj, "source", "tracker");
+                cJSON_AddStringToObject(data_obj, "beacon_id", Tracker_Name->Device_ID);
+                cJSON_AddNumberToObject(data_obj, "rssi_dbm", Tracker_Name->dev_info.rssi);
+            }
+            else
+            {
+                cJSON_AddStringToObject(data_obj, "source", "sensor");
+                cJSON_AddStringToObject(data_obj, "beacon_id", "UNKNOWN");
+                cJSON_AddNumberToObject(data_obj, "rssi_dbm", 0);
+            }
+            
 // 🔧 수정: 문자열이 아닌 Float(숫자) 타입으로 전달해야 함
-            cJSON_AddNumberToObject(data_obj, "start_weight", 100.2);
+            if(mqtt_packet->data != NULL)
+            {
+                data_weight = *(float *)mqtt_packet->data;
+                weight = round((double)data_weight * 100.0) / 100.0;
+            }   
+            cJSON_AddNumberToObject(data_obj, "start_weight", weight);
+
+            
         break;
         case MESSEGE_DRINK:
             cJSON_AddStringToObject(data_obj, "drink_id", "550e8400-e29b-41d4-a716-446655440000");
@@ -181,12 +230,25 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
             cJSON_AddItemToArray(participants, pet2);            
             #endif
             cJSON_AddItemToObject(data_obj, "participants", participants);
-
-            // 5. 나머지 숫자 및 선택 필드 추가
-            cJSON_AddNumberToObject(data_obj, "start_weight", 500.5);   // Float
-            cJSON_AddNumberToObject(data_obj, "end_weight", 420.2);     // Float
-            cJSON_AddNumberToObject(data_obj, "total_intake_ml", 80.3); // Float
-            cJSON_AddNumberToObject(data_obj, "duration_sec", 165);     // Integer
+            if(mqtt_packet->data != NULL)
+            {
+                DRINK_Packet = (DRINK_Packet_t*)mqtt_packet->data;
+                // 5. 나머지 숫자 및 선택 필드 추가
+                weight = round((double)DRINK_Packet->start_weight * 100.0) / 100.0;
+                cJSON_AddNumberToObject(data_obj, "start_weight", weight);
+                weight = round((double)DRINK_Packet->end_weight * 100.0) / 100.0;
+                cJSON_AddNumberToObject(data_obj, "end_weight", weight);     // Float
+                weight = round((double)DRINK_Packet->total_intake_ml * 100.0) / 100.0;
+                cJSON_AddNumberToObject(data_obj, "total_intake_ml", weight); // Float
+                cJSON_AddNumberToObject(data_obj, "duration_sec", DRINK_Packet->duration_sec);     // Integer
+            }
+            else
+            {
+                cJSON_AddNumberToObject(data_obj, "start_weight", 0);   // Float
+                cJSON_AddNumberToObject(data_obj, "end_weight", 0);     // Float
+                cJSON_AddNumberToObject(data_obj, "total_intake_ml", 0); // Float
+                cJSON_AddNumberToObject(data_obj, "duration_sec", 0);     // Integer                
+            }
             
             // 선택 필드 (조건에 따라 추가 안 해도 됨)
             cJSON_AddStringToObject(data_obj, "alert_type", "NONE");
@@ -194,9 +256,9 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
         case MESSEGE_DIAGNOSTICS:
             // 2. 공통 스칼라 필드 추가
 
-            cJSON_AddNumberToObject(data_obj, "uptime_sec", 174739);
-            cJSON_AddNumberToObject(data_obj, "reset_reason", 0);
-            cJSON_AddNumberToObject(data_obj, "rssi_dbm", -70);
+            cJSON_AddNumberToObject(data_obj, "uptime_sec", uptime);
+            cJSON_AddNumberToObject(data_obj, "reset_reason", reason);
+            cJSON_AddNumberToObject(data_obj, "rssi_dbm", rssi);
 
             subsystems = cJSON_CreateObject();
             cJSON_AddStringToObject(subsystems, "water_supply", "ok");
@@ -224,27 +286,31 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "critical");
                 cJSON_AddStringToObject(data_obj, "fault_code", "BOWL_DETACHED");
+                sprintf(sub_string,"loadcell");
             }
             else if(water_fault_code_send & WATER_FILTER_WATER_EX)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
                 cJSON_AddStringToObject(data_obj, "fault_code", "FILTER_WATER_EXPIRED");
+                sprintf(sub_string,"filter.water"); 
             }
             else if(water_fault_code_send & WATER_FILTER_DEBRIS_EX)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
                 cJSON_AddStringToObject(data_obj, "fault_code", "FILTER_DEBRIS_EXPIRED");
+                sprintf(sub_string,"filter.debris"); 
             }
             else if(water_fault_code_send & WATER_LOW_FAULT)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "critical");
                 cJSON_AddStringToObject(data_obj, "fault_code", "WATER_EMPTY");
+                sprintf(sub_string,"water_supply");
             }
             else if(water_fault_code_send & WATER_SPLASHING_FAULT)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
                 cJSON_AddStringToObject(data_obj, "fault_code", "SPLASHING");
-                cJSON_AddStringToObject(data_obj, "alert_type", "SPLASHING");
+                sprintf(sub_string,"behavior"); 
             }
             else
             {
@@ -256,16 +322,14 @@ static cJSON* Get_cJSON_Data(messege_tx_mqtt_cmd_e cmd)
 
             // context 객체
             cJSON *context = cJSON_CreateObject();
-            cJSON_AddNumberToObject(context, "pump_current_mA", 0); // 펌프 전류 측정값 예시
-            cJSON_AddNumberToObject(context, "retry_count", 3);
             cJSON_AddItemToObject(data_obj, "context", context);
         break;
         case MESSEGE_HEALTH:
       // 🔧 수정: W-100 서브시스템 정의 적용
             // 2. 공통 스칼라 필드 추가
-            cJSON_AddNumberToObject(data_obj, "uptime_sec", 174739);
-            cJSON_AddNumberToObject(data_obj, "reset_reason", 0);
-            cJSON_AddNumberToObject(data_obj, "rssi_dbm", -70);
+            cJSON_AddNumberToObject(data_obj, "uptime_sec", uptime);
+            cJSON_AddNumberToObject(data_obj, "reset_reason", reason);
+            cJSON_AddNumberToObject(data_obj, "rssi_dbm", rssi);
             subsystems = cJSON_CreateObject();
             cJSON_AddStringToObject(subsystems, "water_supply", "ok");
             cJSON_AddStringToObject(subsystems, "motor.pump", "ok");
@@ -435,18 +499,9 @@ static cJSON* Get_cJSON_Data_for_Tracker(messege_tx_mqtt_cmd_e cmd, tracker_mqtt
 }
 
 
-void Send_cJSON_Messege(messege_tx_mqtt_cmd_e cmd)
+void Send_cJSON_Messege(mqtt_packet_t* mqtt_packet)
 {
-    cJSON* root = Get_cJSON_Header(cmd);
-    if(root == NULL)
-        return;
-
-    cJSON* data = Get_cJSON_Data(cmd);
-    if(data == NULL)
-    {
-        cJSON_Delete(root);
-        return;
-    }
+    cJSON* root = NULL;
 
     uint8_t mac_byte[6];
     char dynamicMacStr[13]; // 12자리 MAC 문자열 + 널 종료 문자(\0)
@@ -458,8 +513,36 @@ void Send_cJSON_Messege(messege_tx_mqtt_cmd_e cmd)
     snprintf(dynamicMacStr, sizeof(dynamicMacStr), "%02X%02X%02X%02X%02X%02X",
             mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
 
+// 1. AWS 예약 기능용 메시지 처리 (Header 감싸지 않음)
+    if (mqtt_packet->cmd == AWS_MESSEGE_AWS_JOBS_GET) 
+    {
+        // Get_cJSON_Data()가 반환하는 JSON 객체를 그대로 root로 사용!
+        root = Get_cJSON_Data(mqtt_packet);
+        if (root == NULL) 
+        {
+             ESP_LOGI(TAG,"Header = %d" , mqtt_packet->cmd);
+             return;
+        }
+    } 
+    else 
+    {
+        root = Get_cJSON_Header(mqtt_packet->cmd);
+        if (root == NULL) 
+        {
+             ESP_LOGI(TAG,"Header = %d" , mqtt_packet->cmd);
+             return;
+        }
+        
 
-    cJSON_AddItemToObject(root, "data", data);
+        cJSON* data = Get_cJSON_Data(mqtt_packet);
+        if (data == NULL) {
+            ESP_LOGI(TAG,"data = %d" , mqtt_packet->cmd);
+            cJSON_Delete(root);
+            return;
+        }
+        cJSON_AddItemToObject(root, "data", data);
+    }
+
     /* 공백 없이 압축된 JSON 문자열 생성 */
     char *payloadBuf = cJSON_PrintUnformatted(root);
     
@@ -468,7 +551,7 @@ void Send_cJSON_Messege(messege_tx_mqtt_cmd_e cmd)
                         // 💡 토픽도 registration에 맞게 수정하실 수 있도록 남겨두었습니다.
         char pub_topic[100];
         const char * pubTopic = pub_topic; 
-        switch(cmd)
+        switch(mqtt_packet->cmd)
         {
             case MESSEGE_REGISTRATION:
                 snprintf(pub_topic,sizeof(pub_topic),SERVER_TX_TOPIC_REGISTRATION,dynamicMacStr);
@@ -490,7 +573,7 @@ void Send_cJSON_Messege(messege_tx_mqtt_cmd_e cmd)
             break;
             default:
                 pubTopic = NULL;
-                ESP_LOGW(TAG, "Unknown command input: %d", cmd);
+                ESP_LOGW(TAG, "Unknown command input: %d", mqtt_packet->cmd);
             break;
         }                          
         if(pubTopic != NULL)

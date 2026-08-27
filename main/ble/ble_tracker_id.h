@@ -18,6 +18,7 @@ typedef struct{
     dev_info_t dev_info;
 }Tracker_Device_t;
 Tracker_Device_t* Get_Tracker_Device(uint8_t* addr);
+Tracker_Device_t* GetTracker_Id_Name(void);
 bool GetTracker_Id_active(void);
 void Tracker_In_ID(dev_info_t* dev_info, char* Tracker_ID);
 void Create_Tracker_Capture_Task(void);

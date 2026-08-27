@@ -166,7 +166,7 @@ static bool init_single_vl53l0x(VL53L0X_Dev_t *pDevice, i2c_port_t i2c_port, con
 #include "ble_tracker_id.h"
 #include "debug_cli.h"
 // 💡 센서가 정상적으로 응답하는지 체크하는 디텍트 함수
-bool VL53L0X_Detect(void)
+bool VL53L0X_Detect(bool all_state)
 {
     bool condition_tof0 = false;
     bool condition_tof1 = false;
@@ -192,8 +192,20 @@ bool VL53L0X_Detect(void)
         if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", moving_average_get_R(),tof1_mm);
         else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
     }
+
+    if(all_state)
+    {
+        if(GetTracker_Id_active())
+        {
+            // ESP_LOGI(TAG,"ADC = traker");
+                         return true;
+        }
+
+    }
+
+
     // ⭐️ 둘 중에 하나라도 조건을 만족(OR 연산)하면 true 반환, 둘 다 아니면 false 반환
-    if (condition_tof0 || condition_tof1 || GetTracker_Id_active()) {
+    if (condition_tof0 || condition_tof1) {
         #if 0
         if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm(raw = %4d)", moving_average_get_L() ,tof0_mm);
         else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
@@ -337,7 +349,7 @@ bool TOF_VL53L0X_init(void)
 
 #else
 
-bool VL53L0X_Detect(void)
+bool VL53L0X_Detect(bool all_state)
 {
     return false;
 }

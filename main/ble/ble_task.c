@@ -401,7 +401,15 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         // 주변 기기 정보를 통합 저장할 저장소 (최대 20개)
         app_config_t* app_config = get_app_config();
         dev_info_t dev_list;
-        memset(&dev_list, 0,sizeof(dev_info_t));
+
+        // -----------------------------------------------------------------
+        // 1. ⚡️ [새로운 필터] RSSI 조건 검사 (간혹 부호가 헷갈릴 수 있으니 주의)
+        //    * 수신 감도가 -55 dBm 이하(예: -56, -60, -70 dBm처럼 멀리 있는 기기)인 경우만 통과
+        //    * 만약 -55보다 신호가 쌘 것(-50, -40 dBm 등)을 원하신 거라면 `>`로 부호를 바꿔주세요.
+        // -----------------------------------------------------------------
+        if (event->disc.rssi < app_config->gate_way_rssi_th) {
+            return 0; // -55보다 큰 신호는 여기서 즉시 차단
+        }
 
         rc = ble_hs_adv_parse_fields(&fields, event->disc.data, event->disc.length_data);
         if (rc != 0) {
@@ -427,14 +435,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         if (fields.svc_data_uuid16 == NULL || fields.svc_data_uuid16_len <= 0) {
             return 0; // 서비스 데이터가 아예 없으면 차단
         }
-        // -----------------------------------------------------------------
-        // 1. ⚡️ [새로운 필터] RSSI 조건 검사 (간혹 부호가 헷갈릴 수 있으니 주의)
-        //    * 수신 감도가 -55 dBm 이하(예: -56, -60, -70 dBm처럼 멀리 있는 기기)인 경우만 통과
-        //    * 만약 -55보다 신호가 쌘 것(-50, -40 dBm 등)을 원하신 거라면 `>`로 부호를 바꿔주세요.
-        // -----------------------------------------------------------------
-        if (event->disc.rssi < app_config->gate_way_rssi_th) {
-            return 0; // -55보다 큰 신호는 여기서 즉시 차단
-        }
+
 
         uint16_t svc_uuid = (fields.svc_data_uuid16[1] << 8) | fields.svc_data_uuid16[0];
         if (svc_uuid == 0x1234)
@@ -455,6 +456,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         {
             return 0; // 다른 서비스 UUID는 차단
         }
+        memset(&dev_list, 0,sizeof(dev_info_t));
         for (int i = 0; i < 6; i++)
         {
             dev_list.addr[i] = event->disc.addr.val[5-i];
@@ -890,26 +892,24 @@ void ble_task_init(void)
     ble_tx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
 
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             ble_rx_processing_task,                  // 태스크 함수
             "ble_rx_task",                // 태스크 이름
             BLE_TRX_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 3,      // 우선순위
-            NULL,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
                 ESP_LOGE(TAG, "Error creating ble_rx_task on Core 1");
     }
 
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             ble_tx_processing_task,                  // 태스크 함수
             "ble_tx_task",                // 태스크 이름
             BLE_TRX_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 3,      // 우선순위
-            NULL,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
               ESP_LOGE(TAG, "Error creating ble_tx_task on Core 1");
     }

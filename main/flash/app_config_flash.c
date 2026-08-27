@@ -254,7 +254,7 @@ static void save_wifi_configuration(void)
             ESP_LOGI(TAG, "[WIFI] 로드된 SSID: %s", temp_cfg.conn_ssid);
         } else {
             // 플래시 메모리 섹터 불량이나 마스킹 오류 시 감지됨
-            ESP_LOGE(TAG, "[WIFI] ⚠️ NVS 데이터 검증 실패! 저장된 값이 원본과 일치하지 않습니다!");
+            ESP_LOGE(TAG, "[WIFI] NVS 데이터 검증 실패! 저장된 값이 원본과 일치하지 않습니다!");
         }
     } else {
         ESP_LOGE(TAG, "[WIFI] 검증을 위해 데이터를 읽어오는 중 에러 발생 (%s)", esp_err_to_name(err));
@@ -462,14 +462,13 @@ void NVS_Flash_init(void)
     TaskHandle_t xHandle = NULL;
     static uint8_t ucParameterToPass;
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             flash_task,                  // 태스크 함수
             "flash_task",                // 태스크 이름
             FLASH_TASK_STACK_SIZE,       // 스택 크기
             &ucParameterToPass,        // 파라미터
             tskIDLE_PRIORITY + 1,      // 우선순위
-            &xHandle,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            &xHandle
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");

@@ -967,14 +967,13 @@ void console_task_init(void)
     static uint8_t ucParameterToPass;
     TaskHandle_t xHandle = NULL;
     ESP_LOGI(TAG,"console task_start");
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             console_main,                  // 태스크 함수
             "Console_Main",                // 태스크 이름
             CONSOLE_TASK_STACK_SIZE,       // 스택 크기
             &ucParameterToPass,        // 파라미터
             tskIDLE_PRIORITY + 1,      // 우선순위
-            &xHandle,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            &xHandle
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
               ESP_LOGE(TAG, "Error creating Console_Main on Core 1");
     }

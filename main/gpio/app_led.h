@@ -2,12 +2,17 @@
 #define __APP_LED_H__
 #include "esp_log.h"
 
-#define PAIRING_BIT     (1<<15)
-#define OTA_START_BIT   (1<<14)
-#define HARDWARE_ERR_BIT (1<<13)
-#define SENSE_ERR_BIT   (1<<12)
-#define TOF_DETECT_BIT  (1<<11)
-#define CLEAN_MODE_BIT  (1<<10)
+#define PAIRING_BIT         (1<<15)
+#define OTA_START_BIT       (1<<14)
+#define HARDWARE_ERR_BIT    (1<<13)
+#define TOF_DETECT_BIT      (1<<12)
+#define CLEAN_MODE_BIT      (1<<11)
+#define WATER_LOW_BIT       (1<<10)
+#define WATER_EMPTY_BIT     (1<<9)
+#define LOADCELL_ERR_BIT    (1<<8)
+#define FILTER_WATER_BIT    (1<<7)
+#define FILTER_DEBRIS_BIT   (1<<6)
+#define PUMP_ERR_BIT        (1<<5)
 
 void LED_Bright_Set(uint8_t value);
 bool TOF_enable(void);
@@ -36,7 +41,12 @@ void Breathing_Setup_Debug(uint8_t enable, uint8_t step,
 void LED_task_init(void);
 bool ota_enable(void);
 bool hardware_error_enable(void);
-bool sense_enable(void);
 bool Clean_enable(void);
+bool Water_low_enable(void);
+bool Water_empty_enable(void);
+bool Loadcell_error_enable(void);
+bool Filter_water_enable(void);
+bool Filter_debris_enable(void);
+bool Pump_error_enable(void);
 void wifi_connect_success(void);
 #endif

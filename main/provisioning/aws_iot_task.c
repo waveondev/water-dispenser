@@ -33,7 +33,7 @@ extern int aws_iot_provisioning_main( int argc, char ** argv );
 
 static void Health_timer_callback(void* arg)
 {
-    mqtt_queue_send(MESSEGE_HEALTH);
+    mqtt_queue_send(MESSEGE_HEALTH,NULL,0);
     
     if (esp_timer_is_active(Health_timer)) {
         esp_timer_stop(Health_timer);
@@ -43,15 +43,29 @@ static void Health_timer_callback(void* arg)
 
 }
 
-bool mqtt_queue_send(messege_tx_mqtt_cmd_e cmd)
+bool mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, void* data, uint32_t data_len)
 {
+   mqtt_packet_t mqtt_packet = {0};
     if(mqtt_tx_queue == NULL)
     {
         ESP_LOGW("mqtt_tx", "mqtt_tx_queue NULL.");
         return false;        
     }
+    if(data != NULL)
+    {
+        mqtt_packet.data = calloc(1,data_len);
+        if(mqtt_packet.data != NULL)
+        {   
+            memcpy(mqtt_packet.data,data,data_len);
+        }   
+    }
+    
+
+    mqtt_packet.cmd = cmd;
+
+    mqtt_packet.data_len = data_len;
     ESP_LOGW("mqtt_tx", "mqtt_tx_queue send.");
-    if (xQueueSend(mqtt_tx_queue, &cmd, 0) != pdPASS) {
+    if (xQueueSend(mqtt_tx_queue, &mqtt_packet, 0) != pdPASS) {
         ESP_LOGW("mqtt_tx", "Queue full! Dropping packet and freeing memory.");
         return false;
     }
@@ -96,7 +110,7 @@ static void aws_iot_main_entry(void *pvParameters)
     // -------------------------------------------------------------
     // 1. [1회성 초기화] 큐 및 타이머 생성을 루프 밖에서 단 1번만 수행
     // -------------------------------------------------------------
-    mqtt_tx_queue = xQueueCreate(10, sizeof(messege_tx_mqtt_cmd_e));
+    mqtt_tx_queue = xQueueCreate(10, sizeof(mqtt_packet_t));
     tracker_mqtt_queue = xQueueCreate(10, sizeof(tracker_mqtt_packet_t));
 
     const esp_timer_create_args_t Health_timer_args = {
@@ -106,8 +120,8 @@ static void aws_iot_main_entry(void *pvParameters)
     ESP_ERROR_CHECK(esp_timer_create(&Health_timer_args, &Health_timer));
 
     int provisioning_count = 0;
-    messege_tx_mqtt_cmd_e cmd;
-    tracker_mqtt_packet_t mqtt_packet;
+    mqtt_packet_t mqtt_packet;
+    tracker_mqtt_packet_t tracker_mqtt_packet;
 
     // -------------------------------------------------------------
     // 2. [메인 재연결 루프]
@@ -145,15 +159,20 @@ static void aws_iot_main_entry(void *pvParameters)
 
         // MQTT 송수신 메인 루프
         for(;;) {
-            if (xQueueReceive(mqtt_tx_queue, &cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
-                Send_cJSON_Messege(cmd);
-            }
-            if (xQueueReceive(tracker_mqtt_queue, &mqtt_packet, pdMS_TO_TICKS(10)) == pdTRUE) {
-                Send_cJSON_Messege_for_tracker(&mqtt_packet);
-            // ⭕ 훌륭함: 메시지 전송 처리 완료 후 동적 메모리 안전하게 해제
+            if (xQueueReceive(mqtt_tx_queue, &mqtt_packet, pdMS_TO_TICKS(10)) == pdTRUE) {
+                ESP_LOGW("mqtt_tx", "mqtt_rx = cmd  %d ",mqtt_packet.cmd);
+                Send_cJSON_Messege(&mqtt_packet);
                 if (mqtt_packet.data != NULL) {
                     free(mqtt_packet.data);
                     mqtt_packet.data = NULL; // Dangling Pointer 방지를 위해 NULL 처리 권장
+                }                
+            }
+            if (xQueueReceive(tracker_mqtt_queue, &tracker_mqtt_packet, pdMS_TO_TICKS(10)) == pdTRUE) {
+                Send_cJSON_Messege_for_tracker(&tracker_mqtt_packet);
+            // ⭕ 훌륭함: 메시지 전송 처리 완료 후 동적 메모리 안전하게 해제
+                if (tracker_mqtt_packet.data != NULL) {
+                    free(tracker_mqtt_packet.data);
+                    tracker_mqtt_packet.data = NULL; // Dangling Pointer 방지를 위해 NULL 처리 권장
                 }
             }
 
@@ -183,14 +202,13 @@ void aws_iot_task_init(void)
 
     if (is_aws_started == false) {
 
-        if (xTaskCreatePinnedToCore(
+        if (xTaskCreate(
             aws_iot_main_entry,                  // 태스크 함수
             "aws_iot_task",                // 태스크 이름
             AWS_IOT_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 5,      // 우선순위
-            NULL,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
             ESP_LOGE(TAG, "Error creating aws_iot_task on Core 1");
         }

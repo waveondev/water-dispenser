@@ -232,6 +232,19 @@ void Tracker_In_ID(dev_info_t* dev_info, char* Tracker_ID)
     printf("장치 [%s] 생성 완료 \n", p_dev->Device_ID);
 }
 
+Tracker_Device_t* GetTracker_Id_Name(void)
+{
+    for (int i = 0; i < TRACKER_DEVICE_MAX; i++) {
+        if(Tracker_Device[i] != NULL)
+        {
+            if(Tracker_Device[i]->Enable)
+            {
+                return Tracker_Device[i];
+            }
+        }
+    }   
+    return NULL;
+}
 
 bool GetTracker_Id_active(void)
 {
@@ -294,14 +307,13 @@ void vTrackerCaptureTask(void *pvParameters)
  */
 void Create_Tracker_Capture_Task(void)
 {
-    if (xTaskCreatePinnedToCore(
+    if (xTaskCreate(
             vTrackerCaptureTask,                  // 태스크 함수
             "tracker_capture",                // 태스크 이름
             TRACKER_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 1,      // 우선순위
-            NULL,                  // 태스크 핸들
-            1                          // ⭐ 코어 ID (1번 코어 = APP_CPU)
+            NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
               ESP_LOGE(TAG, "Error creating ble_tx_task on Core 1");
     }

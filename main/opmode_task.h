@@ -1,7 +1,7 @@
 #ifndef __OPMODE_TASK_H__
 #define __OPMODE_TASK_H__
 
-
+#include "esp_log.h"
 typedef enum {
     OP_MODE_NORMAL = 0,
     OP_MODE_NIGHT,
@@ -17,6 +17,14 @@ typedef enum {
     SMART_RUN_STABLE,    // 5초 검증 통과 후 안정 구동 상태 (모터 On)
     SMART_STOP_CHECK     // 모터는 껐지만, 3초 동안 계속 센서가 없는지 감시하는 상태 (모터 Off)
 } smart_state_t;
+
+typedef struct {
+    float start_weight;
+    float end_weight;
+    float total_intake_ml;
+    uint32_t duration_sec;
+}DRINK_Packet_t;
+
 
 void opmode_task_init(void);
 void Opmode_Set(void);
