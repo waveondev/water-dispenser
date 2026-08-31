@@ -213,7 +213,10 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 				app_wifi_config_t* wifi_config = get_wifi_config();
 				Wifi_Connect((char*)wifi_config->conn_ssid,(const char*)wifi_config->conn_password);
 			}	
-
+			else if (!strncmp(ag[1], "flag", 3))
+			{
+				write_nvs_registration_flag(atoi(ag[2])?true:false);
+			}				
 			
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;

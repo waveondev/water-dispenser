@@ -187,9 +187,8 @@ static size_t thingNameLength;
  * APIs. When the MQTT publish callback receives an expected Fleet Provisioning
  * accepted payload, it copies it into this buffer.
  */
-//static uint8_t payloadBuffer[ NETWORK_BUFFER_SIZE ];
-static uint8_t payloadBuffer[ 8192 ];
 
+static uint8_t *payloadBuffer;
 /**
  * @brief Length of the payload stored in #payloadBuffer. This is set by the
  * MQTT publish callback when it copies a received payload into #payloadBuffer.
@@ -533,6 +532,8 @@ int aws_iot_provisioning_main( int argc,
     // 읽어온 MAC 주소를 콜론 없이 대문자 16진수 문자열로 포맷팅합니다 (예: "28372F9C283C")
     snprintf(dynamicMacStr, sizeof(dynamicMacStr), "%02X%02X%02X%02X%02X%02X",
             mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
+    
+    payloadBuffer = calloc(1, CONFIG_MQTT_NETWORK_BUFFER_SIZE);            
     do
     {
         /* Initialize the buffer lengths to their max lengths. */
@@ -601,7 +602,7 @@ int aws_iot_provisioning_main( int argc,
             /**** Call the CreateCertificateFromCsr API ****/
             if( status == true ) status = subscribeToCsrResponseTopics();
             if( status == true ) status = generateKeyAndCsr( p11Session, pkcs11configLABEL_DEVICE_PRIVATE_KEY_FOR_TLS, pkcs11configLABEL_DEVICE_PUBLIC_KEY_FOR_TLS, csr, CSR_BUFFER_LENGTH, &csrLength );
-            if( status == true ) status = generateCsrRequest( payloadBuffer, NETWORK_BUFFER_SIZE, csr, csrLength, &payloadLength );
+            if( status == true ) status = generateCsrRequest( payloadBuffer, CONFIG_MQTT_NETWORK_BUFFER_SIZE, csr, csrLength, &payloadLength );
             if( status == true ) status = PublishToTopic( FP_CBOR_CREATE_CERT_PUBLISH_TOPIC, FP_CBOR_CREATE_CERT_PUBLISH_LENGTH, ( char * ) payloadBuffer, payloadLength );
             if( status == true ) status = waitForResponse();
             if( status == true ) {
@@ -615,7 +616,7 @@ int aws_iot_provisioning_main( int argc,
             char str[100];
             snprintf(str,sizeof(str),"%s_%s",CONFIG_DEVICE_PREFIX,dynamicMacStr);
 
-            if( status == true ) status = generateRegisterThingRequest( payloadBuffer, NETWORK_BUFFER_SIZE, ownershipToken, ownershipTokenLength, str, strlen(str), &payloadLength );
+            if( status == true ) status = generateRegisterThingRequest( payloadBuffer, CONFIG_MQTT_NETWORK_BUFFER_SIZE, ownershipToken, ownershipTokenLength, str, strlen(str), &payloadLength );
             if( status == true ) status = subscribeToRegisterThingResponseTopics();
             if( status == true ) status = PublishToTopic( FP_CBOR_REGISTER_PUBLISH_TOPIC( PROVISIONING_TEMPLATE_NAME ), FP_CBOR_REGISTER_PUBLISH_LENGTH( PROVISIONING_TEMPLATE_NAME_LENGTH ), ( char * ) payloadBuffer, payloadLength );
             if( status == true ) status = waitForResponse();
@@ -669,6 +670,9 @@ int aws_iot_provisioning_main( int argc,
                     }
                     mqtt_subscribe_init();
                     pkcs11CloseSession( p11Session );
+
+
+                    free(payloadBuffer);                    
                     free(csr);
                     free(certificate);
                     free(ownershipToken);                    
@@ -718,6 +722,7 @@ int aws_iot_provisioning_main( int argc,
     {
         LogInfo( ( "Demo completed successfully." ) );
     }
+    free(payloadBuffer);
     free(csr);
     free(certificate);
     free(ownershipToken);

@@ -77,6 +77,8 @@ float loadcell_data_get(void)
 
 void HX711_Sensing(void)
 {
+    static float water_increase_data = 0;
+    static uint32_t water_increase_count = 0;
     esp_err_t r;
     DBG_Resister_t *DBG_Resister = Debug_Get();
     app_config_t* app_config = get_app_config();
@@ -101,6 +103,8 @@ void HX711_Sensing(void)
     // 2. float 변수에 대입하여 명확하게 float으로 변환 후 나눗셈
     float net_raw_float = (float)net_raw;
     hx711_data_buf = net_raw_float / app_config->hx1_scale;
+    if(water_increase_data == 0)
+        water_increase_data = hx711_data_buf;
     if(DBG_Resister->HX711)
     {
             ESP_LOGI(TAG, "hx711_data: (%d)",hx711_data);
@@ -110,7 +114,19 @@ void HX711_Sensing(void)
     {
         ESP_LOGI(TAG, " Raw: %.2f g", hx711_data_buf);
     }
-
+    if(hx711_data_buf > water_increase_data + 2.0f)
+    {  
+        water_increase_count++;
+    }
+    else
+    {
+        if(water_increase_count > 10)
+        {
+            ESP_LOGI(TAG, "water_increase = %d", water_increase_count);
+        }
+        water_increase_count = 0;
+    }
+    water_increase_data = hx711_data_buf;
     float safe_min_threshold = (float)app_config->min_weight_threshold; 
 
 

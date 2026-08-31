@@ -197,8 +197,6 @@ void button_task_init(void)
                                       pdFALSE, (void*)0, double_click_timer_callback);
                                       
     // ⚠️ long_press_timer 생성 코드도 삭제되었습니다.
-    
-    TaskHandle_t xHandle = NULL;
 
     if (xTaskCreate(
             Button_task,
@@ -206,7 +204,7 @@ void button_task_init(void)
             BUTTON_TASK_STACK_SIZE,
             &ucParameterToPass,
             tskIDLE_PRIORITY + 2,
-            &xHandle
+            NULL
         ) != pdPASS) {
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");
     }

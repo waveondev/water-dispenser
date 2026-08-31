@@ -30,6 +30,7 @@
 #endif
 #include "http_ota.h"
 #include "app_led.h"
+#include "wifi_task.h"
 TaskHandle_t xOTA_Handle = NULL;
 static uint8_t OTA_Enable = 0;
 #define HASH_LEN 32
@@ -199,7 +200,9 @@ static void get_sha256_of_partitions(void)
     esp_partition_get_sha256(esp_ota_get_running_partition(), sha_256);
     print_sha256(sha_256, "SHA-256 for current firmware: ");
 }
-#define CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL "http://192.168.0.50:8070/tcp-client.bin"
+
+#define OTA_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 3)
+
 void ota_main(const char* URL)
 {
     wifi_ap_record_t ap_info;
@@ -215,6 +218,7 @@ void ota_main(const char* URL)
         ESP_LOGE(TAG, "Wi-Fi는 연결되었으나, 아직 IP 주소를 할당받지 못했습니다!");
         return;
     }
+    wifi_list_clear();
     esp_log_level_set("esp_https_ota", ESP_LOG_DEBUG);
     static char URL_Buffer[200];
     memset(URL_Buffer, 0, sizeof(URL_Buffer));
@@ -227,12 +231,11 @@ void ota_main(const char* URL)
     esp_wifi_set_ps(WIFI_PS_NONE);
 #endif // CONFIG_EXAMPLE_CONNECT_WIFI
 
-    TaskHandle_t xHandle = NULL;
     ESP_LOGI(TAG,"simple_ota_example_task task_start");
     if (xTaskCreate(
             simple_ota_example_task,                  // 태스크 함수
             "ota_example_task",                // 태스크 이름
-            8192,       // 스택 크기
+            OTA_TASK_STACK_SIZE,       // 스택 크기
             URL_Buffer,        // 파라미터
             tskIDLE_PRIORITY + 3,      // 우선순위
             &xOTA_Handle

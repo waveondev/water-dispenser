@@ -53,7 +53,6 @@ void Sensor_task(void *pvParameter)
 bool sensor_init(void)
 {
     static uint8_t ucParameterToPass;
-    TaskHandle_t xHandle = NULL;
 
     HX711_task_init();
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
@@ -63,7 +62,7 @@ bool sensor_init(void)
             SENSOR_TASK_STACK_SIZE,       // 스택 크기
             &ucParameterToPass,        // 파라미터
             tskIDLE_PRIORITY + 4,      // 우선순위
-            &xHandle
+            NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         ESP_LOGE(TAG, "Error creating Sensor_task on Core 1");
     }

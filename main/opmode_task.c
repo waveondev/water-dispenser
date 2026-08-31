@@ -289,7 +289,6 @@ static void Opmode_task(void *pvParameter)
 
 void opmode_task_init(void)
 {
-    TaskHandle_t xHandle = NULL;
     static uint8_t ucParameterToPass;
     app_config_t* app_config = get_app_config();
     current_opmode = app_config->op_mode;
@@ -300,7 +299,7 @@ void opmode_task_init(void)
             OPMODE_TASK_STACK_SIZE,       // 스택 크기
             &ucParameterToPass,        // 파라미터
             tskIDLE_PRIORITY + 2,      // 우선순위
-            &xHandle
+            NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");

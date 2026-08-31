@@ -459,7 +459,7 @@ static void flash_task(void *pvParameter)
 
 void NVS_Flash_init(void)
 {
-    TaskHandle_t xHandle = NULL;
+
     static uint8_t ucParameterToPass;
     // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
     if (xTaskCreate(
@@ -468,7 +468,7 @@ void NVS_Flash_init(void)
             FLASH_TASK_STACK_SIZE,       // 스택 크기
             &ucParameterToPass,        // 파라미터
             tskIDLE_PRIORITY + 1,      // 우선순위
-            &xHandle
+            NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");
