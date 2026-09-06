@@ -15,7 +15,7 @@
 #include "app_button.h"
 static led_strip_handle_t led_strip;
 static const char *TAG = __FILE__;
-#define LED_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
+#define LED_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
 
 
 static uint16_t led_status_resister = 0;
@@ -419,7 +419,6 @@ static void LED_task(void *pvParameter)
 void LED_task_init(void)
 {
     static uint8_t ucParameterToPass;
-    // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
     if (xTaskCreate(
             LED_task,                  // 태스크 함수
             "LED_task",                // 태스크 이름

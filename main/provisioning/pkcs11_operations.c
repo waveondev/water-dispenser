@@ -1014,6 +1014,12 @@ static int privateKeySigningCallback(void* pContext,
     }
 
     mech.mechanism = CKM_ECDSA;
+    if (hashLen > sizeof(toBeSigned)) {
+       // ESP_LOGE(TAG, "Hash length (%d) exceeds destination buffer size (%d)", hashLen, sizeof(toBeSigned));
+        return CKR_ARGUMENTS_BAD; // 또는 해당 함수에서 사용하는 PKCS11 에러 리턴값
+    }
+
+    // 기존 memcpy 수행
     memcpy( toBeSigned, pHash, hashLen );
     toBeSignedLen = hashLen;
 

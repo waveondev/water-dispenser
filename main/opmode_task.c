@@ -13,7 +13,7 @@
 #include <math.h>
 #include "aws_iot_task.h"
 static QueueHandle_t opModeQueue = NULL;
-
+#include "esp_timer.h"  // 👈 이 줄을 추가해 주세요!
 static const char* TAG = __FILE__;
 #define OPMODE_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 static uint32_t current_opmode = OP_MODE_NORMAL;
@@ -292,13 +292,12 @@ void opmode_task_init(void)
     static uint8_t ucParameterToPass;
     app_config_t* app_config = get_app_config();
     current_opmode = app_config->op_mode;
-    // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
     if (xTaskCreate(
             Opmode_task,                  // 태스크 함수
             "opmode_task",                // 태스크 이름
             OPMODE_TASK_STACK_SIZE,       // 스택 크기
             &ucParameterToPass,        // 파라미터
-            tskIDLE_PRIORITY + 2,      // 우선순위
+            tskIDLE_PRIORITY + 1,      // 우선순위
             NULL
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         

@@ -12,20 +12,18 @@ typedef enum {
   LCS_IDLE_BLE_CONNECTED,
   LCS_WORKING_BLE_CONNECTED,
 } LED_States;
-#define BLINK_GPIO   14   // 네오픽셀 데이터 선이 연결된 GPIO 핀 번호
-#ifndef EX_POWER
-  #define EX_POWER 41
-#endif
-#define PIN_PUMP_ADC  6
-#define PIN_PUMP_PWM  15
+#define BLINK_GPIO   0   // 네오픽셀 데이터 선이 연결된 GPIO 핀 번호
+
+#define PIN_PUMP_ADC  5
+#define PIN_PUMP_PWM  1
 #ifndef PIN_HX711_DOUT
-  #define PIN_HX711_DOUT 40
+  #define PIN_HX711_DOUT 19
 #endif
 #ifndef PIN_HX711_SCK
-  #define PIN_HX711_SCK 39
+  #define PIN_HX711_SCK 18
 #endif
 
-#define PIN_PKEY_STAT 9  // PKEY_STAT
+#define PIN_PKEY_STAT 7  // PKEY_STAT
 
 #ifndef PIN_TOF0_I2C_SDA
 #define PIN_TOF0_I2C_SDA 12
@@ -45,6 +43,11 @@ typedef enum {
 #ifndef PIN_TOF1_INT
 #define PIN_TOF1_INT 48
 #endif
+
+
+#define IR_ENABLE 10
+#define IR_LEFT 3
+#define IR_RIGHT 4
 
 
 void gpio_init(gpio_num_t num, gpio_mode_t mode, gpio_int_type_t int_type,gpio_isr_t func);

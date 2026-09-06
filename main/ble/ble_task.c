@@ -52,8 +52,8 @@ static QueueHandle_t ble_rx_queue = NULL;
 static QueueHandle_t ble_tx_queue = NULL; // 이름을 수신용(rx)에서 송신용(tx) 개념으로
 
 uint16_t g_ble_max_payload = 20; // ble로 최대 보낼 수 있는 Length 저장
-#define BLE_TRX_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
-
+#define BLE_RX_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
+#define BLE_TX_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 // NimBLE 예제에 정의된 주소 출력 함수
 static void print_addr(const void *addr)
 {
@@ -166,6 +166,34 @@ typedef struct {
 } client_info_t;
 
 client_info_t connected_clients[CONFIG_BT_NIMBLE_MAX_CONNECTIONS];
+
+void print_connected_clients(void)
+{
+    for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
+        client_info_t *client = &connected_clients[i];
+
+        if (client->is_connected) 
+        {
+            ESP_LOGI(TAG,
+                    "[%d] conn_handle=%u, "
+                    "MAC=%02X:%02X:%02X:%02X:%02X:%02X, "
+                    "timer_count=%lu, "
+                    "xMotionTimer=%p, "
+                    "xtimer=%p",
+                    i,
+                    client->conn_handle,
+                    client->mac_addr[5],
+                    client->mac_addr[4],
+                    client->mac_addr[3],
+                    client->mac_addr[2],
+                    client->mac_addr[1],
+                    client->mac_addr[0],
+                    (unsigned long)client->timer_count,
+                    (void *)client->xMotionTimer,
+                    (void *)client->xtimer);
+        }
+    }
+}
 static void Tracker_Motion_retry(TimerHandle_t xTimer) {
     for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
         // 타이머 핸들이 일치하고, 현재 해당 기기가 실제로 연결되어 있는지 확인
@@ -218,7 +246,6 @@ void Tracker_All_Send(uint8_t cmd, uint8_t sub_cmd)
         // 타이머 핸들이 일치하고, 현재 해당 기기가 실제로 연결되어 있는지 확인
         if (connected_clients[i].is_connected) {
             motion_msg_send(connected_clients[i].conn_handle,cmd,sub_cmd);
-            break; 
         }
     }
 }
@@ -894,11 +921,11 @@ void ble_task_init(void)
     ble_rx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
     ble_tx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
 
-    // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
+
     if (xTaskCreate(
             ble_rx_processing_task,                  // 태스크 함수
             "ble_rx_task",                // 태스크 이름
-            BLE_TRX_TASK_STACK_SIZE,       // 스택 크기
+            BLE_RX_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 3,      // 우선순위
             NULL
@@ -909,7 +936,7 @@ void ble_task_init(void)
     if (xTaskCreate(
             ble_tx_processing_task,                  // 태스크 함수
             "ble_tx_task",                // 태스크 이름
-            BLE_TRX_TASK_STACK_SIZE,       // 스택 크기
+            BLE_TX_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 3,      // 우선순위
             NULL

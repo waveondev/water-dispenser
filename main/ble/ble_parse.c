@@ -11,7 +11,7 @@
 #include "mbedtls/gcm.h"
 #include "esp_random.h"
 #include "aws_iot_task.h"
-#define OTA_URL "https://evtago.s3.ap-northeast-2.amazonaws.com/water-dispenser.bin"
+#define OTA_URL "https://evtago.s3.ap-northeast-2.amazonaws.com/water-dispenser-c3.bin"
 // 분할 전송 시 사용할 MTU 사이즈를 저장할 전역/정적 변수 [앱에서 받을 수 있는 ble의 사이즈를 저장]
 
 uint8_t* get_ble_session_key(void);

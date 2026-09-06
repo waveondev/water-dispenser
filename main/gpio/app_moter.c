@@ -423,8 +423,8 @@ static void motor_boost_task(void *pvParameters)
             set_motor_speed_percent(current_target_percentage);
         }
         if(duration_sec_buf)
-        {
-            duration_sec_buf--;
+            {
+                duration_sec_buf--;
             if(duration_sec_buf == 0)
             {
                 Clean_Mode_Disable();
@@ -461,7 +461,7 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
         ESP_LOGI("SENDER", "모터 동작 세마포어 송신!");
     }
 }
-#define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
+#define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
 
 void init_motor_ledc(void) {
     // 1. RMT TX 채널 설정 (DMA 활성화)
@@ -471,7 +471,7 @@ void init_motor_ledc(void) {
         .mem_block_symbols = 48,    // DMA 내부 블록 사이즈
         .resolution_hz = LEDC_FREQUENCY,  // 🌟 20MHz 해상도 (1틱 = 50ns)
         .trans_queue_depth = 4,
-        .flags.with_dma = true,     // 🌟 핵심: DMA 통신 켜기
+        .flags.with_dma = false,     // 🌟 핵심: DMA 통신 켜기
     };
     ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_config, &pwm_chan));
 
@@ -506,7 +506,7 @@ void init_motor_ledc(void) {
             MOTOR_TASK_STACK_SIZE,       // 스택 크기
             NULL,        // 파라미터
             tskIDLE_PRIORITY + 1,      // 우선순위
-            NULL
+            NULL                  // 태스크 핸들
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         
         ESP_LOGE(TAG, "Error creating motor_boost_task on Core 1");

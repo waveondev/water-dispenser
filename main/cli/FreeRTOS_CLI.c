@@ -54,7 +54,7 @@ typedef struct xCOMMAND_INPUT_LIST
 	struct xCOMMAND_INPUT_LIST *pxNext;
 } CLI_Definition_List_Item_t;
 
-#define CONSOLE_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE*2)
+#define CONSOLE_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE*1)
 #define CONSOLE_TASK_DELAY_MS(x) (x/portTICK_PERIOD_MS)
 
 static const char* TAG = "console_task";
@@ -720,24 +720,15 @@ static void vTaskListCustom(void)
                 default: break;
             }
 
-            // Core ID 문자열 변환 (고정 안 됨 = Any, 고정됨 = Core 0 또는 1)
-            char core_str[32]; // 32바이트로 넉넉하게 변경
-
-			if (pxTaskStatusArray[x].xCoreID == tskNO_AFFINITY) {
-				snprintf(core_str, sizeof(core_str), "Any (0/1)");
-			} else {
-				// 이제 컴파일러가 32바이트 공간을 보고 안심하고 통과시킵니다.
-				snprintf(core_str, sizeof(core_str), "Core %d", (int)pxTaskStatusArray[x].xCoreID);
-			}
 
             // 기존 vTaskList와 완전히 동일한 너비와 정렬을 유지하며 출력
-            printf("%-15s  %c       %u         %-7u  %-3u  %s\n",
+            printf("%-15s  %c       %u         %-7u  %-3u  \n",
                    pxTaskStatusArray[x].pcTaskName,
                    state_char,
                    (unsigned int)pxTaskStatusArray[x].uxCurrentPriority,
                    (unsigned int)pxTaskStatusArray[x].usStackHighWaterMark,
-                   (unsigned int)pxTaskStatusArray[x].xTaskNumber,
-                   core_str);
+                   (unsigned int)pxTaskStatusArray[x].xTaskNumber
+                   );
         }
         printf("====================================================\n\n");
 

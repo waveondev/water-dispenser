@@ -168,7 +168,7 @@ void HX711_Sensing(void)
     }
 }
 
-#define HX711_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
+#define HX711_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
 
 static void HX711_task(void *pvParameter)
 {
@@ -196,7 +196,6 @@ static void HX711_task(void *pvParameter)
 bool HX711_task_init(void)
 {
 
-    // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
     if (xTaskCreate(
             HX711_task,                  // 태스크 함수
             "HX711_task",                // 태스크 이름

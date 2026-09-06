@@ -15,7 +15,7 @@ void Tracker_Device_disable(int i);
 
 
 
-#define TRACKER_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
+#define TRACKER_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
 #define TRACKER_DEVICE_MAX 20
 Tracker_Device_t* Tracker_Device[TRACKER_DEVICE_MAX];
 Tracker_Device_t Tracker_UNKNOWN = 

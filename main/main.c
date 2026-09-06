@@ -76,8 +76,9 @@ void app_main(void)
     opmode_task_init();
     Create_Tracker_Capture_Task();
     ble_task_init();
-
+    
+    wifi_init();
     aws_iot_task_init();
 
-    wifi_init();
+
 }

@@ -6,7 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
-
+#include "esp_timer.h"  // 👈 이 줄을 추가해 주세요!
 static const char *TAG = __FILE__;
 static esp_timer_handle_t minute10_timer;
 #define TIMER_10_MIN_IN_US   (10ULL * 60ULL * 1000000ULL)
@@ -461,7 +461,6 @@ void NVS_Flash_init(void)
 {
 
     static uint8_t ucParameterToPass;
-    // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
     if (xTaskCreate(
             flash_task,                  // 태스크 함수
             "flash_task",                // 태스크 이름

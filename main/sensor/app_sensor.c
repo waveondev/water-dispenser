@@ -26,7 +26,7 @@ void Sensor_task(void *pvParameter)
 {
     ESP_LOGI(TAG, "Starting sensor task");
     bool ret = true; 
-    int error_count = 0 ;
+   ///int error_count = 0 ;
     adc_init();
     
     ret = TOF_VL53L0X_init();
@@ -35,6 +35,7 @@ void Sensor_task(void *pvParameter)
     {
         ESP_LOGE(TAG, "TOF Error\r\n");
        // return ret;
+       //led_bit_enable(SENSE_ERR_BIT);
     }
     #endif
     while (1) {
@@ -55,7 +56,6 @@ bool sensor_init(void)
     static uint8_t ucParameterToPass;
 
     HX711_task_init();
-    // xTaskCreate 대신 xTaskCreatePinnedToCore를 사용합니다.
     if (xTaskCreate(
             Sensor_task,                  // 태스크 함수
             "sensor_task",                // 태스크 이름

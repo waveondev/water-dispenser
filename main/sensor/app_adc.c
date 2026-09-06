@@ -1,118 +1,126 @@
 #include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
+#include "esp_adc/adc_continuous.h"
 #include "esp_adc/adc_oneshot.h"
-#include "esp_adc/adc_cali.h"
-#include "esp_adc/adc_cali_scheme.h"
-#include "app_adc.h"
-#include "gpio_util.h"
-#include "debug_cli.h"
-static const char *TAG = __FILE__;
 
+static const char *TAG = "ADC_MIXED";
 
-#define CH0_ADC_UNIT            ADC_UNIT_1
-#define CH0_ADC_CHANNEL         ADC_CHANNEL_5  // GPIO 6
-#define EXAMPLE_ADC_ATTEN       ADC_ATTEN_DB_12 
+#define ADC_SAMPLE_NUM      256
 
+// 1. ADC1 DMA용 채널 설정: GPIO3 (CH3), GPIO4 (CH4)
+static adc_channel_t adc1_dma_channels[2] = {ADC_CHANNEL_3, ADC_CHANNEL_4};
 
+// 2. ADC2 Oneshot용 핸들 및 채널: GPIO5 (ADC2_CH0)
+static adc_oneshot_unit_handle_t adc2_oneshot_handle = NULL;
+static adc_continuous_handle_t adc_handle = NULL;
 
-static adc_cali_handle_t cali_ch0_handle = NULL;
-static bool do_cali_ch0 = false;
-adc_oneshot_unit_handle_t adc0_handle;
+#define ADC2_GPIO5_CHANNEL  ADC_CHANNEL_0
 
+// ==========================================
+// [Part 1] ADC2 (GPIO 5) Oneshot 초기화
+// ==========================================
+static void init_adc2_oneshot(void)
+{
+    adc_oneshot_unit_init_cfg_t init_config2 = {
+        .unit_id = ADC_UNIT_2,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config2, &adc2_oneshot_handle));
 
-
-static bool init_adc_calibration(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle) {
-    adc_cali_handle_t handle = NULL;
-    esp_err_t ret = ESP_FAIL;
-    bool calibrated = false;
-// 1. 먼저 Curve Fitting(곡선 피팅) 스키마를 지원하는지 확인하고 생성 시도
-#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
-    if (!calibrated) {
-        adc_cali_curve_fitting_config_t cali_config = {
-            .unit_id = unit,
-            .atten = atten,
-            .bitwidth = ADC_BITWIDTH_DEFAULT,
-        };
-        ret = adc_cali_create_scheme_curve_fitting(&cali_config, &handle);
-        if (ret == ESP_OK) {
-            calibrated = true;
-            ESP_LOGI(TAG, "Curve Fitting 보정 스키마 적용 완료");
-        }
-        ESP_LOGI(TAG,
-         "curve ret=%s (%d)",
-         esp_err_to_name(ret),
-         ret);
-    }
-
-#endif
-
-    // 2. 만약 안 된다면 Line Fitting(라인 피팅) 스키마 시도
-#if ADC_CALI_SCHEME_LINE_FITTING_SUPPORTED
-    if (!calibrated) {
-        adc_cali_line_fitting_config_t cali_config = {
-            .unit_id = unit,
-            .atten = atten,
-            .bitwidth = ADC_BITWIDTH_DEFAULT,
-        };
-        ret = adc_cali_create_scheme_line_fitting(&cali_config, &handle);
-        if (ret == ESP_OK) {
-            calibrated = true;
-            ESP_LOGI("CALI", "Line Fitting 보정 스키마 적용 완료");
-        }
-    }
-#endif
-
-    *out_handle = handle;
-    return calibrated;
+    adc_oneshot_chan_cfg_t config2 = {
+        .bitwidth = ADC_BITWIDTH_DEFAULT,
+        .atten = ADC_ATTEN_DB_12, // 0~3.3V 측정 범위
+    };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc2_oneshot_handle, ADC2_GPIO5_CHANNEL, &config2));
+    
+    ESP_LOGI(TAG, "ADC2 Oneshot (GPIO5) Initialized.");
 }
 
+// ==========================================
+// [Part 2] ADC1 (GPIO 3, 4) DMA Continuous 초기화
+// ==========================================
+static adc_continuous_handle_t init_adc1_dma(void)
+{
+    adc_continuous_handle_t adc_handle = NULL;
 
-#if 0
-mv_ch0 > 800
-#endif
+    adc_continuous_handle_cfg_t handle_cfg = {
+        .max_store_buf_size = 1024,
+        .conv_frame_size = ADC_SAMPLE_NUM * SOC_ADC_DIGI_DATA_BYTES_PER_CONV,
+    };
+    ESP_ERROR_CHECK(adc_continuous_new_handle(&handle_cfg, &adc_handle));
+
+    adc_continuous_config_t dig_cfg = {
+        .sample_freq_hz = 20 * 1000,           // 20kHz
+        .conv_mode = ADC_CONV_SINGLE_UNIT_1,    // ADC1 전용
+        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2, // ESP32-C3 구조체 포맷
+    };
+
+    adc_digi_pattern_config_t adc_pattern[2] = {0};
+    dig_cfg.pattern_num = 2; // CH3, CH4 2개 채널
+
+    for (int i = 0; i < 2; i++) {
+        adc_pattern[i].atten = ADC_ATTEN_DB_12;
+        adc_pattern[i].channel = adc1_dma_channels[i] & 0x7;
+        adc_pattern[i].unit = ADC_UNIT_1;
+        adc_pattern[i].bit_width = SOC_ADC_DIGI_MAX_BITWIDTH;
+    }
+    dig_cfg.adc_pattern = adc_pattern;
+
+    ESP_ERROR_CHECK(adc_continuous_config(adc_handle, &dig_cfg));
+    ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
+
+    ESP_LOGI(TAG, "ADC1 DMA (GPIO3, GPIO4) Initialized & Started.");
+    return adc_handle;
+}
 
 void ADC_Sensing(void)
 {
-    #if 1
-        int raw_ch0 = 0;
-        int mv_ch0 = 0;
-        esp_err_t err_ch0;
-        DBG_Resister_t* DBG_Resister = Debug_Get();
-        // --- 채널 0 (GPIO 6 - ADC1) 읽기 ---
-        err_ch0 = adc_oneshot_read(adc0_handle, CH0_ADC_CHANNEL, &raw_ch0);
-        #if 1
-        if (err_ch0 == ESP_OK) {
-            if (do_cali_ch0) {
-                adc_cali_raw_to_voltage(cali_ch0_handle, raw_ch0, &mv_ch0);
-                if(DBG_Resister->adc)
-                    ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d | Voltage: %4d mV (%.2f V)\r\n", raw_ch0, mv_ch0, (float)mv_ch0 / 1000.0f);
-            } else {
-                if(DBG_Resister->adc)
-                    ESP_LOGI(TAG, "GPIO  6 (ADC1) -> Raw: %4d (No Calibration)\r\n", raw_ch0);
+        uint8_t dma_result[ADC_SAMPLE_NUM * SOC_ADC_DIGI_DATA_BYTES_PER_CONV] = {0};
+    uint32_t ret_num = 0;
+// --- A. ADC1 (GPIO 3, GPIO 4) DMA 버퍼 읽기 ---
+        esp_err_t ret = adc_continuous_read(adc_handle, dma_result, sizeof(dma_result), &ret_num, pdMS_TO_TICKS(100));
+        
+        uint32_t val_ch3 = 0, val_ch4 = 0;
+        uint32_t cnt_ch3 = 0, cnt_ch4 = 0;
+
+        if (ret == ESP_OK) {
+            for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_DATA_BYTES_PER_CONV) {
+                adc_digi_output_data_t *p = (adc_digi_output_data_t *)&dma_result[i];
+                uint32_t chan = p->type2.channel;
+                uint32_t data = p->type2.data;
+
+                if (chan == ADC_CHANNEL_3) {
+                    val_ch3 += data;
+                    cnt_ch3++;
+                } else if (chan == ADC_CHANNEL_4) {
+                    val_ch4 += data;
+                    cnt_ch4++;
+                }
             }
-        } else {
-            if(DBG_Resister->adc)
-                ESP_LOGE(TAG, "Failed to read GPIO 6 (%s)", esp_err_to_name(err_ch0));
+
+            if (cnt_ch3) val_ch3 /= cnt_ch3;
+            if (cnt_ch4) val_ch4 /= cnt_ch4;
         }
-        #endif
-        #endif
+
+        // --- B. ADC2 (GPIO 5) Single Read 읽기 ---
+        int val_gpio5 = 0;
+        esp_err_t err = adc_oneshot_read(adc2_oneshot_handle, ADC2_GPIO5_CHANNEL, &val_gpio5);
+        if (err != ESP_OK) {
+            val_gpio5 = -1; // Wi-Fi 사용 중 충돌 등의 문제 발생 시
+        }
+
+        // --- C. 출력 ---
+        //ESP_LOGI(TAG, "[DMA] CH3(IO3): %lu | CH4(IO4): %lu <---> [Oneshot] CH0(IO5): %d", val_ch3, val_ch4, val_gpio5);
+
 }
 void adc_init(void) {
 #if 1
-    adc_oneshot_unit_init_cfg_t init_cfg0 = { .unit_id = ADC_UNIT_1 };
- 
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_cfg0, &adc0_handle));
-
-    adc_oneshot_chan_cfg_t chan_cfg = {
-        .bitwidth = ADC_BITWIDTH_DEFAULT, 
-        .atten = EXAMPLE_ADC_ATTEN,
-    };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc0_handle, CH0_ADC_CHANNEL, &chan_cfg));
-
-    do_cali_ch0 = init_adc_calibration(CH0_ADC_UNIT, CH0_ADC_CHANNEL, EXAMPLE_ADC_ATTEN, &cali_ch0_handle);
-
-
-    ESP_LOGI(TAG, "Dual ADC Initialized successfully ");
+    // 1. 초기화 진행
+    init_adc2_oneshot();
+    adc_handle = init_adc1_dma();
     #endif
 }
 

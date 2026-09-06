@@ -12,8 +12,9 @@
 #include "wifi_task.h"
 #include "ble_task.h"
 #include "app_led.h"
+#include "esp_timer.h"  // 👈 이 줄을 추가해 주세요!
 static const char *TAG = "BUTTON_CTRL";
-#define BUTTON_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
+#define BUTTON_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
 
 // 설정 타임아웃 (밀리초)
 #define DEBOUNCE_TIME_MS      50

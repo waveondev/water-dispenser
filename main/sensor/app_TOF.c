@@ -14,7 +14,7 @@
 #include "vl53l0x_platform.h"
 #include "app_config_flash.h"
 #include "aws_iot_task.h"
-#if 1
+#if 0
 uint32_t _trace_level;
 int _modules;
 static const char *TAG = __FILE__;
@@ -289,10 +289,10 @@ bool TOF_VL53L0X_init(void)
         .master.clk_speed = 100000,
     };
     
-    if (i2c_param_config(I2C_NUM_1, &i2c_bus1_cfg) != ESP_OK) {
+    if (i2c_param_config(I2C_NUM_0, &i2c_bus1_cfg) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to config I2C Port 1");
     }
-    if (i2c_driver_install(I2C_NUM_1, i2c_bus1_cfg.mode, 0, 0, 0) != ESP_OK) {
+    if (i2c_driver_install(I2C_NUM_0, i2c_bus1_cfg.mode, 0, 0, 0) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to install I2C Port 1");
     }
 
@@ -334,7 +334,7 @@ bool TOF_VL53L0X_init(void)
     ESP_LOGI(TAG, "Starting VL53L0X Pure C Initialization...");
 
     g_tof0_ok = init_single_vl53l0x(&dev_tof0, I2C_NUM_0, "TOF0_PORT0");
-    g_tof1_ok = init_single_vl53l0x(&dev_tof1, I2C_NUM_1, "TOF1_PORT1");
+    g_tof1_ok = init_single_vl53l0x(&dev_tof1, I2C_NUM_0, "TOF1_PORT1");
 
     if (g_tof0_ok && g_tof1_ok) {
         ESP_LOGI(TAG, "🎉 양쪽 TOF 센서 모두 아크릴 보정 및 초기화 완벽 성공!");
@@ -349,19 +349,31 @@ bool TOF_VL53L0X_init(void)
 
 #else
 
+#include <stdio.h>
+#include <string.h>
+#include "esp_log.h"
+#include "driver/i2c.h"  // 🔴 구형 레거시 드라이버 헤더
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_adc/adc_oneshot.h"
+static const char *TAG = "IR_TEST";
+
 bool VL53L0X_Detect(bool all_state)
 {
     return false;
 }
 
+
+
 void VL53L0X_Sensing(void)
 {
-   
+  
 }
 
 bool TOF_VL53L0X_init(void)
-{    
-    return false;
+{
+   
+    return true;
 }
 
 
