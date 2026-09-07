@@ -39,9 +39,6 @@ void Sensor_task(void *pvParameter)
     }
     #endif
     while (1) {
-        ADC_Sensing();
-        #if 1
-        #endif
         VL53L0X_Sensing();
 
         //ESP_LOGI(TAG, "gpio_set_level(IR_OUT0) = %d\r\n",gpio_get_level(IR_OUT0));

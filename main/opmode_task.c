@@ -30,7 +30,21 @@ static void opmode_timer_callback(void* arg)
     water_fault_disable(WATER_MODECHANGE);
     // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
 }
-
+static bool NightMode = false;
+void Night_Mode(bool state)
+{
+    NightMode = state;
+    uint8_t LED_Value = 0;
+    if(NightMode)
+    {
+        current_opmode = OP_MODE_NIGHT;  
+        LED_Bright_Set(0);  
+    }
+    else 
+    {
+        LED_Bright_Set(255);  
+    }
+}
 void Opmode_test_mode(void)
 {
     current_opmode = OP_MODE_TEST;
@@ -38,29 +52,13 @@ void Opmode_test_mode(void)
 void Opmode_Set(void)
 {
     app_config_t* app_config = get_app_config();
-    uint8_t LED_Value = 0;
 
-    switch(current_opmode)
-    {
-        case OP_MODE_NORMAL:
-            current_opmode = OP_MODE_NIGHT;
-            LED_Value = 127;
-        break;
-        case OP_MODE_NIGHT:
-            current_opmode = OP_MODE_SMART;
-            LED_Value = 255;
-        break;
-        case OP_MODE_SMART:
-            current_opmode = OP_MODE_SLEEP;
-            LED_Value = 255;
-        break;
-        default:
-            current_opmode = OP_MODE_NORMAL;
-            LED_Value = 255;
-        break;
-    }
+    current_opmode++;
+    if(current_opmode > OP_MODE_SLEEP)
+        current_opmode = OP_MODE_NORMAL;
+
+
     app_config->op_mode = current_opmode;
-    LED_Bright_Set(LED_Value);
     {
         // 2. 타이머가 처음 호출된 거라면 타이머를 생성
         if (opmode_timer == NULL) {

@@ -25,26 +25,6 @@ typedef enum {
 
 #define PIN_PKEY_STAT 7  // PKEY_STAT
 
-#ifndef PIN_TOF0_I2C_SDA
-#define PIN_TOF0_I2C_SDA 12
-#endif
-#ifndef PIN_TOF0_I2C_SCL
-#define PIN_TOF0_I2C_SCL 11
-#endif
-#ifndef PIN_TOF0_INT
-#define PIN_TOF0_INT 13
-#endif
-#ifndef PIN_TOF1_I2C_SDA
-#define PIN_TOF1_I2C_SDA 47
-#endif
-#ifndef PIN_TOF1_I2C_SCL
-#define PIN_TOF1_I2C_SCL 21
-#endif
-#ifndef PIN_TOF1_INT
-#define PIN_TOF1_INT 48
-#endif
-
-
 #define IR_ENABLE 10
 #define IR_LEFT 3
 #define IR_RIGHT 4

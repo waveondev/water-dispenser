@@ -5,7 +5,8 @@
 #include "esp_log.h"
 #include "esp_adc/adc_continuous.h"
 #include "esp_adc/adc_oneshot.h"
-
+#include "app_adc.h"
+#include "debug_cli.h"
 static const char *TAG = "ADC_MIXED";
 
 #define ADC_SAMPLE_NUM      256
@@ -19,6 +20,22 @@ static adc_continuous_handle_t adc_handle = NULL;
 
 #define ADC2_GPIO5_CHANNEL  ADC_CHANNEL_0
 
+static int ir_left_mv = 0;
+static int ir_right_mv = 0;
+static int motor_adc = 0;
+
+int GetMotor_adc(void)
+{
+    return motor_adc;
+}
+int GetIR_LEFT(void)
+{
+    return ir_left_mv;
+}
+int GetIR_RIGHT(void)
+{
+    return ir_right_mv;
+}
 // ==========================================
 // [Part 1] ADC2 (GPIO 5) Oneshot 초기화
 // ==========================================
@@ -70,7 +87,7 @@ static adc_continuous_handle_t init_adc1_dma(void)
     dig_cfg.adc_pattern = adc_pattern;
 
     ESP_ERROR_CHECK(adc_continuous_config(adc_handle, &dig_cfg));
-    ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
+   // ESP_ERROR_CHECK(adc_continuous_start(adc_handle));
 
     ESP_LOGI(TAG, "ADC1 DMA (GPIO3, GPIO4) Initialized & Started.");
     return adc_handle;
@@ -79,13 +96,20 @@ static adc_continuous_handle_t init_adc1_dma(void)
 void ADC_Sensing(void)
 {
         uint8_t dma_result[ADC_SAMPLE_NUM * SOC_ADC_DIGI_DATA_BYTES_PER_CONV] = {0};
-    uint32_t ret_num = 0;
-// --- A. ADC1 (GPIO 3, GPIO 4) DMA 버퍼 읽기 ---
+        uint32_t ret_num = 0;
+        DBG_Resister_t *DBG_Resister = Debug_Get();
+        esp_err_t start_err = adc_continuous_start(adc_handle);
+        if (start_err != ESP_OK) {
+            ESP_LOGE(TAG, "ADC continuous start failed: %s", esp_err_to_name(start_err));
+            return;
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
         esp_err_t ret = adc_continuous_read(adc_handle, dma_result, sizeof(dma_result), &ret_num, pdMS_TO_TICKS(100));
         
         uint32_t val_ch3 = 0, val_ch4 = 0;
         uint32_t cnt_ch3 = 0, cnt_ch4 = 0;
-
+    // 3. 데이터 읽기 완료 후 즉시 ADC 변환 중지
+        adc_continuous_stop(adc_handle);
         if (ret == ESP_OK) {
             for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_DATA_BYTES_PER_CONV) {
                 adc_digi_output_data_t *p = (adc_digi_output_data_t *)&dma_result[i];
@@ -108,12 +132,20 @@ void ADC_Sensing(void)
         // --- B. ADC2 (GPIO 5) Single Read 읽기 ---
         int val_gpio5 = 0;
         esp_err_t err = adc_oneshot_read(adc2_oneshot_handle, ADC2_GPIO5_CHANNEL, &val_gpio5);
+        if(DBG_Resister->adc)
+        {
+            ESP_LOGI(TAG, "[DMA] CH3(IO3): %lu | CH4(IO4): %lu (%d)<---> [Oneshot] CH0(IO5): %d %d", val_ch3, val_ch4,ret, val_gpio5,err);
+        }
         if (err != ESP_OK) {
             val_gpio5 = -1; // Wi-Fi 사용 중 충돌 등의 문제 발생 시
         }
-
-        // --- C. 출력 ---
-        //ESP_LOGI(TAG, "[DMA] CH3(IO3): %lu | CH4(IO4): %lu <---> [Oneshot] CH0(IO5): %d", val_ch3, val_ch4, val_gpio5);
+        else
+        {           
+            ir_left_mv = val_ch3;
+            ir_right_mv = val_ch4;
+            motor_adc = val_gpio5;
+        }
+            
 
 }
 void adc_init(void) {

@@ -14,6 +14,7 @@
 #include "vl53l0x_platform.h"
 #include "app_config_flash.h"
 #include "aws_iot_task.h"
+#include "ble_tracker_id.h"
 #if 0
 uint32_t _trace_level;
 int _modules;
@@ -356,23 +357,52 @@ bool TOF_VL53L0X_init(void)
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_adc/adc_oneshot.h"
+#include "app_adc.h"
+
 static const char *TAG = "IR_TEST";
 
 bool VL53L0X_Detect(bool all_state)
 {
-    return false;
+    if(all_state)
+    {
+        if(GetTracker_Id_active())
+        {
+            // ESP_LOGI(TAG,"ADC = traker");
+                         return true;
+        }
+
+    }
+    #if 1
+    if (GetIR_LEFT() > 3000 || GetIR_RIGHT() > 3000) {
+       // ESP_LOGI(TAG,"ADC = %d",GetIR_ADC());
+        return true;
+    } else {
+        return false;
+    }
+    #endif
 }
 
 
 
 void VL53L0X_Sensing(void)
 {
-  
+    gpio_set_level(IR_ENABLE, 1);   
+    ADC_Sensing();
+    vTaskDelay(pdMS_TO_TICKS(1));
+    gpio_set_level(IR_ENABLE, 0); 
 }
 
 bool TOF_VL53L0X_init(void)
 {
-   
+    gpio_config_t io_conf = {                   
+        .pin_bit_mask =(1ULL << IR_ENABLE),             // 설정할 GPIO 핀 15, 16, 2 지정
+        .mode = GPIO_MODE_OUTPUT,             // 출력 모드로 설정
+        .pull_up_en = GPIO_PULLUP_DISABLE,    // 내부 풀업 비활성화
+        .pull_down_en = GPIO_PULLDOWN_DISABLE, // 내부 풀다운 활성화 (기본 LOW 상태 유지)
+        .intr_type = GPIO_INTR_DISABLE,       // 인터럽트 사용 안 함
+    };
+    gpio_config(&io_conf);
+    gpio_set_level(IR_ENABLE, 1); 
     return true;
 }
 
