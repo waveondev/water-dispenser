@@ -141,7 +141,8 @@ static void ble_spp_server_advertise(void)
 
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-
+    adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(40);
+    adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(20);
 
     rc = ble_gap_adv_start(
         own_addr_type,
@@ -168,6 +169,14 @@ typedef struct {
 
 client_info_t connected_clients[CONFIG_BT_NIMBLE_MAX_CONNECTIONS];
 
+
+uint16_t GetHandle(uint8_t index)
+{
+    if(index >= CONFIG_BT_NIMBLE_MAX_CONNECTIONS)
+        return 0;
+
+    return connected_clients[index].conn_handle;
+}
 void print_connected_clients(void)
 {
     for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
@@ -378,8 +387,8 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
                 // 2. 클라이언트 목록 배열에 추가!
                 add_client(event->connect.conn_handle, desc.peer_ota_addr.val);
             }
-            ESP_LOGI("BLE_GAP", "현재 연결된 기기 수: %d / %d", 
-                        count_client(), CONFIG_BT_NIMBLE_MAX_CONNECTIONS);
+            ESP_LOGI("BLE_GAP", "현재 연결된 기기 수: %d / %d(%d)", 
+                        count_client(), CONFIG_BT_NIMBLE_MAX_CONNECTIONS,event->connect.conn_handle);
         } 
         delay_adv_timer_cb(NULL);
         #if 0

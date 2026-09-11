@@ -195,7 +195,7 @@ static void HX711_task(void *pvParameter)
 
 bool HX711_task_init(void)
 {
-
+#if 1
     if (xTaskCreate(
             HX711_task,                  // 태스크 함수
             "HX711_task",                // 태스크 이름
@@ -206,7 +206,30 @@ bool HX711_task_init(void)
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         ESP_LOGE(TAG, "Error creating Sensor_task on Core 1");
     }
+#endif
 
+
+
+#ifndef PIN_HX711_DOUT
+  #define PIN_HX711_DOUT 19
+#endif
+#ifndef PIN_HX711_SCK
+  #define PIN_HX711_SCK 18
+#endif
+
+
+#if 0
+    gpio_config_t io_conf = {                   
+        .pin_bit_mask =(1ULL << PIN_HX711_SCK) | (1 << PIN_HX711_DOUT),             // 설정할 GPIO 핀 15, 16, 2 지정
+        .mode = GPIO_MODE_OUTPUT,             // 출력 모드로 설정
+        .pull_up_en = GPIO_PULLUP_DISABLE,    // 내부 풀업 비활성화
+        .pull_down_en = GPIO_PULLDOWN_DISABLE, // 내부 풀다운 활성화 (기본 LOW 상태 유지)
+        .intr_type = GPIO_INTR_DISABLE,       // 인터럽트 사용 안 함
+    };
+    gpio_config(&io_conf);
+    gpio_set_level(PIN_HX711_SCK, 0); 
+    gpio_set_level(PIN_HX711_DOUT, 0);     
+    #endif
     return true;
 }
 

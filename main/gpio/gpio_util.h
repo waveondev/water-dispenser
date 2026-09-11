@@ -12,9 +12,9 @@ typedef enum {
   LCS_IDLE_BLE_CONNECTED,
   LCS_WORKING_BLE_CONNECTED,
 } LED_States;
-#define BLINK_GPIO   0   // 네오픽셀 데이터 선이 연결된 GPIO 핀 번호
+#define BLINK_GPIO   5  // 네오픽셀 데이터 선이 연결된 GPIO 핀 번호
 
-#define PIN_PUMP_ADC  5
+#define PIN_PUMP_ADC  0
 #define PIN_PUMP_PWM  1
 #ifndef PIN_HX711_DOUT
   #define PIN_HX711_DOUT 19

@@ -239,7 +239,7 @@ static void Opmode_task(void *pvParameter)
         }
         else
         {
-            if(ota_enable() || hardware_error_enable() || Water_empty_enable())
+            if(ota_enable() || hardware_error_enable())
             {
                 start_motor_with_boost(0, 0);
             }

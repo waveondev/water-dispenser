@@ -275,7 +275,7 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
 
 #else
 #include "driver/rmt_tx.h"
-
+#include "app_adc.h"
 rmt_channel_handle_t pwm_chan = NULL;
 rmt_encoder_handle_t copy_encoder = NULL;
 
@@ -408,22 +408,68 @@ void Clean_Mode_Disable(void)
 
 static void motor_boost_task(void *pvParameters)
 {
+    static uint8_t empty_count = 0;
+
     while(1)
     {
         if (xSemaphoreTake(motor_semaphore, pdMS_TO_TICKS(1000)) == pdTRUE) 
         {
             ESP_LOGW("RECEIVER", "큐 수신 완료! -> [모터 구동] %d, time = %d",current_target_percentage, duration_sec_buf);
             
-            if(current_target_percentage != 100)
+                        if(current_target_percentage != 100)
             {
+                uint8_t motor_index = 100;
                 set_motor_speed_percent(100);
+                vTaskDelay(pdMS_TO_TICKS(4000)); // 정확히 1초(1000ms)만 대기
+                #if 0
                 vTaskDelay(pdMS_TO_TICKS(2000)); // 정확히 1초(1000ms)만 대기
+                while(motor_index > 0)
+                {
+                    motor_index -= 2;
+                    set_motor_speed_percent(motor_index);
+                    vTaskDelay(pdMS_TO_TICKS(300)); // 정확히 1초(1000ms)만 대기     
+                    ESP_LOGI(TAG,"motor_index = %d", motor_index);
+                    if(current_target_percentage == 0)
+                    break;
+                }
+                    #else
+
+                    for(int z = 0; z < 5;z++)
+                    {   
+
+                        set_motor_speed_percent(15);
+                        vTaskDelay(pdMS_TO_TICKS(200)); // 정확히 1초(1000ms)만 대기     
+                        set_motor_speed_percent(100);
+                        vTaskDelay(pdMS_TO_TICKS(5000)); // 정확히 1초(1000ms)만 대기                            
+                        ESP_LOGI(TAG,"z = %d", z);
+                        if(current_target_percentage == 0 )
+                            break;
+                    }
+                    #endif
             }
 
             set_motor_speed_percent(current_target_percentage);
         }
-        if(duration_sec_buf)
+        if(current_target_percentage != 0)
+        {
+            if(GetMotor_adc() < 100)
             {
+                if(empty_count < 10)
+                    empty_count++;
+                if(empty_count >= 10)
+                {
+                    led_bit_enable(WATER_EMPTY_BIT);
+                    water_fault_enable(WATER_EMPTY_FAULT);
+                    //물없음
+                }
+            }
+            else
+            {
+                empty_count = 0;
+            }
+        }
+        if(duration_sec_buf)
+        {
                 duration_sec_buf--;
             if(duration_sec_buf == 0)
             {

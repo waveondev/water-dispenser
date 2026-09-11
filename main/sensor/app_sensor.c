@@ -53,6 +53,7 @@ bool sensor_init(void)
     static uint8_t ucParameterToPass;
 
     HX711_task_init();
+    #if 1
     if (xTaskCreate(
             Sensor_task,                  // 태스크 함수
             "sensor_task",                // 태스크 이름
@@ -63,6 +64,6 @@ bool sensor_init(void)
         ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
         ESP_LOGE(TAG, "Error creating Sensor_task on Core 1");
     }
-
+    #endif
     return true;
 }
