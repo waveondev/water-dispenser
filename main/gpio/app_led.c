@@ -374,10 +374,10 @@ static void LED_task(void *pvParameter)
                     }
                     else 
                     #endif
-                    if (pairing_enable()) {
-                        Breathing_Setup(1,2,0,LED_brightness_value,0,0,255,0);
+                    if (Clean_enable()){
+                        Breathing_Setup(1,2,0,LED_brightness_value,0,255,0,0);
                         Breathing_LED();
-                    }
+                    }         
                     else if (ota_enable()) {
                         Breathing_Setup(1,2,0,LED_brightness_value,255,0,255,0);
                         Breathing_LED();
@@ -385,10 +385,10 @@ static void LED_task(void *pvParameter)
                     else if (TOF_enable()){
                         set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
                     }         
-                    else if (Clean_enable()){
-                        Breathing_Setup(1,2,0,LED_brightness_value,0,255,0,0);
+                    else if (pairing_enable()) {
+                        Breathing_Setup(1,2,0,LED_brightness_value,0,0,255,0);
                         Breathing_LED();
-                    }         
+                    }
                     
                 }
                 // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용

@@ -18,6 +18,7 @@ static const char* TAG = __FILE__;
 #define OPMODE_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 static uint32_t current_opmode = OP_MODE_NORMAL;
 static esp_timer_handle_t opmode_timer = NULL;
+static int Motor_Speed = 75;
 #ifndef max
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #endif
@@ -38,6 +39,8 @@ void Night_Mode(bool state)
     if(NightMode)
     {
         current_opmode = OP_MODE_NIGHT;  
+          
+        set_motor_speed(65);
         LED_Bright_Set(0);  
     }
     else 
@@ -49,6 +52,14 @@ void Opmode_test_mode(void)
 {
     current_opmode = OP_MODE_TEST;
 }
+void set_motor_speed(int speed)
+{
+    if (speed < 0) speed = 0;
+
+    if (speed > 100) speed = 100;
+
+    Motor_Speed = speed;
+}
 void Opmode_Set(void)
 {
     app_config_t* app_config = get_app_config();
@@ -56,7 +67,23 @@ void Opmode_Set(void)
     current_opmode++;
     if(current_opmode > OP_MODE_SLEEP)
         current_opmode = OP_MODE_NORMAL;
+    switch(current_opmode)
+    {
+        case OP_MODE_SMART:
+            set_motor_speed(75);
+        break;
+        // 타 모드는 기본 구조 유지
+        case OP_MODE_NORMAL:
 
+            set_motor_speed(75);
+        break;
+        case OP_MODE_SLEEP:
+            Motor_Speed = 0;
+        break;
+        case OP_MODE_NIGHT:
+            set_motor_speed(65);    
+        break;
+    }
 
     app_config->op_mode = current_opmode;
     {
@@ -80,37 +107,7 @@ void Opmode_Set(void)
     }
 
 }
-#if 0
-static esp_timer_handle_t Motion_Timeout_timer = NULL;
-// 1초 뒤 타이머가 만료되면 실행될 콜백 함수
-static void Motion_Timeout_callback(void* arg)
-{
-    //ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
 
-    motion_msg_send(MOTION_START_REQUEST,2);
-    // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
-}
-void Motion_Timer_Set(bool state)
-{
-                // 2. 타이머가 처음 호출된 거라면 타이머를 생성
-    if (Motion_Timeout_timer == NULL) {
-        const esp_timer_create_args_t timer_args = {
-            .callback = &Motion_Timeout_callback,
-            .name = "opmode_delay_timer"
-        };
-        esp_timer_create(&timer_args, &Motion_Timeout_timer);
-    }
-
-    // 💡 이미 타이머가 존재한다는 뜻은, 이전에 버튼을 누른 적이 있다는 것!
-    // 즉, 1초 이내에 다시 들어왔을 확률이 높으므로 기존 타이머를 멈춤.
-    if (esp_timer_is_active(Motion_Timeout_timer)) {
-        esp_timer_stop(Motion_Timeout_timer);
-    }
-    
-    if(state == true)
-        esp_timer_start_once(Motion_Timeout_timer, 5000000);
-}
-#endif
 static smart_state_t smart_state = SMART_IDLE;
 smart_state_t Time_ratio_state(void)
 {
@@ -126,6 +123,8 @@ void Smart_Water(void)
     uint8_t splash_count = 0;
     bool sensor_detected = VL53L0X_Detect(false);
     uint32_t current_tick = xTaskGetTickCount();
+    static uint32_t drink_start_tick = 0;          
+    uint32_t drink_end_tick = 0;          
     app_config_t* app_config = get_app_config();
     DRINK_Packet_t DRINK_Packet = {0};
     switch (smart_state)
@@ -137,7 +136,6 @@ void Smart_Water(void)
             water_fault_disable(WATER_SPLASHING_FAULT);
             // 💡 1. 센서 감지 즉시 시작 무게 저장
             start_weight = loadcell_data_get();
-            
             smart_timer_target = current_tick + ((app_config->EFFECTIVE_DWELL_TIME*1000) / portTICK_PERIOD_MS);
             smart_state = SMART_RUN_VERIFY;
             ESP_LOGI(TAG, "음수 시작 Verifying 5s... start_weight = %.2fg", start_weight);
@@ -178,6 +176,7 @@ void Smart_Water(void)
         // 3. 5초 동안 센서가 짱짱하게 잘 버텼는지 확인
         if ((int32_t)(smart_timer_target - current_tick) <= 0) 
         {
+            drink_start_tick = current_tick;
             // 5초 동안 급격하게 튀지 않고 무사히 통과 완료!
             mqtt_queue_send(MESSEGE_ACCESS,&start_weight,sizeof(start_weight));
             smart_state = SMART_RUN_STABLE;
@@ -202,6 +201,7 @@ void Smart_Water(void)
             if (sensor_detected) 
             {
                 smart_state = SMART_RUN_STABLE;
+
                 ESP_LOGI(TAG, "SMART: Sensor came back during 3s check! Motor ON again.");
                 break;
             }
@@ -209,6 +209,7 @@ void Smart_Water(void)
             // 💡 3초 동안 센서가 단 한 번도 들어오지 않고 완벽하게 꺼짐이 유지된 경우
             if ((int32_t)(smart_timer_target - current_tick) <= 0) 
             {
+                drink_end_tick = (current_tick - drink_start_tick);
                 smart_state = SMART_IDLE; // 완전히 끝내고 대기 상태로 복귀
                 float diff_weight = start_weight - loadcell_data_get();
                 if(diff_weight > 1)
@@ -217,7 +218,7 @@ void Smart_Water(void)
                         DRINK_Packet.start_weight = start_weight;
                         DRINK_Packet.end_weight = loadcell_data_get();
                         DRINK_Packet.total_intake_ml = max(diff_weight,0);
-                        DRINK_Packet.duration_sec = 0;
+                        DRINK_Packet.duration_sec = drink_end_tick;
                         mqtt_queue_send(MESSEGE_DRINK,&DRINK_Packet,sizeof(DRINK_Packet_t));
                 }
                 ESP_LOGI(TAG, "음수 종료 end_weight = %.2fg, diff_weight = %.2fg",loadcell_data_get() ,diff_weight );
@@ -251,7 +252,7 @@ static void Opmode_task(void *pvParameter)
                         {
                             Smart_Water();
                             if(VL53L0X_Detect(true))
-                                start_motor_with_boost(85, 0);
+                                start_motor_with_boost(Motor_Speed, 0);
                             else
                                 start_motor_with_boost(0, 0);
                         }
@@ -259,14 +260,14 @@ static void Opmode_task(void *pvParameter)
                         // 타 모드는 기본 구조 유지
                         case OP_MODE_NORMAL:
                             Smart_Water();
-                            start_motor_with_boost(85, 0);
+                            start_motor_with_boost(Motor_Speed, 0);
                             break;
                         case OP_MODE_NIGHT:
                             Smart_Water();
-                            start_motor_with_boost(45, 0);
-                            break;
+                            start_motor_with_boost(Motor_Speed, 0);
+                        break;
                         case OP_MODE_SLEEP:
-                            start_motor_with_boost(0, 0);
+                            start_motor_with_boost(Motor_Speed, 0);
                             break;
                         default:
                             break;

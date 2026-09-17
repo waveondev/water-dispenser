@@ -408,7 +408,7 @@ void Clean_Mode_Disable(void)
 
 static void motor_boost_task(void *pvParameters)
 {
-    static uint8_t empty_count = 0;
+    static uint32_t empty_count = 0;
 
     while(1)
     {
@@ -416,11 +416,10 @@ static void motor_boost_task(void *pvParameters)
         {
             ESP_LOGW("RECEIVER", "큐 수신 완료! -> [모터 구동] %d, time = %d",current_target_percentage, duration_sec_buf);
             
-                        if(current_target_percentage != 100)
+            if(current_target_percentage != 100)
             {
                 uint8_t motor_index = 100;
-                set_motor_speed_percent(100);
-                vTaskDelay(pdMS_TO_TICKS(4000)); // 정확히 1초(1000ms)만 대기
+
                 #if 0
                 vTaskDelay(pdMS_TO_TICKS(2000)); // 정확히 1초(1000ms)만 대기
                 while(motor_index > 0)
@@ -433,18 +432,15 @@ static void motor_boost_task(void *pvParameters)
                     break;
                 }
                     #else
-
-                    for(int z = 0; z < 5;z++)
-                    {   
-
-                        set_motor_speed_percent(15);
-                        vTaskDelay(pdMS_TO_TICKS(200)); // 정확히 1초(1000ms)만 대기     
                         set_motor_speed_percent(100);
-                        vTaskDelay(pdMS_TO_TICKS(5000)); // 정확히 1초(1000ms)만 대기                            
-                        ESP_LOGI(TAG,"z = %d", z);
-                        if(current_target_percentage == 0 )
-                            break;
-                    }
+                        for(int i = 0;i<50;i++)
+                        {
+                            vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
+                            ESP_LOGI(TAG,"100 = %d",i);
+                        }
+
+                       // set_motor_speed_percent(70);
+
                     #endif
             }
 
@@ -452,25 +448,43 @@ static void motor_boost_task(void *pvParameters)
         }
         if(current_target_percentage != 0)
         {
-            if(GetMotor_adc() < 100)
+            //int level = gpio_get_level(MOTOR_IN1_GPIO);
+            //if(level)
             {
-                if(empty_count < 10)
-                    empty_count++;
-                if(empty_count >= 10)
+                if(GetMotor_adc() < 100)
                 {
-                    led_bit_enable(WATER_EMPTY_BIT);
-                    water_fault_enable(WATER_EMPTY_FAULT);
-                    //물없음
+                    if(empty_count < 10)
+                        empty_count++;
+
                 }
+                else
+                {
+                    if(empty_count)
+                    empty_count--;
+
+                }                
             }
-            else
+
+            //if(led_bit_status(WATER_LOW_BIT))
             {
-                empty_count = 0;
+                if(empty_count >= 5)
+                {
+                    //물없음
+                    led_bit_enable(WATER_EMPTY_BIT);
+                    water_fault_enable(WATER_EMPTY_FAULT);      
+                }
+                else
+                {
+                    led_bit_disable(WATER_EMPTY_BIT);
+                    water_fault_disable(WATER_EMPTY_FAULT); 
+                }
+                if(empty_count)
+                    ESP_LOGI(TAG,"empty_count = %d", empty_count);
             }
         }
         if(duration_sec_buf)
         {
-                duration_sec_buf--;
+            duration_sec_buf--;
             if(duration_sec_buf == 0)
             {
                 Clean_Mode_Disable();

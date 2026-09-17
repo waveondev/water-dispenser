@@ -372,8 +372,9 @@ bool VL53L0X_Detect(bool all_state)
         }
 
     }
+    app_config_t* app_config = get_app_config();
     #if 1
-    if (GetIR_LEFT() > 3000 || GetIR_RIGHT() > 3000) {
+    if (GetIR_LEFT() > app_config->tof_sense_threshold_l || GetIR_RIGHT() > app_config->tof_sense_threshold_r) {
        // ESP_LOGI(TAG,"ADC = %d",GetIR_ADC());
         return true;
     } else {

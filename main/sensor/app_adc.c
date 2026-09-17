@@ -9,7 +9,7 @@
 #include "app_adc.h"
 #include "debug_cli.h"
 static const char *TAG = "ADC_MIXED";
-
+#include "gpio_util.h"
 #define ADC_SAMPLE_NUM      256
 
 // 1. ADC1 DMA용 채널 설정: GPIO3 (CH3), GPIO4 (CH4)
@@ -125,32 +125,40 @@ void ADC_Sensing(void)
         if (cnt_ch4) val_ch4 /= cnt_ch4;
         if (cnt_ch0) val_ch0 /= cnt_ch0; 
     }
+        uint32_t motor_sum = 0;
+        uint32_t filtered_motor_adc = 0;
 
     // ==========================================
     // [원형 버퍼 이동 평균 필터링]
     // ==========================================
-    motor_value[motor_index] = val_ch0;      // 1. 최신 데이터 저장
-    motor_index = (motor_index + 1) % 10;    // 2. 인덱스 순환 (0~9)
-    
-    if (motor_count < 10) {
-        motor_count++;                       // 초기 10개 채우기 카운트
+    //if(gpio_get_level(PIN_PUMP_PWM))
+    {
+        motor_value[motor_index] = val_ch0;      // 1. 최신 데이터 저장
+        motor_index = (motor_index + 1) % 10;    // 2. 인덱스 순환 (0~9)
+        
+        if (motor_count < 10) {
+            motor_count++;                       // 초기 10개 채우기 카운트
+        }
+
+        // 3. 최근 10개 데이터의 평균 구하기
+
+        for (int i = 0; i < motor_count; i++) {
+            motor_sum += motor_value[i];
+        }
+        filtered_motor_adc = motor_sum / motor_count;
+
+        // 전역 변수 업데이트
+        ir_left_mv  = val_ch3;
+        ir_right_mv = val_ch4;
+
+
+        motor_adc   = filtered_motor_adc; // 필터링된 최종값 대입
     }
 
-    // 3. 최근 10개 데이터의 평균 구하기
-    uint32_t motor_sum = 0;
-    for (int i = 0; i < motor_count; i++) {
-        motor_sum += motor_value[i];
-    }
-    uint32_t filtered_motor_adc = motor_sum / motor_count;
-
-    // 전역 변수 업데이트
-    ir_left_mv  = val_ch3;
-    ir_right_mv = val_ch4;
-    motor_adc   = filtered_motor_adc; // 필터링된 최종값 대입
 
     if (DBG_Resister && DBG_Resister->adc) {
         ESP_LOGI(TAG, "[DMA] CH3: %lu | CH4: %lu | CH0(Raw): %lu -> CH0(Filtered): %lu", 
-                 val_ch3, val_ch4, val_ch0, filtered_motor_adc);
+                 val_ch3, val_ch4, val_ch0, motor_adc);
                  
     }
 }

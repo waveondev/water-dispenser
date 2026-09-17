@@ -82,7 +82,7 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 
 			else if (!strncmp(ag[1], "moter", 5))
 			{
-                start_motor_with_boost(atoi(ag[2]),atoi(ag[3]));
+                set_motor_speed(atoi(ag[2]));
             }
 			else if (!strncmp(ag[1], "duty", 4))
 			{
@@ -191,14 +191,14 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 					app_config->pump_clean_duration = 180;
 					app_config->filter_life_days = 30;
 					app_config->moter_life_days = 60;
-					app_config->min_weight_threshold = 200;
+					app_config->min_weight_threshold = 900;
 					app_config->splash_delta_g = 100;
 					app_config->gate_way_rssi_th = -85;
 					app_config->hx1_scale = 1000.0f;
 					app_config->hx1_offset = 0;
 					app_config->case_raw_data = 0;
-					app_config->tof_sense_threshold_l = 250;
-					app_config->tof_sense_threshold_r = 250;
+					app_config->tof_sense_threshold_l = 40;
+					app_config->tof_sense_threshold_r = 40;
 					app_config->motion_data_time = 1800;
 					app_config->EFFECTIVE_DWELL_TIME = 5;
 					sprintf(app_config->env_mode,"dev");
@@ -210,6 +210,8 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 					}
 
 					app_nvs_save_set();
+				 	filter_change();	
+				 	motor_change();									
 				}										
 			}	
 			#define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)

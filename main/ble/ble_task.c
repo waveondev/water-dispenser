@@ -890,10 +890,9 @@ void motion_msg_send(uint16_t conn_handle, uint8_t cmd,uint8_t sub_cmd)
             Motion_Packet.ota_req.cmd_type = sub_cmd;
         break;   
         case TIME_RESPONSE:
-            #define KST_OFFSET_SEC  (9 * 3600) // 9시간 (32,400초)
             gettimeofday(&tv, NULL);
             Motion_Packet.event_code = cmd;
-            Motion_Packet.time_res.epoch_sec = tv.tv_sec + KST_OFFSET_SEC;
+            Motion_Packet.time_res.epoch_sec = tv.tv_sec;
         break;   
         default : 
         return;            
