@@ -82,15 +82,8 @@ void HX711_Sensing(void)
     esp_err_t r;
     DBG_Resister_t *DBG_Resister = Debug_Get();
     app_config_t* app_config = get_app_config();
-    if(hx711_cal_enable)
-    {
-        if(hx711_cal_enable == 1)
-            HX711_case_raw_process();
-        else
-            HX711_scale_process((float)hx711_cal_enable);
-        hx711_cal_enable = 0;
-    }    
-    r = hx711_read_average(&dev, 5, &hx711_data);
+
+    r = hx711_read_average(&dev, 10, &hx711_data);
 
     if (r != ESP_OK)
     {
@@ -107,13 +100,10 @@ void HX711_Sensing(void)
         water_increase_data = hx711_data_buf;
     if(DBG_Resister->HX711)
     {
-            ESP_LOGI(TAG, "hx711_data: (%d)",hx711_data);
+        ESP_LOGI(TAG, "hx711_data: (%d)",hx711_data);
+        ESP_LOGI(TAG, " Raw: %.2f g", hx711_data_buf);            
     }
 
-    if(DBG_Resister->HX711)
-    {
-        ESP_LOGI(TAG, " Raw: %.2f g", hx711_data_buf);
-    }
     if(hx711_data_buf > water_increase_data + 2.0f)
     {  
         water_increase_count++;
@@ -131,7 +121,7 @@ void HX711_Sensing(void)
 
 
 
-    if(loadcell_data_get() < 0)//물그릇 탐지
+    if(loadcell_data_get() < -30.0f)//물그릇 탐지
     {
         if(!led_bit_status(HARDWARE_ERR_BIT))
         {
@@ -185,11 +175,20 @@ static void HX711_task(void *pvParameter)
     #endif
 
     while (1) {
+        if(hx711_cal_enable)
+        {
+            if(hx711_cal_enable == 1)
+                HX711_case_raw_process();
+            else
+                HX711_scale_process((float)hx711_cal_enable);
+            hx711_cal_enable = 0;
 
-        HX711_Sensing();
+        }    
+        else{
+            HX711_Sensing();
+        }
         vTaskDelay(10 / portTICK_PERIOD_MS);
     }
-    
 }
 
 

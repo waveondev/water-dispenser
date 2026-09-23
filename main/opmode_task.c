@@ -27,8 +27,8 @@ static void opmode_timer_callback(void* arg)
 {
     //ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
     app_nvs_save_set();
-        water_fault_enable(WATER_MODECHANGE);
-    water_fault_disable(WATER_MODECHANGE);
+     //   water_fault_enable(WATER_MODECHANGE);
+    //water_fault_disable(WATER_MODECHANGE);
     // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
 }
 static bool NightMode = false;
@@ -39,26 +39,52 @@ void Night_Mode(bool state)
     if(NightMode)
     {
         current_opmode = OP_MODE_NIGHT;  
-          
-        set_motor_speed(65);
+        
         LED_Bright_Set(0);  
     }
     else 
     {
         LED_Bright_Set(255);  
     }
+    set_motor_speed(NULL);
 }
 void Opmode_test_mode(void)
 {
     current_opmode = OP_MODE_TEST;
 }
-void set_motor_speed(int speed)
+void set_motor_speed(int* speed)
 {
-    if (speed < 0) speed = 0;
+    if(speed != NULL)
+    {
+        Motor_Speed = *speed;
+        if(Motor_Speed > 100)
+            Motor_Speed = 100;
+        if(Motor_Speed < 0)
+            Motor_Speed = 0;
+    }
+        
+    else
+    {
+        switch(current_opmode)
+        {
+            case OP_MODE_SMART:
+                Motor_Speed = 80;
+            break;
+            // 타 모드는 기본 구조 유지
+            case OP_MODE_NORMAL:
+                Motor_Speed = 80;
+            break;
+            case OP_MODE_SLEEP:
+                Motor_Speed = 0;
+            break;
+            case OP_MODE_NIGHT:
+                Motor_Speed = 65;
+                
+            break;
+        }
+    }
 
-    if (speed > 100) speed = 100;
 
-    Motor_Speed = speed;
 }
 void Opmode_Set(void)
 {
@@ -67,23 +93,9 @@ void Opmode_Set(void)
     current_opmode++;
     if(current_opmode > OP_MODE_SLEEP)
         current_opmode = OP_MODE_NORMAL;
-    switch(current_opmode)
-    {
-        case OP_MODE_SMART:
-            set_motor_speed(75);
-        break;
-        // 타 모드는 기본 구조 유지
-        case OP_MODE_NORMAL:
 
-            set_motor_speed(75);
-        break;
-        case OP_MODE_SLEEP:
-            Motor_Speed = 0;
-        break;
-        case OP_MODE_NIGHT:
-            set_motor_speed(65);    
-        break;
-    }
+    set_motor_speed(NULL);
+
 
     app_config->op_mode = current_opmode;
     {
@@ -231,6 +243,8 @@ static void Opmode_task(void *pvParameter)
 {
     ESP_LOGI(TAG, "Starting Opmode_task");
     app_config_t* app_config = get_app_config();
+
+    set_motor_speed(NULL);
 
     while (1) {
         DBG_Resister_t* DBG_Resister = Debug_Get();

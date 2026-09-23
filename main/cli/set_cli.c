@@ -82,7 +82,8 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 
 			else if (!strncmp(ag[1], "moter", 5))
 			{
-                set_motor_speed(atoi(ag[2]));
+				j = atoi(ag[2]);
+				set_motor_speed(&j);
             }
 			else if (!strncmp(ag[1], "duty", 4))
 			{
@@ -131,11 +132,10 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
             }		
 			else if (!strncmp(ag[1], "mode", 8))
 			{
-                    Opmode_Set();
+                Opmode_Set();
             }		
 			else if (!strncmp(ag[1], "discon", 6))
 			{
-
 				Wifi_Disconnect();
 			}
 			else if (!strncmp(ag[1], "facto", 5))

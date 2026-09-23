@@ -29,7 +29,7 @@ void Night_Mode(bool state);
 void opmode_task_init(void);
 void Opmode_Set(void);
 void Opmode_test_mode(void);
-void set_motor_speed(int speed);
+void set_motor_speed(int* speed);
 smart_state_t Time_ratio_state(void);
 
 #endif

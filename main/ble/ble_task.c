@@ -143,7 +143,7 @@ static void ble_spp_server_advertise(void)
     adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
     adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(40);
     adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(20);
-
+    adv_params.filter_policy = BLE_HCI_ADV_FILT_NONE;
     rc = ble_gap_adv_start(
         own_addr_type,
         NULL,
@@ -541,7 +541,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             Tracker_In_ID(&dev_list, str_dump_buf);
             // 4. 결과 출력 테스트
         } else {
-            printf("HEX  : 서비스 데이터 페이로드가 비어있음\n");
+            ESP_LOGI(TAG,"HEX  : 서비스 데이터 페이로드가 비어있음\n");
         }
 
         return 0;
@@ -613,9 +613,9 @@ static int ble_svc_gatt_handler(uint16_t conn_handle, uint16_t attr_handle, stru
 
         int rc = ble_gap_conn_rssi(conn_handle, &rssi);
         if (rc == 0) {
-            printf("BLE Write Received - Data Len: %d, RSSI: %d dBm\n", data_len, rssi);
+            ESP_LOGI(TAG,"BLE Write Received - Data Len: %d, RSSI: %d dBm\n", data_len, rssi);
         } else {
-            printf("BLE Write Received - Data Len: %d, (Failed to get RSSI, rc=%d)\n", data_len, rc);
+            ESP_LOGI(TAG,"BLE Write Received - Data Len: %d, (Failed to get RSSI, rc=%d)\n", data_len, rc);
         }     
         if (data_len > 0 && ble_rx_queue != NULL) {
             // 1. 구조체 변수를 스택에 임시 선언
@@ -759,7 +759,7 @@ bool ble_send_data_to_queue(uint16_t* conn_handle, const uint8_t *data, uint16_t
 
     // 2. 안전 장치: 큐가 생성되지 않은 상태라면 차단
     if (ble_tx_queue == NULL) {
-        printf("[BLE TX FUNC] 에러: ble_tx_queue가 초기화되지 않았습니다.\n");
+        ESP_LOGI(TAG,"[BLE TX FUNC] 에러: ble_tx_queue가 초기화되지 않았습니다.");
         return false;
     }
 
@@ -820,20 +820,17 @@ static void ble_tx_processing_task(void *pvParameters)
                     
                     // msg.data의 offset 위치부터 send_len 만큼 잘라서 쏘기
                     ble_server_send_notify(msg.conn_handle, &msg.data[offset], send_len);
-                    printf("[TX 태스크] %d 바이트 중 %d 바이트 쪼개서 전송 완료 (offset: %d)\n", msg.len, send_len, offset);
-                    for(int i = 0; i < msg.len; i++)
-                    {
-                        printf("%02X ", msg.data[i]);
-                    }
-                    printf("\n");
+                    ESP_LOGI(TAG,"[TX 태스크] %d 바이트 중 %d 바이트 쪼개서 전송 완료 (offset: %d)", msg.len, send_len, offset);
+                    ESP_LOG_BUFFER_HEXDUMP(TAG, msg.data, msg.len, ESP_LOG_INFO);
+
                     offset += send_len;
                     
                     // 연속 전송 시 BLE 컨트롤러 큐 오버플로우 방지 (필수)
                     vTaskDelay(pdMS_TO_TICKS(15));
                 }
-                printf("[TX 태스크] 스마트폰으로 %d 바이트 Notify 전송 완료\n", msg.len);
+                ESP_LOGI(TAG,"[TX 태스크] 스마트폰으로 %d 바이트 Notify 전송 완료", msg.len);
             } else {
-                printf("[TX 태스크] 경고: 스마트폰이 연결되어 있지 않아 전송 취소\n");
+                ESP_LOGI(TAG,"[TX 태스크] 경고: 스마트폰이 연결되어 있지 않아 전송 취소");
             }
             free(msg.data);   
         }
@@ -857,7 +854,7 @@ static void mac_send_timer_callback(void* arg)
              CONFIG_DEVICE_TYPE,                                 //
              CONFIG_HW_REV,                                      // r1.0
              CONFIG_FW_VERSION);                                 // v1.0.0
-    printf("send %s ", Str);
+    ESP_LOGI(TAG,"send %s ", Str);
     ble_send_data_to_queue(NULL, (const uint8_t*)Str, strlen((const char*)Str));
 }
 
@@ -924,9 +921,9 @@ void ble_task_init(void)
     esp_err_t err = esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P15);
     
     if (err == ESP_OK) {
-        printf("BLE TX Power set successfully!\n");
+        ESP_LOGI(TAG,"BLE TX Power set successfully!");
     } else {
-        printf("Failed to set BLE TX Power: %d\n", err);
+        ESP_LOGI(TAG,"Failed to set BLE TX Power: %d", err);
     }
     #ifndef CONFIG_EXAMPLE_IO_TYPE
     #define CONFIG_EXAMPLE_IO_TYPE 3 

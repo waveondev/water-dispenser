@@ -284,8 +284,7 @@ static void mbedtlsDebugPrint( void * ctx,
     ( void ) pFile;
     ( void ) line;
 
-    /* Send the debug string to the portable logger. */
-    printf( "mbedTLS: |%d| %s", level, pStr );
+
 }
 
 /*-----------------------------------------------------------*/

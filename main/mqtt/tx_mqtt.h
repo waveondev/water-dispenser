@@ -50,7 +50,7 @@ typedef struct
 #define WATER_UV_FAIL                   (1<<8)
 #define WATER_FILTER_WATER_EX           (1<<9)
 #define WATER_FILTER_DEBRIS_EX          (1<<10)
-#define WATER_MODECHANGE                (1<<11)
+
 
 
 void Send_cJSON_Messege(mqtt_packet_t* mqtt_packet);

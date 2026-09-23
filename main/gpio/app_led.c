@@ -92,7 +92,32 @@ bool Pump_error_enable(void)
     return (led_status_resister & PUMP_ERR_BIT);
 }
 
-
+void led_status_print(void)
+{
+    if(Pump_error_enable())
+        ESP_LOGI(TAG, "Pump_error_enable");
+    if(Filter_debris_enable())
+        ESP_LOGI(TAG, "Filter_debris_enable");
+    if(Filter_water_enable())
+        ESP_LOGI(TAG, "Filter_water_enable");     
+    if(Loadcell_error_enable())
+        ESP_LOGI(TAG, "Loadcell_error_enable");
+    if(Water_empty_enable())
+        ESP_LOGI(TAG, "Water_empty_enable");
+    if(Water_low_enable())
+        ESP_LOGI(TAG, "Water_low_enable");    
+    if(Clean_enable())
+        ESP_LOGI(TAG, "Clean_enable");
+    if(pairing_enable())
+        ESP_LOGI(TAG, "pairing_enable");
+    if(hardware_error_enable())
+        ESP_LOGI(TAG, "hardware_error_enable");      
+    if(TOF_enable())
+        ESP_LOGI(TAG, "TOF_enable");
+    if(ota_enable())
+        ESP_LOGI(TAG, "ota_enable");        
+        
+}
 
 
 void wifi_connect_success(void)
@@ -406,8 +431,8 @@ static void LED_task(void *pvParameter)
                             switch(last_op_mode) {
                                 case OP_MODE_NORMAL: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
                                 case OP_MODE_NIGHT:  set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
-                                case OP_MODE_SMART:  set_rgb_len_no_Breathing(0,0 , LED_brightness_value, 0); break;
-                                case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(0, 0, 0, 0);; break;
+                                case OP_MODE_SMART:  set_rgb_len_no_Breathing(0, 0, LED_brightness_value, 0); break;
+                                case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(0, 0, 0, 0); break;
                                 default: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
                             }
                         }

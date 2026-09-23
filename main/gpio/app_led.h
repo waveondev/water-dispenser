@@ -37,7 +37,7 @@ void Breathing_Setup_Debug(uint8_t enable, uint8_t step,
                             uint8_t target_b,
                             uint8_t target_w);
 
-
+void led_status_print(void);
 void LED_task_init(void);
 bool ota_enable(void);
 bool hardware_error_enable(void);

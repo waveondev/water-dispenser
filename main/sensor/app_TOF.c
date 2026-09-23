@@ -360,37 +360,46 @@ bool TOF_VL53L0X_init(void)
 #include "app_adc.h"
 
 static const char *TAG = "IR_TEST";
-
+static int ir_count = 0;
 bool VL53L0X_Detect(bool all_state)
 {
     if(all_state)
     {
         if(GetTracker_Id_active())
         {
-            // ESP_LOGI(TAG,"ADC = traker");
-                         return true;
+            return true;
         }
-
     }
     app_config_t* app_config = get_app_config();
     #if 1
-    if (GetIR_LEFT() > app_config->tof_sense_threshold_l || GetIR_RIGHT() > app_config->tof_sense_threshold_r) {
-       // ESP_LOGI(TAG,"ADC = %d",GetIR_ADC());
+    if (ir_count >= 5) {
         return true;
+        
     } else {
         return false;
     }
     #endif
 }
-
+void detect_task(void)
+{
+    app_config_t* app_config = get_app_config();
+    if (GetIR_LEFT() > app_config->tof_sense_threshold_l || GetIR_RIGHT() > app_config->tof_sense_threshold_r) {
+        if(ir_count < 10)
+            ir_count++;
+        
+    } else {
+        if(ir_count)
+            ir_count--;
+    }
+}
 
 
 void VL53L0X_Sensing(void)
 {
     gpio_set_level(IR_ENABLE, 1);   
     ADC_Sensing();
-    vTaskDelay(pdMS_TO_TICKS(1));
     gpio_set_level(IR_ENABLE, 0); 
+    detect_task();
 }
 
 bool TOF_VL53L0X_init(void)

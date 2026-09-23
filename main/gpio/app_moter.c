@@ -437,6 +437,8 @@ static void motor_boost_task(void *pvParameters)
                         {
                             vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
                             ESP_LOGI(TAG,"100 = %d",i);
+                            if(current_target_percentage == 0)
+                            break;
                         }
 
                        // set_motor_speed_percent(70);
@@ -522,7 +524,7 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
     }
 }
 #define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
-
+#include "hal/gpio_ll.h"
 void init_motor_ledc(void) {
     // 1. RMT TX 채널 설정 (DMA 활성화)
     rmt_tx_channel_config_t tx_config = {
@@ -534,7 +536,7 @@ void init_motor_ledc(void) {
         .flags.with_dma = false,     // 🌟 핵심: DMA 통신 켜기
     };
     ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_config, &pwm_chan));
-
+    gpio_ll_input_enable(&GPIO, MOTOR_IN1_GPIO);
     // 2. 심볼(Symbol) 데이터를 그대로 복사해주는 기본 인코더 사용
     rmt_copy_encoder_config_t encoder_config = {};
     ESP_ERROR_CHECK(rmt_new_copy_encoder(&encoder_config, &copy_encoder));

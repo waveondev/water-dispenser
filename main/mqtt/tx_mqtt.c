@@ -125,7 +125,6 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
 {
     cJSON *data_obj = cJSON_CreateObject();
     uint8_t mac_byte[6];
-    char sub_string[20];
     char dynamicMacStr[13]; // 12자리 MAC 문자열 + 널 종료 문자(\0)
     cJSON *subsystems;
     uint32_t uptime = Clock_GetTimeMs() / 1000;
@@ -286,39 +285,41 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "critical");
                 cJSON_AddStringToObject(data_obj, "fault_code", "BOWL_DETACHED");
-                sprintf(sub_string,"loadcell");
+                cJSON_AddStringToObject(data_obj, "affected_subsystem","loadcell");
             }
             else if(water_fault_code_send & WATER_FILTER_WATER_EX)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
                 cJSON_AddStringToObject(data_obj, "fault_code", "FILTER_WATER_EXPIRED");
-                sprintf(sub_string,"filter.water"); 
+                cJSON_AddStringToObject(data_obj, "affected_subsystem","filter.water"); 
             }
             else if(water_fault_code_send & WATER_FILTER_DEBRIS_EX)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
                 cJSON_AddStringToObject(data_obj, "fault_code", "FILTER_DEBRIS_EXPIRED");
-                sprintf(sub_string,"filter.debris"); 
+                cJSON_AddStringToObject(data_obj, "affected_subsystem","filter.debris"); 
             }
             else if(water_fault_code_send & WATER_LOW_FAULT)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "critical");
                 cJSON_AddStringToObject(data_obj, "fault_code", "WATER_EMPTY");
-                sprintf(sub_string,"water_supply");
+                cJSON_AddStringToObject(data_obj, "affected_subsystem","water_supply");
             }
             else if(water_fault_code_send & WATER_SPLASHING_FAULT)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
-                cJSON_AddStringToObject(data_obj, "fault_code", "SPLASHING");
-                sprintf(sub_string,"behavior"); 
+                cJSON_AddStringToObject(data_obj, "fault_code", "   ");
+                cJSON_AddStringToObject(data_obj, "affected_subsystem","behavior"); 
             }
-            else
+            else if(water_fault_code_send & WATER_PUMP_ERR)
             {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
                 cJSON_AddStringToObject(data_obj, "fault_code", "PUMP_ERR");
+                cJSON_AddStringToObject(data_obj, "affected_subsystem", "motor.pump");
             }
 
-            cJSON_AddStringToObject(data_obj, "affected_subsystem", "motor.pump");
+
+
 
             // context 객체
             cJSON *context = cJSON_CreateObject();
@@ -607,7 +608,7 @@ void Send_cJSON_Messege_for_tracker(tracker_mqtt_packet_t* tracker_mqtt_packet)
     if(packet->event_code == MOTION_START_RESPONSE)
     {
         memcpy(&motion_res,&tracker_mqtt_packet->packet,sizeof(Motion_Packet_t));
-        printf("total = %d interval = %d ",motion_res.motion_req.total_points,motion_res.motion_req.interval);
+        ESP_LOGI(TAG,"total = %d interval = %d ",motion_res.motion_req.total_points,motion_res.motion_req.interval);
         return;
     }
     cJSON* root = Get_cJSON_Header(cmd);

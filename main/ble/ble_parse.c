@@ -11,8 +11,13 @@
 #include "mbedtls/gcm.h"
 #include "esp_random.h"
 #include "aws_iot_task.h"
+#include "app_HX711.h"
 #define OTA_URL "https://evtago.s3.ap-northeast-2.amazonaws.com/water-dispenser-c3.bin"
 // 분할 전송 시 사용할 MTU 사이즈를 저장할 전역/정적 변수 [앱에서 받을 수 있는 ble의 사이즈를 저장]
+
+
+#define TAG __FUNCTION__
+
 
 uint8_t* get_ble_session_key(void);
 extern uint16_t g_ble_max_payload; // ble로 보낼 수 있는 MTU 사이즈 저장 변수
@@ -30,7 +35,7 @@ char* ble_decrypt_json_data(cJSON *data_obj) {
     cJSON *tag_item = cJSON_GetObjectItem(data_obj, "tag");
 
     if (!iv_item || !ct_item || !tag_item) {
-        printf("[BLE_SEC] 에러: 필수 암호화 필드(iv/ciphertext/tag) 누락\n");
+        ESP_LOGI(TAG,"[BLE_SEC] 에러: 필수 암호화 필드(iv/ciphertext/tag) 누락");
         return NULL;
     }
 
@@ -70,7 +75,7 @@ char* ble_decrypt_json_data(cJSON *data_obj) {
         plaintext[ct_len] = '\0'; // 평문을 안전한 문자열로 만들기
         return (char*)plaintext;  // 성공 시 복호화된 평문 문자열 반환 (외부에서 free 해야함)
     } else {
-        printf("[BLE_SEC] 🚨 복호화 실패! 에러코드: -0x%04x\n", -ret);
+        ESP_LOGI(TAG,"[BLE_SEC] 🚨 복호화 실패! 에러코드: -0x%04x", -ret);
         free(plaintext);
         return NULL;
     }
@@ -130,8 +135,8 @@ void ble_send_encrypted_event(const char* event_type, const char* plain_data) {
              event_type, iv_b64, ct_b64, tag_b64);
 
     // 5. 전송 큐에 넣기
-    printf("[BLE_SEC] 암호화된 ACK 전송: %s\n", event_type);
-    printf("[BLE_SEC] 암호화된 전송할 JSON Payload: %s\n", final_json);
+    ESP_LOGI(TAG,"[BLE_SEC] 암호화된 ACK 전송: %s", event_type);
+    ESP_LOGI(TAG,"[BLE_SEC] 암호화된 전송할 JSON Payload: %s", final_json);
     ble_send_data_to_queue(NULL,(uint8_t*)final_json, strlen(final_json));
 
     // 6. 메모리 정리
@@ -146,7 +151,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
     char buf[256];
     if(len >= sizeof(buf))
         len = sizeof(buf) - 1;
-    printf("Code = %s \r\n",data);
+    ESP_LOGI(TAG,"Code = %s \r",data);
     memcpy(buf, data, len);
     buf[len] = '\0';
 
@@ -166,7 +171,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                     cJSON *max_payload = cJSON_GetObjectItem(data_obj, "max_payload");
                     if (max_payload && cJSON_IsNumber(max_payload)) {
                         g_ble_max_payload = max_payload->valueint;
-                        printf("[BLE_SEC] MTU Negotiated: %d bytes\n", g_ble_max_payload);
+                        ESP_LOGI(TAG,"[BLE_SEC] MTU Negotiated: %d byte", g_ble_max_payload);
                     }
                 }
             } 
@@ -176,7 +181,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                 if (data_obj) {
                     cJSON *app_pub_key = cJSON_GetObjectItem(data_obj, "pub_key");
                     if (app_pub_key && cJSON_IsString(app_pub_key)) {
-                        printf("[BLE_SEC] Received App PubKey: %s\n", app_pub_key->valuestring);
+                        ESP_LOGI(TAG,"[BLE_SEC] Received App PubKey: %s", app_pub_key->valuestring);
 
                         char dev_pub_key_b64[64] = {0};
                         
@@ -192,24 +197,24 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                                      "{\"event_type\":\"key_exchange_ack\",\"data\":{\"pub_key\":\"%s\"}}", 
                                      dev_pub_key_b64);
                             
-                            printf("[BLE_SEC] 전송할 JSON Payload: %s\n", ack_buf);
+                            ESP_LOGI(TAG,"[BLE_SEC] 전송할 JSON Payload: %s", ack_buf);
 
                             // 송신 큐를 이용해 앱으로 전송
                             ble_send_data_to_queue(NULL, (uint8_t*)ack_buf, strlen(ack_buf));
-                            printf("[BLE_SEC] Sent Device PubKey & Handshake Complete.\n");
+                            ESP_LOGI(TAG,"[BLE_SEC] Sent Device PubKey & Handshake Complete.");
                         }
                     }
                 }
             }
             // [C] 환경 설정 (set_env) 수신
             else if (strcmp(event_type->valuestring, "set_env") == 0) {
-                printf("[BLE_DBG] set_env 블록 진입 성공 (암호화 데이터 처리)\n");
+                ESP_LOGI(TAG,"[BLE_DBG] set_env 블록 진입 성공 (암호화 데이터 처리)");
 
                 cJSON *data_obj = cJSON_GetObjectItem(root, "data");
                 char *plaintext = ble_decrypt_json_data(data_obj); 
     
                 if (plaintext) {
-                    printf("[BLE_SEC] 복호화 성공! 내용: %s\n", plaintext);
+                    ESP_LOGI(TAG,"[BLE_SEC] 복호화 성공! 내용: %", plaintext);
 
                     cJSON *decrypted_json = cJSON_Parse(plaintext);
                     if (decrypted_json) {
@@ -219,10 +224,10 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                             app_config_t* app_config = get_app_config();
                             
                             if (strcmp(env_val->valuestring, "dev") == 0) {
-                                printf("[BLE_SEC] 환경 설정: 개발(dev) 모드\n");
+                                ESP_LOGI(TAG,"[BLE_SEC] 환경 설정: 개발(dev) 모드\n");
                                 strncpy(app_config->env_mode, "dev", sizeof(app_config->env_mode)-1);
                             } else if (strcmp(env_val->valuestring, "prod") == 0) {
-                                printf("[BLE_SEC] 환경 설정: 운영(prod) 모드\n");
+                                ESP_LOGI(TAG,"[BLE_SEC] 환경 설정: 운영(prod) 모드\n");
                                 strncpy(app_config->env_mode, "prod", sizeof(app_config->env_mode)-1);
                             }
                             ble_send_encrypted_event("env_ack", "{\"result\":\"ok\"}");
@@ -234,7 +239,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
             }// [D] Scan Wi-Fi
             else if (strcmp(event_type->valuestring, "scan_wifi") == 0) {
                 uint16_t ap_count = wifi_scan_start();
-                printf("[BLE_SEC] 와이파이 스캔 완료! 총 %d 개 발견\n", ap_count);
+                ESP_LOGI(TAG,"[BLE_SEC] 와이파이 스캔 완료! 총 %d 개 발견\n", ap_count);
 
                 cJSON *data_obj = cJSON_CreateObject();
                 cJSON *aps_array = cJSON_CreateArray();
@@ -269,7 +274,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                 // 4. JSON 문자열로 변환
                 char *plain_data = cJSON_PrintUnformatted(data_obj);
                 if (plain_data) {
-                    printf("[BLE_SEC] 암호화 전 스캔 결과(평문): %s\n", plain_data);
+                    ESP_LOGI(TAG,"[BLE_SEC] 암호화 전 스캔 결과(평문): %s\n", plain_data);
                     
                     // JSON String 암호화
                     ble_send_encrypted_event("wifi_list", plain_data);
@@ -283,7 +288,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
 
             }// [F] wifi_prov
             else if (strcmp(event_type->valuestring, "wifi_prov") == 0) {
-                printf("[BLE_SEC] wifi_prov 블록 진입 성공 (와이파이 연결 처리)\n");
+                ESP_LOGI(TAG,"[BLE_SEC] wifi_prov 블록 진입 성공 (와이파이 연결 처리)\n");
 
                 cJSON *data_obj = cJSON_GetObjectItem(root, "data");
                 char *plaintext = ble_decrypt_json_data(data_obj);
@@ -298,7 +303,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                             const char* ssid = ssid_val->valuestring;
                             const char* pwd = (pwd_val && cJSON_IsString(pwd_val)) ? pwd_val->valuestring : "";
 
-                            printf("[BLE_SEC] 연결 시작 ➔ SSID: %s\n", ssid);
+                            ESP_LOGI(TAG,"[BLE_SEC] 연결 시작 ➔ SSID: %s\n", ssid);
                             app_wifi_config_t* wifi_config = get_wifi_config();
                             memset(wifi_config->conn_ssid, 0,
                                 sizeof(wifi_config->conn_ssid));
@@ -335,7 +340,12 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
         cJSON_Delete(root); // JSON 메모리 해제
         return; // JSON 처리 완료 시 함수 종료 (아래 텍스트 파싱 생략)
     }
-
+    if(strcmp(buf, "HX711") == 0)
+    {
+        uint8_t hx_data[30];
+        //sprintf(hx_data,"%.2fg", loadcell_data_get());         
+       // ble_send_data_to_queue(NULL,hx_data,strlen(hx_data));
+    }
     // scan 명령
     if(strcmp(buf, "scan") == 0)
     {
@@ -361,22 +371,22 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
     pass = strtok(NULL, " \r\n");
 
 
-    printf("cmd   : %s\n", cmd ? cmd : "NULL");
-    printf("index : %s\n", index ? index : "NULL");
-    printf("ssid  : %s\n", ssid ? ssid : "NULL");
-    printf("pass  : %s\n", pass ? pass : "NULL");
+    ESP_LOGI(TAG,"cmd   : %s\n", cmd ? cmd : "NULL");
+    ESP_LOGI(TAG,"index : %s\n", index ? index : "NULL");
+    ESP_LOGI(TAG,"ssid  : %s\n", ssid ? ssid : "NULL");
+    ESP_LOGI(TAG,"pass  : %s\n", pass ? pass : "NULL");
 
 
     if(cmd && strcmp(cmd, "CONNECT_AP") == 0)
     {
         if(ssid == NULL || pass == NULL)
         {
-            printf("CONNECT_AP 파라미터 부족\n");
+            ESP_LOGI(TAG,"CONNECT_AP 파라미터 부족\n");
             return;
         }
 
 
-        printf("SSID=%s PASS=%s\n", ssid, pass);
+        ESP_LOGI(TAG,"SSID=%s PASS=%s\n", ssid, pass);
 
 
         app_wifi_config_t* wifi_config = get_wifi_config();
@@ -399,7 +409,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
 
         wifi_nvs_save_set();
         Wifi_Connect(ssid,pass);
-        printf("저장 완료\n");
+        ESP_LOGI(TAG,"저장 완료\n");
     }
 }
 
@@ -422,21 +432,17 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
 {
     Motion_Packet_t* Motion_Packet = (Motion_Packet_t*)data;
     
-    printf("[BLE_Receive_data] %d 바이트 데이터 처리 중: ", len);
-    for(int i = 0; i < len; i++)
-    {
-        printf("%02X ", data[i]);
-    }
-    printf("\n");
+    ESP_LOGI(TAG,"[BLE_Receive_data] %d 바이트 데이터 처리 중: ", len);
+    ESP_LOG_BUFFER_HEXDUMP(TAG, data, len, ESP_LOG_INFO);
 
     switch(Motion_Packet->event_code)
     {   
         case MOTION_START_RESPONSE:
-            printf("interval = %d Len = %d",Motion_Packet->motion_req.interval, Motion_Packet->motion_req.total_points);                    
-            printf("\n================ [ MOTION_START_RESPONSE ] ================\n");
-            printf(" interval   : %d\n", Motion_Packet->motion_req.interval);
-            printf(" total_points   : %d 개 \n",  Motion_Packet->motion_req.total_points);
-            printf("\n=====================================================\n\n");
+            ESP_LOGI(TAG,"interval = %d Len = %d",Motion_Packet->motion_req.interval, Motion_Packet->motion_req.total_points);                    
+            ESP_LOGI(TAG,"\n================ [ MOTION_START_RESPONSE ] ================\n");
+            ESP_LOGI(TAG," interval   : %d", Motion_Packet->motion_req.interval);
+            ESP_LOGI(TAG," total_points   : %d 개 ",  Motion_Packet->motion_req.total_points);
+            ESP_LOGI(TAG,"\n=====================================================\n\n");
                         
             if(Motion_Packet->motion_req.total_points != 0)
             {
@@ -473,23 +479,23 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                         input_count++;
                 } else {
                     // total_count를 초과하는 예외 데이터 처리 (경고 로그)
-                    printf("Warning: Buffer full! input_count(%ld) >= total_count(%ld)\n", input_count, total_count);
+                    ESP_LOGI(TAG,"Warning: Buffer full! input_count(%ld) >= total_count(%ld) ", input_count, total_count);
                     break;
                 }
             }
 
             //memcpy(&data_buffer[0], &Motion_Packet->motion_data.pack_data_0, sizeof(pack_data));
-            printf("seq = %d\n", Motion_Packet->motion_data.seq);
+            ESP_LOGI(TAG,"seq = %d ", Motion_Packet->motion_data.seq);
 
-            printf("data0: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_0.bit.type, Motion_Packet->motion_data.pack_data_0.bit.data, Motion_Packet->motion_data.pack_data_0.word);
-            printf("data1: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_1.bit.type, Motion_Packet->motion_data.pack_data_1.bit.data, Motion_Packet->motion_data.pack_data_1.word);
-            printf("data2: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_2.bit.type, Motion_Packet->motion_data.pack_data_2.bit.data, Motion_Packet->motion_data.pack_data_2.word);
-            printf("data3: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_3.bit.type, Motion_Packet->motion_data.pack_data_3.bit.data, Motion_Packet->motion_data.pack_data_3.word);
-            printf("data4: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_4.bit.type, Motion_Packet->motion_data.pack_data_4.bit.data, Motion_Packet->motion_data.pack_data_4.word);
-            printf("data5: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_5.bit.type, Motion_Packet->motion_data.pack_data_5.bit.data, Motion_Packet->motion_data.pack_data_5.word);
-            printf("data6: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_6.bit.type, Motion_Packet->motion_data.pack_data_6.bit.data, Motion_Packet->motion_data.pack_data_6.word);
-            printf("data7: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_7.bit.type, Motion_Packet->motion_data.pack_data_7.bit.data, Motion_Packet->motion_data.pack_data_7.word);
-            printf("data8: type=%d, data=%d (word=%d)\n", Motion_Packet->motion_data.pack_data_8.bit.type, Motion_Packet->motion_data.pack_data_8.bit.data, Motion_Packet->motion_data.pack_data_8.word);
+            ESP_LOGI(TAG,"data0: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_0.bit.type, Motion_Packet->motion_data.pack_data_0.bit.data, Motion_Packet->motion_data.pack_data_0.word);
+            ESP_LOGI(TAG,"data1: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_1.bit.type, Motion_Packet->motion_data.pack_data_1.bit.data, Motion_Packet->motion_data.pack_data_1.word);
+            ESP_LOGI(TAG,"data2: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_2.bit.type, Motion_Packet->motion_data.pack_data_2.bit.data, Motion_Packet->motion_data.pack_data_2.word);
+            ESP_LOGI(TAG,"data3: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_3.bit.type, Motion_Packet->motion_data.pack_data_3.bit.data, Motion_Packet->motion_data.pack_data_3.word);
+            ESP_LOGI(TAG,"data4: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_4.bit.type, Motion_Packet->motion_data.pack_data_4.bit.data, Motion_Packet->motion_data.pack_data_4.word);
+            ESP_LOGI(TAG,"data5: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_5.bit.type, Motion_Packet->motion_data.pack_data_5.bit.data, Motion_Packet->motion_data.pack_data_5.word);
+            ESP_LOGI(TAG,"data6: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_6.bit.type, Motion_Packet->motion_data.pack_data_6.bit.data, Motion_Packet->motion_data.pack_data_6.word);
+            ESP_LOGI(TAG,"data7: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_7.bit.type, Motion_Packet->motion_data.pack_data_7.bit.data, Motion_Packet->motion_data.pack_data_7.word);
+            ESP_LOGI(TAG,"data8: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_8.bit.type, Motion_Packet->motion_data.pack_data_8.bit.data, Motion_Packet->motion_data.pack_data_8.word);
             
             
             if(input_count >= total_count)
@@ -510,48 +516,48 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                 // health_data_res 구조체 직접 접근
     
 
-                printf("\n================ [ Health Data Res ] ================\n");
-                printf(" Event Code    : 0x%02X (%u)\n", Motion_Packet->event_code, Motion_Packet->event_code);
-                printf(" Struct Size   : %d bytes (Expected: 19 bytes)\n", sizeof(Motion_Packet->health_data_res));
-                printf(" Total Packet  : %d bytes (Expected: 20 bytes)\n", sizeof(Motion_Packet_t));
-                printf("-----------------------------------------------------\n");
-                printf(" Uptime        : %lu sec (%lu hours %lu min)\n", 
+                ESP_LOGI(TAG,"\n================ [ Health Data Res ] ================\n");
+                ESP_LOGI(TAG," Event Code    : 0x%02X (%u)", Motion_Packet->event_code, Motion_Packet->event_code);
+                ESP_LOGI(TAG," Struct Size   : %d bytes (Expected: 19 bytes)", sizeof(Motion_Packet->health_data_res));
+                ESP_LOGI(TAG," Total Packet  : %d bytes (Expected: 20 bytes)", sizeof(Motion_Packet_t));
+
+                ESP_LOGI(TAG," Uptime        : %lu sec (%lu hours %lu min)", 
                         (unsigned long)Motion_Packet->health_data_res.uptime_sec, 
                         (unsigned long)(Motion_Packet->health_data_res.uptime_sec / 3600), 
                         (unsigned long)((Motion_Packet->health_data_res.uptime_sec % 3600) / 60));
                         
-                printf(" Bat Level     : %u %%\n", Motion_Packet->health_data_res.Bat_Level);
-                printf(" Bat Voltage   : %u (e.g. %u.%uV)\n", 
+                ESP_LOGI(TAG," Bat Level     : %u %%", Motion_Packet->health_data_res.Bat_Level);
+                ESP_LOGI(TAG," Bat Voltage   : %u (e.g. %u.%uV)", 
                         Motion_Packet->health_data_res.Bat_Voltage, Motion_Packet->health_data_res.Bat_Voltage / 10, Motion_Packet->health_data_res.Bat_Voltage % 10);
                         
-                printf(" FW Version    : v%u.%u.%u\n", Motion_Packet->health_data_res.major, Motion_Packet->health_data_res.minor, Motion_Packet->health_data_res.patch);
-                printf(" Target RSSI   : %d dBm\n", Motion_Packet->health_data_res.target_rssi);
+                ESP_LOGI(TAG," FW Version    : v%u.%u.%u", Motion_Packet->health_data_res.major, Motion_Packet->health_data_res.minor, Motion_Packet->health_data_res.patch);
+                ESP_LOGI(TAG," Target RSSI   : %d dBm", Motion_Packet->health_data_res.target_rssi);
                 
                 // 비트필드 fault_flag 상세 출력
-                printf(" Fault Flag    : 0x%02X (Raw Byte)\n", Motion_Packet->health_data_res.fault_flag.byte);
-                printf("  |- Bat Status  : %u\n", Motion_Packet->health_data_res.fault_flag.bit.Bat_Status);
-                printf("  |- IMU Error   : %u\n", Motion_Packet->health_data_res.fault_flag.bit.IMU_Err);
-                printf("  |- BLE Error   : %u\n", Motion_Packet->health_data_res.fault_flag.bit.BLE_Err);
-                printf("  |- Storage Err : %u\n", Motion_Packet->health_data_res.fault_flag.bit.storage);
-                printf("  |- Reset Reason: %u\n", Motion_Packet->health_data_res.fault_flag.bit.reset_reason);
+                ESP_LOGI(TAG," Fault Flag    : 0x%02X (Raw Byte)", Motion_Packet->health_data_res.fault_flag.byte);
+                ESP_LOGI(TAG,"  |- Bat Status  : %u", Motion_Packet->health_data_res.fault_flag.bit.Bat_Status);
+                ESP_LOGI(TAG,"  |- IMU Error   : %u", Motion_Packet->health_data_res.fault_flag.bit.IMU_Err);
+                ESP_LOGI(TAG,"  |- BLE Error   : %u", Motion_Packet->health_data_res.fault_flag.bit.BLE_Err);
+                ESP_LOGI(TAG,"  |- Storage Err : %u", Motion_Packet->health_data_res.fault_flag.bit.storage);
+                ESP_LOGI(TAG,"  |- Reset Reason: %u", Motion_Packet->health_data_res.fault_flag.bit.reset_reason);
                 
-                printf("\n=====================================================\n\n");
+                ESP_LOGI(TAG,"\n=====================================================\n\n");
                 tracker_mqtt_queue_send(TRACKER_MESSEGE_HEALTH,mac, Motion_Packet,0,NULL);
         break;
         case LSM6_DATA_RESPONSE:
-                printf("--- Sensor Raw Data ---\n");
+                ESP_LOGI(TAG,"--- Sensor Raw Data ---\n");
                 Sensor_RawData_t* sensor = (Sensor_RawData_t*)Motion_Packet->lsm6_data_req_res.data;
                 // 가속도 (Accel) 출력
-                printf("Accel  : AX=%6d, AY=%6d, AZ=%6d\n",sensor->ax, sensor->ay, sensor->az);
+                ESP_LOGI(TAG,"Accel  : AX=%6d, AY=%6d, AZ=%6d",sensor->ax, sensor->ay, sensor->az);
                 
                 // 자이로 (Gyro) 출력
-                printf("Gyro   : GX=%6d, GY=%6d, GZ=%6d\n", sensor->gx, sensor->gy, sensor->gz);
+                ESP_LOGI(TAG,"Gyro   : GX=%6d, GY=%6d, GZ=%6d", sensor->gx, sensor->gy, sensor->gz);
                 
                 // MLC 데이터 10진수 및 16진수 출력
-                printf("MLC    : [%d, %d, %d, %d] (Hex: 0x%02X 0x%02X 0x%02X 0x%02X)\n",
+                ESP_LOGI(TAG,"MLC    : [%d, %d, %d, %d] (Hex: 0x%02X 0x%02X 0x%02X 0x%02X)",
                     sensor->mlc[0], sensor->mlc[1], sensor->mlc[2], sensor->mlc[3],
                     sensor->mlc[0], sensor->mlc[1], sensor->mlc[2], sensor->mlc[3]);
-                printf("-----------------------\n");
+                ESP_LOGI(TAG,"-----------------------\n");
         break;
         case TIME_REQUEST:
             motion_msg_send(get_conn_handle_by_mac(mac),TIME_RESPONSE,0); 
