@@ -18,11 +18,16 @@ static const char* TAG = __FILE__;
 #define OPMODE_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 static uint32_t current_opmode = OP_MODE_NORMAL;
 static esp_timer_handle_t opmode_timer = NULL;
-static int Motor_Speed = 75;
+static int Motor_Speed = 80;
 #ifndef max
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #endif
+static esp_timer_handle_t smart_used_timer = NULL;
+static uint32_t smart_water_enable = 0;
 // 1초 뒤 타이머가 만료되면 실행될 콜백 함수
+#define SEC_TO_US(sec) ((uint64_t)(sec) * 1000000ULL)
+#define MIN_TO_US(min) ((uint64_t)(min) * 60ULL * 1000000ULL)
+void Smart_used_Timer_Set(bool state);
 static void opmode_timer_callback(void* arg)
 {
     //ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
@@ -30,6 +35,11 @@ static void opmode_timer_callback(void* arg)
      //   water_fault_enable(WATER_MODECHANGE);
     //water_fault_disable(WATER_MODECHANGE);
     // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
+}
+static void smart_used_timer_callback(void* arg)
+{
+    smart_water_enable = 600;
+    Smart_used_Timer_Set(true);
 }
 static bool NightMode = false;
 void Night_Mode(bool state)
@@ -65,9 +75,11 @@ void set_motor_speed(int* speed)
         
     else
     {
+        Smart_used_Timer_Set(false);
         switch(current_opmode)
         {
             case OP_MODE_SMART:
+                Smart_used_Timer_Set(true);
                 Motor_Speed = 80;
             break;
             // 타 모드는 기본 구조 유지
@@ -118,6 +130,19 @@ void Opmode_Set(void)
         ESP_LOGI(TAG, "모드 변경됨 -> %d (10초 타이머 시작/리셋)", current_opmode);
     }
 
+}
+void Smart_used_Timer_Set(bool state)
+{
+    if (esp_timer_is_active(smart_used_timer)) {
+        esp_timer_stop(smart_used_timer);
+    } 
+    if(state)
+    {
+        esp_timer_start_once(smart_used_timer, MIN_TO_US(1440));
+        //ESP_LOGI(TAG, "smart_enable set"); 
+    }
+    //else
+        //ESP_LOGI(TAG, "smart_enable reset"); 
 }
 
 static smart_state_t smart_state = SMART_IDLE;
@@ -244,6 +269,12 @@ static void Opmode_task(void *pvParameter)
     ESP_LOGI(TAG, "Starting Opmode_task");
     app_config_t* app_config = get_app_config();
 
+    const esp_timer_create_args_t smart_mode_used_arg = {
+        .callback = &smart_used_timer_callback,
+        .name = "Slid_weight_timer_timer"
+    };
+    esp_timer_create(&smart_mode_used_arg, &smart_used_timer);
+
     set_motor_speed(NULL);
 
     while (1) {
@@ -260,32 +291,43 @@ static void Opmode_task(void *pvParameter)
             }
             else
             {
-                    switch(current_opmode)
+                switch(current_opmode)
+                {
+                    case OP_MODE_SMART:
                     {
-                        case OP_MODE_SMART:
+                        Smart_Water();
+                        if(smart_water_enable)
                         {
-                            Smart_Water();
+                            smart_water_enable--;
+                            start_motor_with_boost(Motor_Speed, 0);
+                        }
+                        else
+                        {
                             if(VL53L0X_Detect(true))
+                            {
+                                Smart_used_Timer_Set(true);
                                 start_motor_with_boost(Motor_Speed, 0);
+                            }
                             else
                                 start_motor_with_boost(0, 0);
                         }
-                        break;
-                        // 타 모드는 기본 구조 유지
-                        case OP_MODE_NORMAL:
-                            Smart_Water();
-                            start_motor_with_boost(Motor_Speed, 0);
-                            break;
-                        case OP_MODE_NIGHT:
-                            Smart_Water();
-                            start_motor_with_boost(Motor_Speed, 0);
-                        break;
-                        case OP_MODE_SLEEP:
-                            start_motor_with_boost(Motor_Speed, 0);
-                            break;
-                        default:
-                            break;
                     }
+                    break;
+                    // 타 모드는 기본 구조 유지
+                    case OP_MODE_NORMAL:
+                        Smart_Water();
+                        start_motor_with_boost(Motor_Speed, 0);
+                        break;
+                    case OP_MODE_NIGHT:
+                        Smart_Water();
+                        start_motor_with_boost(Motor_Speed, 0);
+                    break;
+                    case OP_MODE_SLEEP:
+                        start_motor_with_boost(Motor_Speed, 0);
+                        break;
+                    default:
+                        break;
+                }
             }
         }
 

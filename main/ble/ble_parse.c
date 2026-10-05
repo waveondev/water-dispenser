@@ -12,6 +12,7 @@
 #include "esp_random.h"
 #include "aws_iot_task.h"
 #include "app_HX711.h"
+#include "setting_cmd.h"
 #define OTA_URL "https://evtago.s3.ap-northeast-2.amazonaws.com/water-dispenser-c3.bin"
 // 분할 전송 시 사용할 MTU 사이즈를 저장할 전역/정적 변수 [앱에서 받을 수 있는 ble의 사이즈를 저장]
 
@@ -340,25 +341,22 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
         cJSON_Delete(root); // JSON 메모리 해제
         return; // JSON 처리 완료 시 함수 종료 (아래 텍스트 파싱 생략)
     }
-    if(strcmp(buf, "HX711") == 0)
-    {
-        uint8_t hx_data[30];
-        //sprintf(hx_data,"%.2fg", loadcell_data_get());         
-       // ble_send_data_to_queue(NULL,hx_data,strlen(hx_data));
-    }
-    // scan 명령
-    if(strcmp(buf, "scan") == 0)
-    {
-        wifi_scan_start();
-        return;
-    }
     if(strcmp(buf, "OTA") == 0)
     {
         ota_main(OTA_URL);
         return;
     }
+    if(strcmp(buf, "HX711") == 0)
+    {
+        char hx_data[30];
+        sprintf(hx_data,"%.2fg", loadcell_data_get());         
+        ble_send_data_to_queue(NULL,(uint8_t*)hx_data,strlen(hx_data));
+        return;
+    }
 
 
+
+#if 0
     char *cmd;
     char *index;
     char *ssid;
@@ -411,6 +409,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
         Wifi_Connect(ssid,pass);
         ESP_LOGI(TAG,"저장 완료\n");
     }
+#endif
 }
 
 typedef struct 
@@ -424,10 +423,11 @@ typedef struct
   uint8_t mlc[4];
 }Sensor_RawData_t;
 
-static uint32_t total_count = 0;
+static uint32_t send_point = 0;
+static uint32_t total_point = 0;
 static uint32_t input_count = 0;
 
-static pack_data* data_buffer;
+static uint8_t* data_buffer;
 void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
 {
     Motion_Packet_t* Motion_Packet = (Motion_Packet_t*)data;
@@ -438,17 +438,16 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
     switch(Motion_Packet->event_code)
     {   
         case MOTION_START_RESPONSE:
-            ESP_LOGI(TAG,"interval = %d Len = %d",Motion_Packet->motion_req.interval, Motion_Packet->motion_req.total_points);                    
-            ESP_LOGI(TAG,"\n================ [ MOTION_START_RESPONSE ] ================\n");
-            ESP_LOGI(TAG," interval   : %d", Motion_Packet->motion_req.interval);
-            ESP_LOGI(TAG," total_points   : %d 개 ",  Motion_Packet->motion_req.total_points);
-            ESP_LOGI(TAG,"\n=====================================================\n\n");
-                        
-            if(Motion_Packet->motion_req.total_points != 0)
+            ESP_LOGI(TAG,"total = %d send = %d",Motion_Packet->motion_req.total_points, Motion_Packet->motion_req.send_points);                    
+
+            if(Motion_Packet->motion_req.send_points != 0)
             {
-                    total_count = Motion_Packet->motion_req.total_points;
+                    total_point = Motion_Packet->motion_req.total_points;
+                    send_point = Motion_Packet->motion_req.send_points;
                     input_count = 0;
-                    data_buffer = (pack_data*)calloc(total_count,sizeof(pack_data));
+                    if(send_point == total_point)
+                        total_point = 0;
+                    data_buffer = (uint8_t*)calloc(send_point,sizeof(uint8_t));
                     if(data_buffer == NULL)
                         break;
                     
@@ -461,52 +460,55 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
             if(data_buffer == NULL)
                 break;
             // 각 멤버의 주소를 배열로 묶어줍니다.
-            pack_data* input_ptrs[] = {
-                &Motion_Packet->motion_data.pack_data_0,
-                &Motion_Packet->motion_data.pack_data_1,
-                &Motion_Packet->motion_data.pack_data_2,
-                &Motion_Packet->motion_data.pack_data_3,
-                &Motion_Packet->motion_data.pack_data_4,
-                &Motion_Packet->motion_data.pack_data_5,
-                &Motion_Packet->motion_data.pack_data_6,
-                &Motion_Packet->motion_data.pack_data_7,
-                &Motion_Packet->motion_data.pack_data_8
+            uint8_t* input_ptrs[] = {
+                &Motion_Packet->motion_data.MLC_data[0],
+                &Motion_Packet->motion_data.MLC_data[1],
+                &Motion_Packet->motion_data.MLC_data[2],
+                &Motion_Packet->motion_data.MLC_data[3],
+                &Motion_Packet->motion_data.MLC_data[4],
+                &Motion_Packet->motion_data.MLC_data[5],
+                &Motion_Packet->motion_data.MLC_data[6],
+                &Motion_Packet->motion_data.MLC_data[7],     
+                &Motion_Packet->motion_data.MLC_data[8],                                                               
+                &Motion_Packet->motion_data.MLC_data[9],
+                &Motion_Packet->motion_data.MLC_data[10],
+                &Motion_Packet->motion_data.MLC_data[11],
+                &Motion_Packet->motion_data.MLC_data[12],
+                &Motion_Packet->motion_data.MLC_data[13],
+                &Motion_Packet->motion_data.MLC_data[14],                                
+                &Motion_Packet->motion_data.MLC_data[15],
+                &Motion_Packet->motion_data.MLC_data[16],                
+                &Motion_Packet->motion_data.MLC_data[17],                                
             };
 
-            for (int i = 0; i < 9; i++) {
-                if (input_count < total_count) { 
-                        memcpy(&data_buffer[input_count], input_ptrs[i], sizeof(pack_data));
+            for (int i = 0; i < 18; i++) {
+                if (input_count < send_point) { 
+                        memcpy(&data_buffer[input_count], input_ptrs[i], sizeof(uint8_t));
                         input_count++;
                 } else {
                     // total_count를 초과하는 예외 데이터 처리 (경고 로그)
-                    ESP_LOGI(TAG,"Warning: Buffer full! input_count(%ld) >= total_count(%ld) ", input_count, total_count);
+                    ESP_LOGI(TAG,"Warning: Buffer full! input_count(%ld) >= total_count(%ld) ", input_count, send_point);
                     break;
                 }
             }
 
-            //memcpy(&data_buffer[0], &Motion_Packet->motion_data.pack_data_0, sizeof(pack_data));
-            ESP_LOGI(TAG,"seq = %d ", Motion_Packet->motion_data.seq);
-
-            ESP_LOGI(TAG,"data0: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_0.bit.type, Motion_Packet->motion_data.pack_data_0.bit.data, Motion_Packet->motion_data.pack_data_0.word);
-            ESP_LOGI(TAG,"data1: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_1.bit.type, Motion_Packet->motion_data.pack_data_1.bit.data, Motion_Packet->motion_data.pack_data_1.word);
-            ESP_LOGI(TAG,"data2: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_2.bit.type, Motion_Packet->motion_data.pack_data_2.bit.data, Motion_Packet->motion_data.pack_data_2.word);
-            ESP_LOGI(TAG,"data3: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_3.bit.type, Motion_Packet->motion_data.pack_data_3.bit.data, Motion_Packet->motion_data.pack_data_3.word);
-            ESP_LOGI(TAG,"data4: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_4.bit.type, Motion_Packet->motion_data.pack_data_4.bit.data, Motion_Packet->motion_data.pack_data_4.word);
-            ESP_LOGI(TAG,"data5: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_5.bit.type, Motion_Packet->motion_data.pack_data_5.bit.data, Motion_Packet->motion_data.pack_data_5.word);
-            ESP_LOGI(TAG,"data6: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_6.bit.type, Motion_Packet->motion_data.pack_data_6.bit.data, Motion_Packet->motion_data.pack_data_6.word);
-            ESP_LOGI(TAG,"data7: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_7.bit.type, Motion_Packet->motion_data.pack_data_7.bit.data, Motion_Packet->motion_data.pack_data_7.word);
-            ESP_LOGI(TAG,"data8: type=%d, data=%d (word=%d) ", Motion_Packet->motion_data.pack_data_8.bit.type, Motion_Packet->motion_data.pack_data_8.bit.data, Motion_Packet->motion_data.pack_data_8.word);
+            ESP_LOGI(TAG,"seq = %d input = %d, send = %d ", Motion_Packet->motion_data.seq, input_count, send_point);          
+            for( int i=0;i<18;i++)
+            {
+                ESP_LOGI(TAG,"data %d ", Motion_Packet->motion_data.MLC_data[i]); 
+            }
             
-            
-            if(input_count >= total_count)
+            if(input_count >= send_point)
             {
                 Motion_Timer_Set(mac, false);
-                tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet,total_count,data_buffer);
+                tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet,send_point,data_buffer);
                 data_buffer = NULL;
                 input_count = 0;
-                total_count = 0;    
+                send_point = 0;    
                          
                 motion_msg_send(get_conn_handle_by_mac(mac),MOTION_DATA_ACK,Motion_Packet->motion_data.seq);
+                if(total_point)
+                motion_msg_send(get_conn_handle_by_mac(mac),MOTION_START_REQUEST,1);
             }
             else
                 Motion_Timer_Set(mac, true);
@@ -542,7 +544,15 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                 ESP_LOGI(TAG,"  |- Reset Reason: %u", Motion_Packet->health_data_res.fault_flag.bit.reset_reason);
                 
                 ESP_LOGI(TAG,"\n=====================================================\n\n");
+                if(Motion_Packet->health_data_res.fault_flag.bit.Bat_Status == 2 || Motion_Packet->health_data_res.fault_flag.bit.storage ||
+                Motion_Packet->health_data_res.fault_flag.bit.BLE_Err || Motion_Packet->health_data_res.fault_flag.bit.IMU_Err ||
+                Motion_Packet->health_data_res.fault_flag.bit.reserved)
+                    tracker_mqtt_queue_send(TRACKER_MESSEGE_DIAGNOSTICS,mac, Motion_Packet,0,NULL);
+
+
                 tracker_mqtt_queue_send(TRACKER_MESSEGE_HEALTH,mac, Motion_Packet,0,NULL);
+                
+
         break;
         case LSM6_DATA_RESPONSE:
                 ESP_LOGI(TAG,"--- Sensor Raw Data ---\n");
@@ -561,6 +571,9 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
         break;
         case TIME_REQUEST:
             motion_msg_send(get_conn_handle_by_mac(mac),TIME_RESPONSE,0); 
+        break;
+        case SETTING_REQUEST:
+            Setting_callback(Motion_Packet);
         break;
         default:
             BLE_APP_Command(data,len);

@@ -43,11 +43,11 @@ Tracker_Device_t* Get_Tracker_Device(uint8_t* addr)
 void dump_tracker_device_info(const char* label, const Tracker_Device_t* dev)
 {
     if (dev == NULL) {
-        ESP_LOGI(TAG,"%s: [ NULL ]\n", label);
+        ESP_LOGI(TAG,"%s: [ NULL ]", label);
         return;
     }
     
-    ESP_LOGI(TAG,"%s\n", label);
+    ESP_LOGI(TAG,"%s", label);
   
     ESP_LOGI(TAG," Device_ID       : %s", dev->Device_ID);
 
@@ -62,7 +62,6 @@ void dump_tracker_device_info(const char* label, const Tracker_Device_t* dev)
 
     ESP_LOGI(TAG," addr             : ");
     ESP_LOG_BUFFER_HEXDUMP(TAG, dev->dev_info.addr, sizeof(dev->dev_info.addr), ESP_LOG_INFO);
-    ESP_LOGI(TAG,"\n");
 
     ESP_LOGI(TAG," name             : %s", dev->dev_info.name);
     ESP_LOGI(TAG," rssi             : %d", dev->dev_info.rssi);
@@ -77,7 +76,6 @@ void dump_tracker_all_devices(void)
     
     // 2-1. Tracker_UNKNOWN 구조체 덤프
     dump_tracker_device_info("[ Tracker_UNKNOWN Object ]", &Tracker_UNKNOWN);
-    ESP_LOGI(TAG,"-------------------------------------------------------------------\n");
 
     // 2-2. Tracker_Device 포인터 배열 덤프
     ESP_LOGI(TAG,"[ Tracker_Device Array (Max: %d) ]\n", TRACKER_DEVICE_MAX);

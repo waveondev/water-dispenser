@@ -71,7 +71,7 @@ bool mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, void* data, uint32_t data_len)
     }
     return true;
 }
-void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Packet_t* packet,uint32_t data_len,  pack_data* data )
+void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Packet_t* packet,uint32_t data_len,  uint8_t* data )
 {
     tracker_mqtt_packet_t mqtt_packet;
 
@@ -96,6 +96,68 @@ void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Pac
     }
 }
 
+static esp_timer_handle_t aws_success_timer = NULL;
+static esp_timer_handle_t aws_disconnect_timer = NULL;
+bool aws_connect_flag = false;
+
+#define MIN_TO_US(min) ((uint64_t)(min) * 60ULL * 1000000ULL)
+#define SEC_TO_US(sec) ((uint64_t)(sec) * 1000000ULL)
+#include "ble_task.h"
+bool aws_connected_state(void)
+{
+    return aws_connect_flag;
+}
+void ble_advertising_reset(void);
+static void aws_success_callback(void* arg)
+{
+    if (esp_timer_is_active(aws_disconnect_timer)) {
+        esp_timer_stop(aws_disconnect_timer);
+    } 
+    aws_connect_flag = true;
+    ble_advertising_reset();
+    ESP_LOGI(TAG, "aws_flag"); 
+}
+static void aws_discon_callback(void* arg)
+{
+    client_terminate();
+    ble_advertising_reset();
+    ESP_LOGI(TAG, "aws_discon"); 
+}
+
+
+
+static void flag_success_set(bool state)
+{
+
+    if (esp_timer_is_active(aws_success_timer)) {
+        esp_timer_stop(aws_success_timer);
+    } 
+    if(state)
+    {
+        esp_timer_start_once(aws_success_timer, MIN_TO_US(1));
+        ESP_LOGI(TAG, "aws_timer set"); 
+    }
+    else
+        ESP_LOGI(TAG, "aws_timer reset"); 
+}
+
+
+
+static void ble_discon_timer_set(bool state, uint64_t discon_timeout)
+{
+
+    if (esp_timer_is_active(aws_disconnect_timer)) {
+        esp_timer_stop(aws_disconnect_timer);
+    } 
+    if(state)
+    {
+        esp_timer_start_once(aws_disconnect_timer, SEC_TO_US(discon_timeout));
+        ESP_LOGI(TAG, "ble_discon_timer set"); 
+    }
+    else
+        ESP_LOGI(TAG, "ble_discon_timer reset"); 
+}
+
 static void aws_iot_main_entry(void *pvParameters)
 {
     ESP_LOGI(TAG, "AWS IoT 전담 태스크 시작");
@@ -107,11 +169,27 @@ static void aws_iot_main_entry(void *pvParameters)
         pdTRUE,
         portMAX_DELAY
     );
+    static uint32_t discon_timeout = 0;
     // -------------------------------------------------------------
     // 1. [1회성 초기화] 큐 및 타이머 생성을 루프 밖에서 단 1번만 수행
     // -------------------------------------------------------------
     mqtt_tx_queue = xQueueCreate(10, sizeof(mqtt_packet_t));
     tracker_mqtt_queue = xQueueCreate(10, sizeof(tracker_mqtt_packet_t));
+
+    const esp_timer_create_args_t aws_success_args = {
+        .callback = &aws_success_callback,
+        .name = "aws_flag_timer"
+    };
+
+    ESP_ERROR_CHECK(esp_timer_create(&aws_success_args, &aws_success_timer));
+
+
+    const esp_timer_create_args_t aws_discon_args = {
+        .callback = &aws_discon_callback,
+        .name = "aws_discon_timer"
+    };
+
+    ESP_ERROR_CHECK(esp_timer_create(&aws_discon_args, &aws_disconnect_timer));
 
     const esp_timer_create_args_t Health_timer_args = {
         .callback = &Health_timer_callback,
@@ -151,12 +229,13 @@ static void aws_iot_main_entry(void *pvParameters)
                 esp_restart();
         }
 
-
+        
         // 2) MQTT 연결이 붙었으니 헬스 타이머 동작 시작!
         esp_timer_start_once(Health_timer, TIMER_1_MIN_IN_US);
 
         ESP_LOGI(TAG, "=== MQTT 송수신 메인 루프 진입 ===");
 
+        flag_success_set(true);
         // MQTT 송수신 메인 루프
         for(;;) {
             if (xQueueReceive(mqtt_tx_queue, &mqtt_packet, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -179,10 +258,12 @@ static void aws_iot_main_entry(void *pvParameters)
             /* 수신 및 네트워크 연결 감시 */
             if (ProcessLoopWithTimeout(10) == false) {
                 ESP_LOGE(TAG, "MQTT 연결 끊김 감지!");
+                aws_connect_flag = false;
+                ble_discon_timer_set(true,discon_timeout);
                 break; // for 루프 탈출
             }
         }
-
+        
         // =========================================================
         // 🔴 [연결 끊김 시점]
         // =========================================================

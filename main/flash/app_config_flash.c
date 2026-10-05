@@ -22,8 +22,8 @@ app_config_t app_config =
     .hx1_scale = 1000.0f,
     .hx1_offset = 0,
     .case_raw_data = 0,
-    .tof_sense_threshold_l = 40,
-    .tof_sense_threshold_r = 40,
+    .tof_sense_threshold_l = 50,
+    .tof_sense_threshold_r = 50,
     .motion_data_time = 1800,
     .EFFECTIVE_DWELL_TIME = 5,
     .env_mode = "dev"
@@ -35,15 +35,16 @@ app_wifi_config_t wifi_config =
    .conn_password = ""
 };
 
-app_ble_config_t ble_config = 
+app_facto_config_t facto_config = 
 {
-   .ble_device_name = ""
+    .hx1_scale = 1000.0f,
+    .case_raw_data = 0,
+    .Device_Serial = ""
 };
-
 
 static bool app_save_flag = false;
 static bool wifi_save_flag = false;
-static bool ble_save_flag = false;
+static bool facto_save_flag = false;
 static bool motor_save_flag = false;
 static bool filter_save_flag = false;
 static uint32_t motor_save_time = 0;
@@ -58,9 +59,9 @@ void wifi_nvs_save_set(void)
 {
     wifi_save_flag = true;
 }
-void ble_nvs_save_set(void)
+void facto_nvs_save_set(void)
 {
-    ble_save_flag = true;
+    facto_save_flag = true;
 }
 void motor_nvs_save_set(void)
 {
@@ -73,16 +74,32 @@ void filter_nvs_save_set(void)
 
 void reset_all_nvs_data(void)
 {
-    ESP_LOGW("NVS", "NVS 영역을 포맷(초기화)합니다...");
+    ESP_LOGW("NVS", "WAVEON NVS 데이터 영역을 초기화합니다...");
     
-    // 💡 이 함수를 실행하면 NVS 스토리지 전체가 싹 다 포맷됩니다.
-    esp_err_t err = nvs_flash_erase();
+    nvs_handle_t handle;
+    
+    // 1. WAVEON 네임스페이스를 쓰기 모드로 엽니다.
+    esp_err_t err = nvs_open("WAVEON", NVS_READWRITE, &handle);
     
     if (err == ESP_OK) {
-        ESP_LOGI("NVS", "포맷 완료! 변경사항을 적용하기 위해 재부팅합니다.");
-        esp_restart(); // ⚠️ 중요: 깨끗해진 NVS 구조를 새로 올리기 위해 재부팅 필수
+        // 2. WAVEON 네임스페이스 내부의 모든 Key를 지웁니다.
+        err = nvs_erase_all(handle);
+        
+        if (err == ESP_OK) {
+            // 3. 변경 사항을 플래시에 반영(커밋)합니다.
+            err = nvs_commit(handle);
+        }
+        
+        // 4. 핸들을 닫아 메모리를 해제합니다.
+        nvs_close(handle);
+    }
+
+    // 결과 처리 및 재부팅
+    if (err == ESP_OK) {
+        ESP_LOGI("NVS", "WAVEON 초기화 완료! 변경사항을 적용하기 위해 재부팅합니다.");
+        esp_restart(); // ⚠️ 깨끗해진 구조 반영 및 안전한 재시작
     } else {
-        ESP_LOGE("NVS", "NVS 포맷 실패: %s", esp_err_to_name(err));
+        ESP_LOGE("NVS", "WAVEON NVS 초기화 실패: %s", esp_err_to_name(err));
     }
 }
 
@@ -121,10 +138,6 @@ void dump_all_configurations(void)
     ESP_LOGI(TAG, "  - Wi-Fi Password       : %s", (wifi_config.conn_password[0] == '\0') ? "[EMPTY]" : "********"); // 보안상 별표 표기 (원하시면 %s로 생자로 까셔도 됩니다)
     ESP_LOGI(TAG, "--------------------------------------------------");
 
-    // 3. BLE 설정 출력
-    ESP_LOGI(TAG, "[BLE CONFIG]");
-    ESP_LOGI(TAG, "  - BLE Device Name      : %s", (ble_config.ble_device_name[0] == '\0') ? "[EMPTY]" : (char*)ble_config.ble_device_name);
-    
     ESP_LOGI(TAG, "==================================================");
 // 3. BLE 설정 출력
     ESP_LOGI(TAG, "[MOTOR]");
@@ -135,6 +148,14 @@ void dump_all_configurations(void)
     ESP_LOGI(TAG, "[FILTER]");
     ESP_LOGI(TAG, "  - FILTER      : %d", filter_save_time);
     ESP_LOGI(TAG, "==================================================");    
+
+    ESP_LOGI(TAG, "[FACTO CONFIG]");
+    // SSID나 PASSWORD가 비어있으면 [EMPTY]로 센스있게 표기
+    ESP_LOGI(TAG, "  - facto case           : %ld", facto_config.case_raw_data);
+    ESP_LOGI(TAG, "  - facto scale          : %ld", facto_config.hx1_scale);
+    ESP_LOGI(TAG, "  - facto serial         : %s", (facto_config.Device_Serial[0] == '\0') ? "[EMPTY]" : (char*)facto_config.Device_Serial);
+    ESP_LOGI(TAG, "--------------------------------------------------");
+
 }
 
 app_config_t* get_app_config(void)
@@ -147,9 +168,9 @@ app_wifi_config_t* get_wifi_config(void)
     return &wifi_config;
 }
 
-app_ble_config_t* get_ble_config(void)
+app_facto_config_t* get_facto_config(void)
 {
-    return &ble_config;
+    return &facto_config;
 }
 uint32_t* get_motor_time(void)
 {
@@ -204,7 +225,7 @@ static void save_app_configuration(void)
                       temp_cfg.op_mode, temp_cfg.hx1_offset);
         } else {
             // 플래시 메모리 물리적 손상이나 섹터 오류 시 감지됨
-            ESP_LOGE(TAG, "[CONFIG] ⚠️ NVS 데이터 검증 실패! 저장된 값이 원본과 일치하지 않습니다!");
+            ESP_LOGE(TAG, "[CONFIG]  NVS 데이터 검증 실패! 저장된 값이 원본과 일치하지 않습니다!");
         }
     } else {
         ESP_LOGE(TAG, "[CONFIG] 검증을 위해 데이터를 읽어오는 중 에러 발생 (%s)", esp_err_to_name(err));
@@ -262,53 +283,50 @@ static void save_wifi_configuration(void)
 }
 
 
-void erase_ble_configuration(void)
+void erase_facto_configuration(void)
 {
     // 1. NVS에서 시스템 구조체 통째로 읽어오기 시도
-    memset(&ble_config,0,sizeof(ble_config));
+    memset(&facto_config,0,sizeof(facto_config));
 
-    write_nvs_blob(APP_NAMESPACE, APP_KEY_BLE_CONFIG, &ble_config, sizeof(ble_config));
+    write_nvs_blob(FACTORY_NAMESPACE, FACTORY_KEY, &facto_config, sizeof(facto_config));
 }
-void load_ble_configuration(void)
+void load_facto_configuration(void)
 {
     // 1. NVS에서 시스템 구조체 통째로 읽어오기 시도
-    esp_err_t err = read_nvs_blob(APP_NAMESPACE, APP_KEY_BLE_CONFIG, &ble_config, sizeof(app_ble_config_t));
+    esp_err_t err = read_nvs_blob(FACTORY_NAMESPACE, FACTORY_KEY, &facto_config, sizeof(app_facto_config_t));
     
     if (err != ESP_OK) {
         // 2. 만약 최초 부팅이라 데이터가 없다면 기본값(Default) 세팅
-        ESP_LOGI(TAG,"[BLE] 저장된 설정이 없어 기본값을 생성합니다.\r\n");
+        ESP_LOGI(TAG,"[facto] 저장된 설정이 없어 기본값을 생성합니다.\r\n");
                 
         // 기본값 세팅 후 NVS에 최초로 구워두기
-        write_nvs_blob(APP_NAMESPACE, APP_KEY_BLE_CONFIG, &ble_config, sizeof(app_ble_config_t));
+        write_nvs_blob(FACTORY_NAMESPACE, FACTORY_KEY, &facto_config, sizeof(app_facto_config_t));
     } else {
-        ESP_LOGI(TAG,"[BLE] NVS에서 시스템 설정 로드 성공! (device name = %s)\r\n", 
-                          ble_config.ble_device_name);
+        ESP_LOGI(TAG,"[facto] NVS에서 시스템 설정 로드 성공!");
     }
 }
 
 // 값이 바뀔 때마다 호출해 줄 저장 함수
-static void save_ble_configuration(void)
+static void save_facto_configuration(void)
 {
-    write_nvs_blob(APP_NAMESPACE, APP_KEY_BLE_CONFIG, &ble_config, sizeof(app_ble_config_t));
-// 2. 검증을 위해 NVS에서 방금 저장한 값을 다시 읽어올 임시 그릇 생성
-    app_ble_config_t temp_cfg;
-    memset(&temp_cfg, 0, sizeof(app_ble_config_t)); // 깨끗하게 청소
+    write_nvs_blob(FACTORY_NAMESPACE, FACTORY_KEY, &facto_config, sizeof(app_facto_config_t));
+// 2. 검증을 위해 NVS에서 데이터를 다시 읽어올 임시 그릇 생성
+    app_facto_config_t temp_cfg;
+    memset(&temp_cfg, 0, sizeof(app_facto_config_t)); // 0으로 깨끗하게 청소
 
-    // 3. NVS에서 데이터를 다시 역으로 로드(Load)
-    esp_err_t err = read_nvs_blob(APP_NAMESPACE, APP_KEY_BLE_CONFIG, &temp_cfg, sizeof(app_ble_config_t));
+    // 3. NVS에서 방금 저장한 값을 다시 로드(Load)
+    esp_err_t err = read_nvs_blob(FACTORY_NAMESPACE, FACTORY_KEY, &temp_cfg, sizeof(app_facto_config_t));
 
     if (err == ESP_OK) {
-        // 4. 🔥 memcmp로 원본(ble_config)과 읽어온 것(temp_cfg)을 크기만큼 비교
-        // memcmp는 두 메모리가 완전히 일치하면 '0'을 반환합니다.
-        if (memcmp(&ble_config, &temp_cfg, sizeof(app_ble_config_t)) == 0) {
-            ESP_LOGI(TAG, "[BLE] NVS 데이터 검증 성공! 읽어온 값이 원본과 100%% 일치합니다.");
-            ESP_LOGI(TAG, "[BLE] 로드된 이름: %s", temp_cfg.ble_device_name);
+        // 두 메모리 블록이 100% 일치하면 0을 리턴합니다.
+        if (memcmp(&facto_config, &temp_cfg, sizeof(app_facto_config_t)) == 0) {
+            ESP_LOGI(TAG, "[facto] NVS 데이터 검증 성공! 저장된 값이 원본과 100%% 일치합니다.");
         } else {
-            // 메모리가 일치하지 않는 경우 (대개 이런 일은 거의 없지만, 플래시 불량 등의 이슈 체크용)
-            ESP_LOGE(TAG, "[BLE] ⚠️ NVS 데이터 검증 실패! 저장된 값이 원본과 다릅니다!");
+            // 플래시 메모리 섹터 불량이나 마스킹 오류 시 감지됨
+            ESP_LOGE(TAG, "[facto]  NVS 데이터 검증 실패! 저장된 값이 원본과 일치하지 않습니다!");
         }
     } else {
-        ESP_LOGE(TAG, "[BLE] 검증을 위해 다시 읽어오는 과정에서 에러 발생 (%s)", esp_err_to_name(err));
+        ESP_LOGE(TAG, "[facto] 검증을 위해 데이터를 읽어오는 중 에러 발생 (%s)", esp_err_to_name(err));
     }
 }
 
@@ -348,7 +366,7 @@ static void save_motor_time(void)
             
         } else {
             // 메모리가 일치하지 않는 경우 (대개 이런 일은 거의 없지만, 플래시 불량 등의 이슈 체크용)
-            ESP_LOGE(TAG, "[BLE] ⚠️ NVS 데이터 검증 실패! 저장된 값이 원본과 다릅니다!");
+            ESP_LOGE(TAG, "[BLE]  NVS 데이터 검증 실패! 저장된 값이 원본과 다릅니다!");
         }
     } else {
         ESP_LOGE(TAG, "[BLE] 검증을 위해 다시 읽어오는 과정에서 에러 발생 (%s)", esp_err_to_name(err));
@@ -436,10 +454,10 @@ static void flash_task(void *pvParameter)
             wifi_save_flag = false;
             save_wifi_configuration();
         }
-        if(ble_save_flag)
+        if(facto_save_flag)
         {
-            ble_save_flag = false;
-            save_ble_configuration();
+            facto_save_flag = false;
+            save_facto_configuration();
         }
         if(motor_save_flag)
         {
@@ -474,7 +492,7 @@ void NVS_Flash_init(void)
     }
     load_app_configuration();
     load_wifi_configuration();
-    load_ble_configuration();
+    load_facto_configuration();
     load_motor_time();
     load_filter_time();    
     dump_all_configurations();

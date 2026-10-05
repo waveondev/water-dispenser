@@ -17,10 +17,11 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "app_config_flash.h"
 #include "ble_parse.h"
-#include "motion_task.h"
+#include "setting_cmd.h"
 #include "ble_tracker_id.h"
 #include "opmode_task.h"
 #include "device_config.h"
+#include "aws_iot_task.h"
 static const char *TAG = __FILE__;
 
 #define MY_UUID128_BASE(XX, YY) \
@@ -102,7 +103,21 @@ static void ble_spp_server_advertise(void)
     struct ble_hs_adv_fields fields;
     struct ble_hs_adv_fields rsp_fields;
     int rc;
+    uint8_t mfg_data[7];
 
+    rc = ble_gap_adv_stop();
+    if (rc != 0) {
+        ESP_LOGD(TAG, "adv_stop rc=%d", rc);
+    }
+
+    memset(mfg_data,0,sizeof(mfg_data));
+    mfg_data[0] = 0x31;
+    mfg_data[1] = 0x46;
+    if(aws_connected_state())
+    {
+        mfg_data[2] |= 0x01;
+    }
+    
     // Advertising packet
     memset(&fields, 0, sizeof fields);
 
@@ -111,9 +126,13 @@ static void ble_spp_server_advertise(void)
         BLE_HS_ADV_F_BREDR_UNSUP;
 
     // ⭐ NUS 서비스 UUID 광고
-    fields.uuids128 = &nus_svc_uuid;
-    fields.num_uuids128 = 1;
-    fields.uuids128_is_complete = 1;
+   // fields.uuids128 = &nus_svc_uuid;
+   // fields.num_uuids128 = 1;
+   // fields.uuids128_is_complete = 1;
+
+
+
+    const char *name = ble_svc_gap_device_name();
 
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
@@ -124,7 +143,10 @@ static void ble_spp_server_advertise(void)
     // Scan Response packet
     memset(&rsp_fields, 0, sizeof rsp_fields);
 
-    const char *name = ble_svc_gap_device_name();
+
+    /* Manufacturer Specific Data */
+    rsp_fields.mfg_data = mfg_data;
+    rsp_fields.mfg_data_len = sizeof(mfg_data);
 
     rsp_fields.name = (uint8_t *)name;
     rsp_fields.name_len = strlen(name);
@@ -133,9 +155,9 @@ static void ble_spp_server_advertise(void)
 
     rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
     if (rc != 0) {
+        printf("ble_gap_adv_set_fields failed: %d\n", rc);
         return;
     }
-
 
     memset(&adv_params, 0, sizeof adv_params);
 
@@ -329,6 +351,21 @@ uint8_t count_client(void)
     }
 
     return active_conn_cnt;
+}
+void client_terminate(void)
+{
+    for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
+        if (connected_clients[i].is_connected) {
+            ble_gap_terminate(connected_clients[i].conn_handle,BLE_ERR_REM_USER_CONN_TERM);
+            connected_clients[i].is_connected = false;
+            connected_clients[i].conn_handle = BLE_HS_CONN_HANDLE_NONE;
+            xTimerStop(connected_clients[i].xtimer, 0);
+            xTimerDelete(connected_clients[i].xtimer, 0);
+            xTimerStop(connected_clients[i].xMotionTimer, 0);
+            xTimerDelete(connected_clients[i].xMotionTimer, 0);
+            memset(&connected_clients[i],0,sizeof(connected_clients[i]));
+        }
+    }
 }
 // 2. DISCONNECT 이벤트 발생 시 삭제
 void remove_client(uint16_t conn_handle) {
@@ -581,7 +618,23 @@ void ble_spp_server_host_task(void *param)
     nimble_port_run();
     nimble_port_freertos_deinit();
 }
+struct ble_npl_event adv_update_event;
 
+void ble_advertising_reset(void)
+{
+    ble_npl_eventq_put(
+    nimble_port_get_dflt_eventq(),
+    &adv_update_event
+    );
+}
+static void adv_update_event_fn(struct ble_npl_event *ev)
+{
+    // 여기서는 NimBLE host context
+
+    ble_gap_adv_stop();
+
+    delay_adv_timer_cb(NULL);
+}
 /**
  * GATT 캐릭터리스틱 처리 (중괄호 블록을 넣어 컴파일 에러 완전 수정)
  */
@@ -947,7 +1000,11 @@ void ble_task_init(void)
     ble_rx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
     ble_tx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
 
-
+    ble_npl_event_init(
+        &adv_update_event,
+        adv_update_event_fn,
+        NULL
+    );
     if (xTaskCreate(
             ble_rx_processing_task,                  // 태스크 함수
             "ble_rx_task",                // 태스크 이름

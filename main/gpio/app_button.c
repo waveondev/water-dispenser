@@ -13,6 +13,7 @@
 #include "ble_task.h"
 #include "app_led.h"
 #include "esp_timer.h"  // 👈 이 줄을 추가해 주세요!
+#include "app_nvs.h"
 static const char *TAG = "BUTTON_CTRL";
 #define BUTTON_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
 
@@ -87,6 +88,7 @@ void bf_LongPress10SecAction(void) {
     ESP_LOGI(TAG,"Long Press 10 Sec Action executed \r\n");
     //delay(1000); 
     //ESP.restart();
+    facto_set(true);
 }
 int button_press_state(void)
 {
@@ -209,4 +211,5 @@ void button_task_init(void)
         ) != pdPASS) {
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");
     }
+    int current_level = gpio_get_level(PIN_PKEY_STAT);
 }

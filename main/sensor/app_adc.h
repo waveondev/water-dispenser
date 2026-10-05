@@ -5,6 +5,6 @@ int GetMotor_adc(void);
 int GetIR_LEFT(void);
 void adc_init(void) ;
 void ADC_Sensing(void);
-
+void IR_SenSing(void);
 #endif
 

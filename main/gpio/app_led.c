@@ -188,7 +188,23 @@ void set_led_clear(void) {
     led_strip_refresh(led_strip); 
     
 }
+void set_rgb_led_for_number(uint32_t index, uint8_t R, uint8_t G, uint8_t B, uint8_t W)
+{
+    if(Breathing_Setting.used)
+        memset(&Breathing_Setting, 0, sizeof(Breathing_Setting_t));
+    if(index >= LED_NUMBERS)
+        return;
+    for(int i=0;i<LED_NUMBERS;i++)
+    {
+         led_strip_set_pixel_rgbw(led_strip, i, 0, 0, 0, 0);
+    }        
+    {
+         led_strip_set_pixel_rgbw(led_strip, index, R, G, B, W);
+    }
+    // 실제 SK6812 칩들로 32비트 정밀 신호 전송
 
+    led_strip_refresh(led_strip); 
+}
 
 static void set_rgb_led(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
 {

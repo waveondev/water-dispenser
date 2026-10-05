@@ -341,6 +341,24 @@ void sntp_init_and_sync(void) {
     esp_sntp_init();
 }
 // 백그라운드 이벤트 핸들러
+#include "esp_timer.h"
+
+#define WIFI_RECONNECT_DELAY_US   (30LL * 60LL * 1000000LL)
+
+static esp_timer_handle_t s_wifi_retry_timer;
+
+
+static void wifi_retry_timer_callback(void *arg)
+{
+    ESP_LOGI(TAG, "30분 경과, WiFi 재연결 시작");
+
+    s_retry_num = 0;
+
+    if (s_allow_reconnect) {
+        esp_wifi_connect();
+    }
+}
+
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                 int32_t event_id, void* event_data)
 {
@@ -361,6 +379,15 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                 } else {
                     xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
                     ESP_LOGE(TAG, "최종 연결 실패 (재시도 횟수 초과)");
+                                // 이미 타이머가 실행 중이 아니라면 시작
+                    if (!esp_timer_is_active(s_wifi_retry_timer)) {
+                        ESP_ERROR_CHECK(
+                            esp_timer_start_once(
+                                s_wifi_retry_timer,
+                                WIFI_RECONNECT_DELAY_US
+                            )
+                        );
+                    }
                 }
             }
     } 
@@ -398,6 +425,16 @@ void wifi_init(void)
     ESP_LOGI("WIFI", "Wi-Fi 초기화 완료! (대기 또는 자동 연결 진행 중)");
 
     app_wifi_config_t* wifi_config = get_wifi_config();
+    const esp_timer_create_args_t timer_args = {
+    .callback = &wifi_retry_timer_callback,
+    .arg = NULL,
+    .dispatch_method = ESP_TIMER_TASK,
+    .name = "wifi_retry"
+    };
+
+    ESP_ERROR_CHECK(
+        esp_timer_create(&timer_args, &s_wifi_retry_timer)
+    );
     if ((wifi_config->conn_ssid[0] != '\0') &&  (wifi_config->conn_password[0] != '\0'))
         Wifi_Connect((char*)wifi_config->conn_ssid,(const char*)wifi_config->conn_password);
 

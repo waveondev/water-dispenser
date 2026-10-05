@@ -15,352 +15,19 @@
 #include "app_config_flash.h"
 #include "aws_iot_task.h"
 #include "ble_tracker_id.h"
-#if 0
-uint32_t _trace_level;
-int _modules;
-static const char *TAG = __FILE__;
-
-// ⭐️ ST 공식 API용 디바이스 구조체 전역 변수 선언 (두 채널 분리)
-static VL53L0X_Dev_t dev_tof0;
-static VL53L0X_Dev_t dev_tof1;
-
-static bool g_tof0_ok = false;
-static uint32_t g_tof0_last_ok_ms = 0;
-
-static bool g_tof1_ok = false;
-static uint32_t g_tof1_last_ok_ms = 0;
-
-static uint16_t tof0_mm;
-static uint16_t tof1_mm;
-uint32_t ts_tof0_ms = 0;
-uint32_t ts_tof1_ms = 0;
-#define FILTER_SIZE 10
-
-static uint32_t TOF_Buf_L[FILTER_SIZE] = {0};
-static uint32_t TOF_Buf_R[FILTER_SIZE] = {0};
-
-static int buffer_idx_L = 0; // Left 센서에 쌓인 데이터 개수 (0 ~ 10)
-static int buffer_idx_R = 0; // Right 센서에 쌓인 데이터 개수 (0 ~ 10)
-
-/**
- * @brief Left 센서 새로운 데이터를 필터 버퍼에 추가하는 함수
- * @param new_value 새로 측정된 센서 값
- */
-static void moving_average_update_l(uint16_t new_value) {
-    if (buffer_idx_L < FILTER_SIZE) {
-        // 1. 10개가 다 안 찼으면 앞에서부터 순서대로 저장
-        TOF_Buf_L[buffer_idx_L] = new_value;
-        buffer_idx_L++;
-    } else {
-        // 2. 10개가 차면 memmove로 밀고 맨 끝(9번)에 최신 데이터 넣음
-        memmove(&TOF_Buf_L[0], &TOF_Buf_L[1], sizeof(uint32_t) * (FILTER_SIZE - 1));
-        TOF_Buf_L[FILTER_SIZE - 1] = new_value;
-    }
-}
-
-/**
- * @brief Right 센서 새로운 데이터를 필터 버퍼에 추가하는 함수
- * @param new_value 새로 측정된 센서 값
- */
-static void moving_average_update_r(uint16_t new_value) {
-    if (buffer_idx_R < FILTER_SIZE) {
-        // 1. 10개가 다 안 찼으면 앞에서부터 순서대로 저장
-        TOF_Buf_R[buffer_idx_R] = new_value;
-        buffer_idx_R++;
-    } else {
-        // 2. 10개가 차면 memmove로 밀고 맨 끝(9번)에 최신 데이터 넣음
-        memmove(&TOF_Buf_R[0], &TOF_Buf_R[1], sizeof(uint32_t) * (FILTER_SIZE - 1));
-        TOF_Buf_R[FILTER_SIZE - 1] = new_value;
-    }
-}
-
-/**
- * @brief Left 센서 현재 쌓인 개수(buffer_idx_L)만큼만 평균을 계산하는 함수
- * @return uint16_t 평균값 (데이터가 없으면 0)
- */
-uint16_t moving_average_get_L(void) {
-    if (buffer_idx_L == 0) {
-        return 0; // 0으로 나누기 예방
-    }
-
-    uint32_t sum = 0;
-    for (int i = 0; i < buffer_idx_L; i++) {
-        sum += TOF_Buf_L[i];
-    }
-
-    return (uint16_t)(sum / buffer_idx_L);
-}
-
-/**
- * @brief Right 센서 현재 쌓인 개수(buffer_idx_R)만큼만 평균을 계산하는 함수
- * @return uint16_t 평균값 (데이터가 없으면 0)
- */
-uint16_t moving_average_get_R(void) {
-    if (buffer_idx_R == 0) {
-        return 0; // 0으로 나누기 예방
-    }
-
-    uint32_t sum = 0;
-    for (int i = 0; i < buffer_idx_R; i++) {
-        sum += TOF_Buf_R[i];
-    }
-
-    return (uint16_t)(sum / buffer_idx_R);
-}
-// 💡 내부 헬퍼 함수: 단일 센서 ST C API 초기화 및 아크릴 보정 
-static bool init_single_vl53l0x(VL53L0X_Dev_t *pDevice, i2c_port_t i2c_port, const char *sensor_name)
-{
-    VL53L0X_Error status;
-    uint32_t refSpadCount;
-    uint8_t isApertureSpads;
-    uint8_t VhvSettings;
-    uint8_t PhaseCal;
-
-    // 1. 플랫폼 바인딩 세팅 (I2C 포트와 기본 주소 0x29)
-    pDevice->i2c_port_num = i2c_port;
-    pDevice->i2c_address  = 0x29; 
-
-    // 2. ST C API 기본 데이터 및 스태틱 초기화
-    status = VL53L0X_DataInit(pDevice);
-    if (status != VL53L0X_ERROR_NONE) {
-        ESP_LOGE(TAG, "[%s] DataInit Failed: %d", sensor_name, status);
-        return false;
-    }
-    status = VL53L0X_StaticInit(pDevice);
-    if (status != VL53L0X_ERROR_NONE) {
-        ESP_LOGE(TAG, "[%s] StaticInit Failed: %d", sensor_name, status);
-        return false;
-    }
-
-    // 3. SPAD 관리 및 내부 기준치 온도시정(Calibration)
-    status = VL53L0X_PerformRefSpadManagement(pDevice, &refSpadCount, &isApertureSpads);
-    if (status != VL53L0X_ERROR_NONE) return false;
-
-    status = VL53L0X_PerformRefCalibration(pDevice, &VhvSettings, &PhaseCal);
-    if (status != VL53L0X_ERROR_NONE) return false;
-
-    // 4. 싱글 측정 모드 및 타임예산(33ms) 세팅
-    status = VL53L0X_SetDeviceMode(pDevice, VL53L0X_DEVICEMODE_SINGLE_RANGING);
-    if (status != VL53L0X_ERROR_NONE) return false;
-
-    status = VL53L0X_SetMeasurementTimingBudgetMicroSeconds(pDevice, 33000);
-    if (status != VL53L0X_ERROR_NONE) return false;
-
-    // 5. ⭐️ [핵심] 아크릴 크로스토크(Xtalk) 자동 학습 보정 ⭐️
-    // ⚠️ 주의: 기기에 아크릴을 조립한 상태에서 센서 정면 정확히 10cm(100mm) 지점에 하얀 벽/종이를 대고 전원을 켜야 합니다!
-    FixPoint1616_t target_distance_mm = 100;
-    uint32_t xtalk_rate_mcps = 0;
-
-    ESP_LOGI(TAG, "[%s] 아크릴 반사광(Xtalk) 보정 연산 시작... (10cm 앞에 타겟 유지 필요)", sensor_name);
-    status = VL53L0X_PerformXTalkCalibration(pDevice, target_distance_mm, &xtalk_rate_mcps);
-    
-    if (status == VL53L0X_ERROR_NONE) {
-        ESP_LOGI(TAG, "[%s] 아크릴 보정 완료! 노이즈 세기: %d Mcps", sensor_name, (int)xtalk_rate_mcps);
-        VL53L0X_SetXTalkCompensationEnable(pDevice, 1); // 보정 엔진 활성화
-    } else {
-        ESP_LOGE(TAG, "[%s] 아크릴 보정 실패 (%d). 보정 없이 측정을 진행합니다.", sensor_name, status);
-        VL53L0X_SetXTalkCompensationEnable(pDevice, 0);
-    }
-
-    return true;
-}
-#include "ble_tracker_id.h"
-#include "debug_cli.h"
-// 💡 센서가 정상적으로 응답하는지 체크하는 디텍트 함수
-bool VL53L0X_Detect(bool all_state)
-{
-    bool condition_tof0 = false;
-    bool condition_tof1 = false;
-    app_config_t* app_config = get_app_config();
-    // TOF0 조건 체크
-    if (g_tof0_ok) {
-        if (moving_average_get_L() > 60 && moving_average_get_L() < app_config->tof_sense_threshold_l) {
-            condition_tof0 = true;
-        }
-    }
-
-    // TOF1 조건 체크
-    if (g_tof1_ok) {
-        if (moving_average_get_R() > 60 && moving_average_get_R() < app_config->tof_sense_threshold_r) {
-            condition_tof1 = true;
-        }
-    }
-    DBG_Resister_t *DBG_Resister = Debug_Get();
-    if(DBG_Resister->TOF)
-    {
-        if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm(raw = %4d)", moving_average_get_L() ,tof0_mm);
-        else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
-        if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", moving_average_get_R(),tof1_mm);
-        else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
-    }
-
-    if(all_state)
-    {
-        if(GetTracker_Id_active())
-        {
-            // ESP_LOGI(TAG,"ADC = traker");
-                         return true;
-        }
-
-    }
-
-
-    // ⭐️ 둘 중에 하나라도 조건을 만족(OR 연산)하면 true 반환, 둘 다 아니면 false 반환
-    if (condition_tof0 || condition_tof1) {
-        #if 0
-        if (g_tof0_ok) ESP_LOGI(TAG, "  [TOF0] Distance: %4d mm(raw = %4d)", moving_average_get_L() ,tof0_mm);
-        else           ESP_LOGW(TAG, "  [TOF0] DISCONNECTED");
-        if (g_tof1_ok) ESP_LOGI(TAG, "  [TOF1] Distance: %4d mm(raw = %4d)", moving_average_get_R(),tof1_mm);
-        else           ESP_LOGW(TAG, "  [TOF1] DISCONNECTED");
-        #endif
-
-        return true;
-    } else {
-        return false;
-    }
-}
-
-// 💡 주기적으로 호출하여 센서 데이터를 읽어오는 함수 (100ms 등 태스크 내부 딜레이 주기 필수)
-void VL53L0X_Sensing(void)
-{
-    VL53L0X_RangingMeasurementData_t measure_data0;
-    VL53L0X_RangingMeasurementData_t measure_data1;
-    uint32_t now_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
-    // --- TOF0 (I2C 포트 0) 측정 ---
-    if (g_tof0_ok) {
-        VL53L0X_Error err0 = VL53L0X_PerformSingleRangingMeasurement(&dev_tof0, &measure_data0);
-        if (err0 == VL53L0X_ERROR_NONE && measure_data0.RangeStatus == 0) {
-            tof0_mm = measure_data0.RangeMilliMeter; // 아크릴 노이즈가 제거된 깨끗한 실제 거리
-            ts_tof0_ms = now_ms;
-            g_tof0_last_ok_ms = now_ms;
-        } else if (measure_data0.RangeStatus == 2 || measure_data0.RangeStatus == 4) {
-            // 허공이거나 너무 멀어서 측정이 안 된 경우 -> 장애물이 없다는 뜻!
-            tof0_mm = 8190; // VL53L0X의 최대 에러 값(Out of Range) 대입 또는 무시
-            // ESP_LOGD(TAG, "TOF0: 물체가 감지 범위를 벗어났습니다. (Status: %d)", measure_data0.RangeStatus);
-        }
-        else {
-            ESP_LOGW(TAG, "TOF0 Range Status Warning: %d", measure_data0.RangeStatus);
-        }
-    }
-
-    // --- TOF1 (I2C_PORT 1) 측정 ---
-    if (g_tof1_ok) {
-        VL53L0X_Error err1 = VL53L0X_PerformSingleRangingMeasurement(&dev_tof1, &measure_data1);
-        if (err1 == VL53L0X_ERROR_NONE && measure_data1.RangeStatus == 0) {
-            tof1_mm = measure_data1.RangeMilliMeter; // 아크릴 노이즈가 제거된 깨끗한 실제 거리
-            ts_tof1_ms = now_ms;
-            g_tof1_last_ok_ms = now_ms;
-        } else if (measure_data1.RangeStatus == 2 || measure_data1.RangeStatus == 4) {
-            // 허공이거나 너무 멀어서 측정이 안 된 경우 -> 장애물이 없다는 뜻!
-            tof1_mm = 8190; // VL53L0X의 최대 에러 값(Out of Range) 대입 또는 무시
-            // ESP_LOGD(TAG, "TOF0: 물체가 감지 범위를 벗어났습니다. (Status: %d)", measure_data0.RangeStatus);
-        }
-        else {
-            ESP_LOGW(TAG, "TOF1 Range Status Warning: %d", measure_data1.RangeStatus);
-        }
-    }
-
-    moving_average_update_l(tof0_mm);
-    moving_average_update_r(tof1_mm);
-}
-
-bool TOF_VL53L0X_init(void)
-{
-    #if 0
-    // -------------------------------------------------------------
-    // 1. I2C 포트 1 초기화 (TOF1용)
-    // -------------------------------------------------------------
-    gpio_config_t io_conf_int1 = {
-        .pin_bit_mask = (1ULL << PIN_TOF1_INT), // 연결하신 INT 핀 번호
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,          // 💡 핵심: Float 대신 내부 풀업 활성화!
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_NEGEDGE            // 인터럽트를 쓴다면 하강 엣지, 안 쓰면 DISABLE
-    };
-    gpio_config(&io_conf_int1);
-    #endif
-
-    i2c_config_t i2c_bus1_cfg = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = PIN_TOF1_I2C_SDA,
-        .sda_pullup_en = GPIO_PULLUP_DISABLE,
-        .scl_io_num = PIN_TOF1_I2C_SCL,
-        .scl_pullup_en = GPIO_PULLUP_DISABLE,
-        .master.clk_speed = 100000,
-    };
-    
-    if (i2c_param_config(I2C_NUM_0, &i2c_bus1_cfg) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to config I2C Port 1");
-    }
-    if (i2c_driver_install(I2C_NUM_0, i2c_bus1_cfg.mode, 0, 0, 0) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install I2C Port 1");
-    }
-
-   //vTaskDelay(pdMS_TO_TICKS(500));
-#if 0
-    // -------------------------------------------------------------
-    // 2. I2C 포트 0 초기화 (TOF0용)
-    // -------------------------------------------------------------
-    gpio_config_t io_conf_int0 = {
-        .pin_bit_mask = (1ULL << PIN_TOF0_INT), // 연결하신 INT 핀 번호
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,          // 💡 핵심: Float 대신 내부 풀업 활성화!
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_NEGEDGE            // 인터럽트를 쓴다면 하강 엣지, 안 쓰면 DISABLE
-    };
-    gpio_config(&io_conf_int0);
-#endif
-    i2c_config_t i2c_bus0_cfg = {
-        .mode = I2C_MODE_MASTER,
-        .sda_io_num = PIN_TOF0_I2C_SDA,
-        .sda_pullup_en = GPIO_PULLUP_DISABLE,
-        .scl_io_num = PIN_TOF0_I2C_SCL,
-        .scl_pullup_en = GPIO_PULLUP_DISABLE,
-        .master.clk_speed = 100000, // 400kHz
-    };
-    
-    if (i2c_param_config(I2C_NUM_0, &i2c_bus0_cfg) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to config I2C Port 0");
-    }
-    if (i2c_driver_install(I2C_NUM_0, i2c_bus0_cfg.mode, 0, 0, 0) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install I2C Port 0");
-    }
-
-    //vTaskDelay(pdMS_TO_TICKS(100));
-
-    // -------------------------------------------------------------
-    // 3. ⭐️ ST 공식 C API를 이용한 하드웨어 엔진 캘리브레이션 구동 ⭐️
-    // -------------------------------------------------------------
-    ESP_LOGI(TAG, "Starting VL53L0X Pure C Initialization...");
-
-    g_tof0_ok = init_single_vl53l0x(&dev_tof0, I2C_NUM_0, "TOF0_PORT0");
-    g_tof1_ok = init_single_vl53l0x(&dev_tof1, I2C_NUM_0, "TOF1_PORT1");
-
-    if (g_tof0_ok && g_tof1_ok) {
-        ESP_LOGI(TAG, "🎉 양쪽 TOF 센서 모두 아크릴 보정 및 초기화 완벽 성공!");
-    } else {
-        ESP_LOGE(TAG, "⚠️ 일부 센서 초기화 실패 (TOF0: %s, TOF1: %s)", 
-                 g_tof0_ok ? "OK" : "FAIL", g_tof1_ok ? "OK" : "FAIL");
-    }
-
-    return (g_tof0_ok && g_tof1_ok);
-}
-
-
-#else
+#if 1
 
 #include <stdio.h>
 #include <string.h>
-#include "esp_log.h"
-#include "driver/i2c.h"  // 🔴 구형 레거시 드라이버 헤더
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "esp_adc/adc_oneshot.h"
 #include "app_adc.h"
+#include "driver/ledc.h"
+
+
 
 static const char *TAG = "IR_TEST";
 static int ir_count = 0;
+bool detect_object(void);
 bool VL53L0X_Detect(bool all_state)
 {
     if(all_state)
@@ -380,41 +47,122 @@ bool VL53L0X_Detect(bool all_state)
     }
     #endif
 }
+int left_value = 0;
+int right_value = 0;
 void detect_task(void)
 {
     app_config_t* app_config = get_app_config();
-    if (GetIR_LEFT() > app_config->tof_sense_threshold_l || GetIR_RIGHT() > app_config->tof_sense_threshold_r) {
+    if (left_value > app_config->tof_sense_threshold_l || right_value > app_config->tof_sense_threshold_r) {
         if(ir_count < 10)
             ir_count++;
         
     } else {
         if(ir_count)
-            ir_count--;
+            ir_count=0;
     }
 }
 
 
 void VL53L0X_Sensing(void)
 {
-    gpio_set_level(IR_ENABLE, 1);   
     ADC_Sensing();
-    gpio_set_level(IR_ENABLE, 0); 
+    detect_object();
     detect_task();
 }
 
-bool TOF_VL53L0X_init(void)
-{
-    gpio_config_t io_conf = {                   
-        .pin_bit_mask =(1ULL << IR_ENABLE),             // 설정할 GPIO 핀 15, 16, 2 지정
-        .mode = GPIO_MODE_OUTPUT,             // 출력 모드로 설정
-        .pull_up_en = GPIO_PULLUP_DISABLE,    // 내부 풀업 비활성화
-        .pull_down_en = GPIO_PULLDOWN_DISABLE, // 내부 풀다운 활성화 (기본 LOW 상태 유지)
-        .intr_type = GPIO_INTR_DISABLE,       // 인터럽트 사용 안 함
+
+
+// ================= 설 정 값 =================
+// TX (발광부) 설정
+
+#define LEDC_TIMER          LEDC_TIMER_0
+#define LEDC_MODE           LEDC_LOW_SPEED_MODE
+#define LEDC_CHANNEL        LEDC_CHANNEL_1
+#define LEDC_DUTY           127             // 50% Duty Cycle (8비트 기준 127)
+#define LEDC_FREQUENCY      38000           // 38kHz
+
+// RX (수광부) 설정
+#define IR_RX_ADC_UNIT      ADC_UNIT_1      
+#define IR_RX_ADC_CHANNEL   ADC_CHANNEL_6   // GPIO34에 해당 (보드에 맞게 변경)
+#define DETECT_THRESHOLD    300             // 물체 감지 임계값 (환경에 맞게 튜닝 필요)
+
+// ADC 핸들 전역 변수
+adc_oneshot_unit_handle_t adc_handle;
+
+// ================= 함수 구현 =================
+
+// 1. 발광부(TX) PWM 초기화
+bool TOF_VL53L0X_init(void) {
+    ledc_timer_config_t ledc_timer = {
+        .speed_mode       = LEDC_MODE,
+        .timer_num        = LEDC_TIMER,
+        .duty_resolution  = LEDC_TIMER_8_BIT,
+        .freq_hz          = LEDC_FREQUENCY, 
+        .clk_cfg          = LEDC_AUTO_CLK
     };
-    gpio_config(&io_conf);
-    gpio_set_level(IR_ENABLE, 1); 
+    ledc_timer_config(&ledc_timer);
+
+    ledc_channel_config_t ledc_channel = {
+        .speed_mode     = LEDC_MODE,
+        .channel        = LEDC_CHANNEL,
+        .timer_sel      = LEDC_TIMER,
+        .intr_type      = LEDC_INTR_DISABLE,
+        .gpio_num       = IR_ENABLE,
+        .duty           = 0, // 처음엔 꺼둠
+        .hpoint         = 0
+    };
+    ledc_channel_config(&ledc_channel);
     return true;
 }
 
+void ir_tx_enable(bool enable) {
+    if (enable) {
+        ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, LEDC_DUTY);
+    } else {
+        ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 0);
+    }
+    ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
+}
+
+// 4. 핵심 로직: 물체 감지 (배경광 빼기)
+bool detect_object(void) {
+    int val_left_off = 0;
+    int val_left_on = 0;
+    int val_right_off = 0;
+    int val_right_on = 0;
+
+    // 단계 1: TX OFF 상태에서 주변 태양광(노이즈) 측정
+    ir_tx_enable(false);
+    IR_SenSing();
+    
+
+    val_left_off = GetIR_LEFT();
+    val_right_off = GetIR_RIGHT();
+    // 단계 2: TX ON 상태에서 (태양광 + 반사된 IR 빛) 측정
+    ir_tx_enable(true);
+    vTaskDelay(1);
+    IR_SenSing();
+
+    val_left_on = GetIR_LEFT();
+    val_right_on = GetIR_RIGHT();
+
+    // 단계 3: TX 다시 OFF
+    ir_tx_enable(false);
+
+    // 단계 4: 차이값 계산 (절댓값)
+    left_value = (val_left_on - val_left_off -(val_left_off/50)*4);
+    if(left_value < 0)
+    left_value = 0;
+
+    right_value = (val_right_on - val_right_off - (val_right_off/50)*4);
+    if(right_value < 0)
+    right_value = 0;
+   // ESP_LOGI(TAG, "LEFT  - OFF: %d | ON: %d | Delta: %d", val_left_off, val_left_on, left_value);
+   // ESP_LOGI(TAG, "RIGHT - OFF: %d | ON: %d | Delta: %d", val_right_off, val_right_on, right_value);
+
+    return false;
+}   
+
+#else
 
 #endif

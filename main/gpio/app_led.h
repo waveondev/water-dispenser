@@ -49,4 +49,5 @@ bool Filter_water_enable(void);
 bool Filter_debris_enable(void);
 bool Pump_error_enable(void);
 void wifi_connect_success(void);
+void set_rgb_led_for_number(uint32_t index, uint8_t R, uint8_t G, uint8_t B, uint8_t W);
 #endif

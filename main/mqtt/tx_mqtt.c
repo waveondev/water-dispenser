@@ -17,7 +17,7 @@ static uint16_t water_fault_code_send = 0;
 static uint16_t water_fault_code_buf = 0;
 #define WATER_MAJOR 1
 #define WATER_MINOR 1
-#define WATER_PATCH 1
+#define WATER_PATCH 2
 void water_fault_enable(uint16_t status)
 {
     water_fault_code |= status;
@@ -85,6 +85,9 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd)
         case TRACKER_MESSEGE_ACTIVITY:
             cJSON_AddStringToObject(root, "event_type", "activity");
         break;
+        case TRACKER_MESSEGE_DIAGNOSTICS:
+            cJSON_AddStringToObject(root, "event_type", "diagnostics");
+        break;        
         case TRACKER_MESSEGE_HEALTH:
             cJSON_AddStringToObject(root, "event_type", "health");
         break;
@@ -380,7 +383,7 @@ static cJSON* Get_cJSON_Data_for_Tracker(messege_tx_mqtt_cmd_e cmd, tracker_mqtt
 {
     cJSON *data_obj = cJSON_CreateObject();
     Motion_Packet_t* packet = &tracker_mqtt_packet->packet;
-    const uint16_t * points;
+    const uint8_t * points;
     char dynamicMacStr[30]; // 12자리 MAC 문자열 + 널 종료 문자(\0)
     cJSON *subsystems;
     if(data_obj == NULL)
@@ -395,13 +398,12 @@ static cJSON* Get_cJSON_Data_for_Tracker(messege_tx_mqtt_cmd_e cmd, tracker_mqtt
             cJSON_AddStringToObject(data_obj, "tracker_id", dynamicMacStr); // 예: "TRACKER_AABBCCDDEEFF"        
             cJSON_AddStringToObject(data_obj, "activity_id", "123e4567-e89b-12d3-a456-426614174000");
             cJSON_AddNumberToObject(data_obj, "seq_num", packet->motion_data.seq);
-            cJSON_AddNumberToObject(data_obj, "interval_min", motion_res.motion_req.interval);
-            cJSON_AddNumberToObject(data_obj, "total_points", motion_res.motion_req.total_points);
+            cJSON_AddNumberToObject(data_obj, "total_points", motion_res.motion_req.total_points);            
+            cJSON_AddNumberToObject(data_obj, "send_points", motion_res.motion_req.send_points);
             // 4. points 배열 추가 (uint16_t 그대로 추가, 비트 언패킹은 백엔드가 수행)
             cJSON *points_array = cJSON_CreateArray();
-// pack_data 포인터를 배열처럼 접근하기 위해 uint16_t 포인터로 캐스팅
-            points = (const uint16_t *)tracker_mqtt_packet->data;
 
+            points = (const uint8_t *)tracker_mqtt_packet->data;
 
             for (int i = 0; i < tracker_mqtt_packet->data_len; i++) {
                 cJSON_AddItemToArray(points_array, cJSON_CreateNumber(points[i]));
@@ -608,7 +610,7 @@ void Send_cJSON_Messege_for_tracker(tracker_mqtt_packet_t* tracker_mqtt_packet)
     if(packet->event_code == MOTION_START_RESPONSE)
     {
         memcpy(&motion_res,&tracker_mqtt_packet->packet,sizeof(Motion_Packet_t));
-        ESP_LOGI(TAG,"total = %d interval = %d ",motion_res.motion_req.total_points,motion_res.motion_req.interval);
+        ESP_LOGI(TAG,"total = %d send = %d ",motion_res.motion_req.total_points,motion_res.motion_req.send_points);
         return;
     }
     cJSON* root = Get_cJSON_Header(cmd);
@@ -643,6 +645,10 @@ void Send_cJSON_Messege_for_tracker(tracker_mqtt_packet_t* tracker_mqtt_packet)
         {
             case TRACKER_MESSEGE_ACTIVITY:
                 snprintf(pub_topic,sizeof(pub_topic),TRACKER_TX_TOPIC_ACTIVITY,dynamicMacStr);
+            break;
+            case TRACKER_MESSEGE_DIAGNOSTICS:
+                snprintf(pub_topic,sizeof(pub_topic),TRACKER_TX_TOPIC_DIAGNOSTICS,dynamicMacStr);
+            break;            
             break;
             case TRACKER_MESSEGE_HEALTH:
                 snprintf(pub_topic,sizeof(pub_topic),TRACKER_TX_TOPIC_HEALTH,dynamicMacStr);

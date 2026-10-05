@@ -1,7 +1,7 @@
 
 #include <stdio.h>
 #include "app_moter.h"
-#include "driver/ledc.h"
+
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -13,13 +13,14 @@
 #include "tx_mqtt.h"
 #include "aws_iot_task.h"
 #if 0
+#include "driver/ledc.h"
 #define MOTOR_IN1_GPIO       (PIN_PUMP_PWM)
 
 
 #define LEDC_MODE            LEDC_LOW_SPEED_MODE
 #define LEDC_TIMER           LEDC_TIMER_0
 #define LEDC_DUTY_RES        LEDC_TIMER_10_BIT  // 10비트 해상도 (0 ~ 1023)
-#define LEDC_FREQUENCY       (20000)            // 20kHz 설정
+#define LEDC_FREQUENCY       (3000)            // 20kHz 설정
 
 #define LEDC_CH0_MOTOR_IN1   LEDC_CHANNEL_0
 static const char *TAG = __FILE__;
@@ -68,13 +69,6 @@ void init_motor_ledc(void) {
     #endif
 }
 
-// 모터 제어 함수 (speed: -1023 ~ 1023)
-void set_motor_speed(int speed) {
-    uint32_t duty = (speed < 0) ? -speed : speed;
-    if (duty > 1023) duty = 1023; // Max Duty 제한
-    ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CH0_MOTOR_IN1, duty));
-    ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CH0_MOTOR_IN1));
-}
 
 // 모터 제어 함수 (percentage: 0 ~ 100)
 void set_motor_speed_percent(int percentage) 
@@ -272,7 +266,35 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
 
     xTaskCreate(motor_boost_task, "motor_boost_task", 2048, (void *)args, 5, &xMotorBoostTaskHandle);
 }
+static uint32_t* Motor_Used_Time;
+static uint32_t* Filter_Used_Time;
+#define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)
+static volatile bool filter_send_flag = false; // volatile 추가
+static volatile bool moter_send_flag = false; // volatile 추가
 
+void motor_change(void)
+{
+    (*Motor_Used_Time) = 0;
+    motor_nvs_save_set();
+    led_bit_disable(FILTER_WATER_BIT);
+    water_fault_disable(WATER_FILTER_WATER_EX);
+    moter_send_flag = false;
+}
+void filter_change(void)
+{
+    (*Filter_Used_Time) = 0;
+    filter_nvs_save_set();
+    led_bit_disable(FILTER_DEBRIS_BIT);
+    water_fault_disable(WATER_FILTER_DEBRIS_EX);
+    filter_send_flag = false;
+}
+void Clean_Mode_Disable(void)
+{
+    duration_sec_buf = 0;
+    current_target_percentage = 0;
+    set_motor_speed_percent(0);
+    led_bit_disable(CLEAN_MODE_BIT); 
+}
 #else
 #include "driver/rmt_tx.h"
 #include "app_adc.h"
@@ -280,9 +302,7 @@ rmt_channel_handle_t pwm_chan = NULL;
 rmt_encoder_handle_t copy_encoder = NULL;
 
 #define MOTOR_IN1_GPIO       (PIN_PUMP_PWM)
-#define LEDC_FREQUENCY       (20000000)            // 20kHz 설정
-
-#define LEDC_CH0_MOTOR_IN1   LEDC_CHANNEL_0
+#define LEDC_FREQUENCY      ( 20 * 1000 * 1000)            // 20kHz 설정
 static const char *TAG = __FILE__;
 static int current_target_percentage = 0; 
 static uint32_t* Motor_Used_Time;
@@ -290,41 +310,40 @@ static esp_timer_handle_t Motor_used_timer;
 
 // 모터 제어 함수 (percentage: 0 ~ 100)
 void set_motor_speed_percent(int percentage) {
-    static rmt_symbol_word_t pwm_symbol;
+// DMA가 없을 때는 internal RAM을 채우기 위해 4개 심볼 배열 구성
+    static rmt_symbol_word_t pwm_symbols[4]; 
     
-    // 1. 안전한 범위 제한
     if (percentage < 0) percentage = 0;
     if (percentage > 100) percentage = 100;
 
-    uint32_t total_ticks = 1000; // 1000틱 = 50us = 20kHz
+    uint32_t total_ticks = 1000; // 1000틱 = 50us (20kHz)
     uint32_t high_ticks = (total_ticks * percentage) / 100;
     uint32_t low_ticks = total_ticks - high_ticks;
 
+    // 타이머 제어
     if (esp_timer_is_active(Motor_used_timer)) {
         esp_timer_stop(Motor_used_timer);
     }
-    if(percentage)
-        ESP_ERROR_CHECK(esp_timer_start_periodic(Motor_used_timer, 1000000));    
+    if (percentage > 0) {
+        ESP_ERROR_CHECK(esp_timer_start_periodic(Motor_used_timer, 1000000));
+    }
 
-    // 2. v5.x 방식: 구조체에 직접 레벨(Level)과 지속시간(Duration) 대입
+    // 듀티에 따른 심볼 패턴 작성
+    rmt_symbol_word_t sym;
     if (percentage == 100) {
-        // 100% 듀티: 계속 High (0 방지용으로 반반 쪼개기)
-        pwm_symbol.level0 = 1;
-        pwm_symbol.duration0 = total_ticks / 2;
-        pwm_symbol.level1 = 1;
-        pwm_symbol.duration1 = total_ticks - (total_ticks / 2);
+        sym.level0 = 1; sym.duration0 = total_ticks / 2;
+        sym.level1 = 1; sym.duration1 = total_ticks / 2;
     } else if (percentage == 0) {
-        // 0% 듀티: 계속 Low
-        pwm_symbol.level0 = 0;
-        pwm_symbol.duration0 = total_ticks / 2;
-        pwm_symbol.level1 = 0;
-        pwm_symbol.duration1 = total_ticks - (total_ticks / 2);
+        sym.level0 = 0; sym.duration0 = total_ticks / 2;
+        sym.level1 = 0; sym.duration1 = total_ticks / 2;
     } else {
-        // 일반 PWM: High 이후 Low
-        pwm_symbol.level0 = 1;
-        pwm_symbol.duration0 = high_ticks;
-        pwm_symbol.level1 = 0;
-        pwm_symbol.duration1 = low_ticks;
+        sym.level0 = 1; sym.duration0 = high_ticks;
+        sym.level1 = 0; sym.duration1 = low_ticks;
+    }
+
+    // 4개 심볼 공간에 동일 파형 복사 (Internal RAM 순환 안정화)
+    for (int i = 0; i < 4; i++) {
+        pwm_symbols[i] = sym;
     }
 
     // 3. 무한 루프 송출 설정 (-1)
@@ -336,7 +355,7 @@ void set_motor_speed_percent(int percentage) {
     rmt_enable(pwm_chan);
 
     // 4. DMA를 통해 심볼 전송 시작 (기존 송출을 덮어씀)
-    ESP_ERROR_CHECK(rmt_transmit(pwm_chan, copy_encoder, &pwm_symbol, sizeof(pwm_symbol), &tx_config));
+    ESP_ERROR_CHECK(rmt_transmit(pwm_chan, copy_encoder, pwm_symbols, sizeof(pwm_symbols), &tx_config));
 
 }
 
@@ -436,7 +455,7 @@ static void motor_boost_task(void *pvParameters)
                         for(int i = 0;i<50;i++)
                         {
                             vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
-                            ESP_LOGI(TAG,"100 = %d",i);
+                           // ESP_LOGI(TAG,"100 = %d",i);
                             if(current_target_percentage == 0)
                             break;
                         }
