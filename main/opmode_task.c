@@ -194,7 +194,7 @@ void Smart_Water(void)
         // 💡 시작 무게(또는 직전 데이터)와 비교해 급격하게 50g 이상 위아래로 튀었는지 검사
         // (fabs를 써서 +50g 스파이크나 -50g 드롭을 모두 잡아냅니다)
             
-        if (fabsf(current_w - start_weight) >= app_config->splash_delta_g) 
+        if (current_w > 0 && fabsf(current_w - start_weight) >= app_config->splash_delta_g) 
         {
             splash_count++;
 

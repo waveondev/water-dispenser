@@ -82,6 +82,9 @@ float loadcell_data_get(void)
 
 void HX711_Sensing(void)
 {
+    static float before_weight = 0;
+    static uint32_t bowl_count = 0;
+    static uint32_t water_low_count = 0;
     static float water_increase_data = 0;
     static uint32_t water_increase_count = 0;
     esp_err_t r;
@@ -118,49 +121,88 @@ void HX711_Sensing(void)
         if(water_increase_count > 10)
         {
             ESP_LOGI(TAG, "water_increase = %d", water_increase_count);
+
+            //물붓기
+
         }
         water_increase_count = 0;
     }
     water_increase_data = hx711_data_buf;
+
+
+
+
     float safe_min_threshold = (float)app_config->min_weight_threshold; 
 
-
-
-    if(loadcell_data_get() < -30.0f)//물그릇 탐지
+    if(before_weight == 0.0f)
+        before_weight = loadcell_data_get();
+    
+    float currunt_weight = loadcell_data_get();
+    float safe_release_threshold = safe_min_threshold + 10.0f; 
+    // 3. 이전 무게보다 50 이상 갑자기 줄었는지 검사
+    if (currunt_weight < 0 && currunt_weight < (before_weight - 50.0f))
+    {
+        if(bowl_count < 10)
+            bowl_count++;
+    }
+    else 
+    {
+        // 정상 범위(무게가 유지되거나 늘어나거나, 50 미만으로 살짝 줄었을 때)는
+        // 현재 무게를 다음 비교를 위한 before_weight로 갱신
+        before_weight = currunt_weight;
+        bowl_count = 0;
+    }
+    if(bowl_count >= 10)
     {
         if(!led_bit_status(HARDWARE_ERR_BIT))
         {
             led_bit_enable(HARDWARE_ERR_BIT);
             water_fault_enable(WATER_BOWL_DETACHED_FAULT);
-        }
+        }   
     }
     else
     {
+        if(led_bit_status(HARDWARE_ERR_BIT))
+        {
+            led_bit_disable(HARDWARE_ERR_BIT);
+            water_fault_disable(WATER_BOWL_DETACHED_FAULT);
+        }      
+
         // 💡 이제 안전한 로컬 변수끼리만 비교합니다.
         if (loadcell_data_get() < safe_min_threshold) // 물부족
+        {
+            if(water_low_count < 10)
+                water_low_count++;
+
+        }
+        else
+        {
+            water_low_count = 0;
+        }
+
+        if(water_low_count >= 10)
         {
             if(!led_bit_status(WATER_LOW_BIT))
             {
                 led_bit_enable(WATER_LOW_BIT);
                 water_fault_enable(WATER_LOW_FAULT);
             }       
-        }       
+        }
+        else
+        {
+            if(led_bit_status(WATER_LOW_BIT))
+            {
+                led_bit_disable(WATER_LOW_BIT);
+                water_fault_disable(WATER_LOW_FAULT);
+            }
+        }
     }
 
     // 💡 3. 에러 해제 조건식도 안전한 로컬 변수로 교체합니다.
     // 흔들림 방지(히스테리시스)를 위해 임계값(200)보다 1g 큰 safe_min_threshold + 1.0f(즉, 201.0f)로 대칭을 맞춥니다.
-    float safe_release_threshold = safe_min_threshold + 10.0f; 
 
-    if(loadcell_data_get() > 0)
-    {
-        led_bit_disable(HARDWARE_ERR_BIT);
-        water_fault_disable(WATER_BOWL_DETACHED_FAULT);
-    }
-    if(loadcell_data_get() > safe_release_threshold)
-    {
-        led_bit_disable(WATER_LOW_BIT);
-        water_fault_disable(WATER_LOW_FAULT);
-    }
+
+ 
 }
 
 #define HX711_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)

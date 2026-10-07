@@ -9,7 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-#include "driver/i2c.h"
+
 #include "vl53l0x_api.h"
 #include "vl53l0x_platform.h"
 #include "app_config_flash.h"

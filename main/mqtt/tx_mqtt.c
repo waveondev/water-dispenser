@@ -13,21 +13,19 @@ static const char *TAG = __FILE__;
 Motion_Packet_t motion_res;
 Motion_Packet_t health_res;
 static uint16_t water_fault_code = 0;
-static uint16_t water_fault_code_send = 0;
 static uint16_t water_fault_code_buf = 0;
 #define WATER_MAJOR 1
 #define WATER_MINOR 1
-#define WATER_PATCH 2
+#define WATER_PATCH 3
 void water_fault_enable(uint16_t status)
 {
     water_fault_code |= status;
     if(water_fault_code != water_fault_code_buf)
     {
-        water_fault_code_send = status;
         water_fault_code_buf = water_fault_code;
-        ESP_LOGI(TAG,"MESSEGE_DIAGNOSTICS = %04x", water_fault_code_send);
+        ESP_LOGI(TAG,"MESSEGE_DIAGNOSTICS = %04x", status);
         
-        mqtt_queue_send(MESSEGE_DIAGNOSTICS,NULL,0);
+        mqtt_queue_send(MESSEGE_DIAGNOSTICS,&status,sizeof(status));
     }
 }
 
@@ -37,7 +35,7 @@ void water_fault_disable(uint16_t status)
     if(water_fault_code != water_fault_code_buf)
     {
         water_fault_code_buf = water_fault_code;
-       // mqtt_queue_send(MESSEGE_DIAGNOSTICS);
+        mqtt_queue_send(MESSEGE_DIAGNOSTICS,&status,sizeof(status));
     }
 }
 
@@ -138,6 +136,8 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
     DRINK_Packet_t *DRINK_Packet = NULL;
     esp_reset_reason_t reason = esp_reset_reason();
     double weight = 0;
+    uint16_t water_fault_code_send = 0;
+
     // 현재 연결된 AP 정보 가져오기 (성공 시 ESP_OK 반환)
     if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) 
     {
@@ -256,104 +256,209 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
             cJSON_AddStringToObject(data_obj, "alert_type", "NONE");
         break;
         case MESSEGE_DIAGNOSTICS:
-            // 2. 공통 스칼라 필드 추가
-
+            // 1. 공통 스칼라 필드 추가
+            if(mqtt_packet->data != NULL)
+                memcpy(&water_fault_code_send,mqtt_packet->data,sizeof(water_fault_code_send));
             cJSON_AddNumberToObject(data_obj, "uptime_sec", uptime);
             cJSON_AddNumberToObject(data_obj, "reset_reason", reason);
             cJSON_AddNumberToObject(data_obj, "rssi_dbm", rssi);
 
+            // 2. subsystems 맵 생성 (W-100 규격 8종 키)
             subsystems = cJSON_CreateObject();
-            cJSON_AddStringToObject(subsystems, "water_supply", "ok");
-            cJSON_AddStringToObject(subsystems, "motor.pump", "ok"); // 펌프 에러 발생
-            cJSON_AddStringToObject(subsystems, "loadcell", "ok");
-            cJSON_AddStringToObject(subsystems, "tof", "ok");
-            cJSON_AddStringToObject(subsystems, "ble", "ok");
-            cJSON_AddStringToObject(subsystems, "uv", "ok");
-            cJSON_AddStringToObject(subsystems, "filter.water", "ok");
-            cJSON_AddStringToObject(subsystems, "filter.debris", "ok");
-            cJSON_AddStringToObject(subsystems, "power",         "ok");
-            if (water_fault_code_send & WATER_LOW_FAULT) {
-               cJSON_AddNumberToObject(subsystems, "water_level", 1);
+
+            // 각 서브시스템 상태 판정 (에러 발생 시 "fault", 정상 시 "ok")
+            if(water_fault_code_buf & (WATER_LOW_FAULT | WATER_EMPTY_FAULT))
+            {
+                cJSON_AddStringToObject(subsystems, "water_supply","fault");           
             }
             else
-               cJSON_AddNumberToObject(subsystems, "water_level", 0);    
-            app_config_t* app_config = get_app_config();
-            cJSON_AddNumberToObject(subsystems, "current_mode", app_config->op_mode); // Current Mode 추가        
+            {
+                cJSON_AddStringToObject(subsystems, "water_supply","ok");
+            }
+            if(water_fault_code_buf & (WATER_BOWL_DETACHED_FAULT | WATER_LOADCELL_ERR))
+            {
+                cJSON_AddStringToObject(subsystems, "loadcell","fault");
+            }
+            else
+            {
+                cJSON_AddStringToObject(subsystems, "loadcell","ok");
+            }
+            if(water_fault_code_buf & WATER_PUMP_ERR)
+            {
+                    cJSON_AddStringToObject(subsystems, "motor.pump","fault");
+            }
+            else
+            {
+                    cJSON_AddStringToObject(subsystems, "motor.pump","ok");
+            }
+            cJSON_AddStringToObject(subsystems, "ir", "ok");
+            cJSON_AddStringToObject(subsystems, "ble", "ok");
+            cJSON_AddStringToObject(subsystems, "uv", "ok");
+
+            if(water_fault_code_buf & WATER_FILTER_WATER_EX)
+            {
+                    cJSON_AddStringToObject(subsystems, "filter.water","degraded");
+            }
+            else
+            {
+                cJSON_AddStringToObject(subsystems, "filter.water","ok");
+            }
+            if(water_fault_code_buf & WATER_FILTER_DEBRIS_EX)
+            {
+                cJSON_AddStringToObject(subsystems, "filter.debris","degraded");
+            }
+            else
+            {
+                cJSON_AddStringToObject(subsystems, "filter.debris","ok");
+            }
+            
             cJSON_AddItemToObject(data_obj, "subsystems", subsystems);
 
-            // 🔧 수정: W-100 fault_code 적용 (PUMP_ERR)
-            cJSON_AddStringToObject(data_obj, "mode", "operational");
-
-            if(water_fault_code_send & WATER_BOWL_DETACHED_FAULT)
-            {
-                cJSON_AddStringToObject(data_obj, "alert_level", "critical");
-                cJSON_AddStringToObject(data_obj, "fault_code", "BOWL_DETACHED");
-                cJSON_AddStringToObject(data_obj, "affected_subsystem","loadcell");
-            }
-            else if(water_fault_code_send & WATER_FILTER_WATER_EX)
-            {
-                cJSON_AddStringToObject(data_obj, "alert_level", "normal");
-                cJSON_AddStringToObject(data_obj, "fault_code", "FILTER_WATER_EXPIRED");
-                cJSON_AddStringToObject(data_obj, "affected_subsystem","filter.water"); 
-            }
-            else if(water_fault_code_send & WATER_FILTER_DEBRIS_EX)
-            {
-                cJSON_AddStringToObject(data_obj, "alert_level", "normal");
-                cJSON_AddStringToObject(data_obj, "fault_code", "FILTER_DEBRIS_EXPIRED");
-                cJSON_AddStringToObject(data_obj, "affected_subsystem","filter.debris"); 
-            }
-            else if(water_fault_code_send & WATER_LOW_FAULT)
-            {
+            // 3. fault_code 및 alert_level 매핑 (우선순위에 따라 분기)
+            if (water_fault_code_send & WATER_EMPTY_FAULT) {
                 cJSON_AddStringToObject(data_obj, "alert_level", "critical");
                 cJSON_AddStringToObject(data_obj, "fault_code", "WATER_EMPTY");
-                cJSON_AddStringToObject(data_obj, "affected_subsystem","water_supply");
+                cJSON_AddStringToObject(data_obj, "affected_subsystem", "water_supply");
+            } 
+            else if (water_fault_code_send & WATER_BOWL_DETACHED_FAULT) {
+                cJSON_AddStringToObject(data_obj, "alert_level", "critical");
+                cJSON_AddStringToObject(data_obj, "fault_code", "BOWL_DETACHED");
+                cJSON_AddStringToObject(data_obj, "affected_subsystem", "loadcell");
             }
-            else if(water_fault_code_send & WATER_SPLASHING_FAULT)
-            {
+            else if (water_fault_code_send & WATER_LOW_FAULT) {
                 cJSON_AddStringToObject(data_obj, "alert_level", "normal");
-                cJSON_AddStringToObject(data_obj, "fault_code", "   ");
-                cJSON_AddStringToObject(data_obj, "affected_subsystem","behavior"); 
+                cJSON_AddStringToObject(data_obj, "fault_code", "WATER_LOW");
+                cJSON_AddStringToObject(data_obj, "affected_subsystem", "water_supply");
             }
-            else if(water_fault_code_send & WATER_PUMP_ERR)
-            {
-                cJSON_AddStringToObject(data_obj, "alert_level", "normal");
+            else if (water_fault_code_send & WATER_PUMP_ERR) {
+                cJSON_AddStringToObject(data_obj, "alert_level", "critical");
                 cJSON_AddStringToObject(data_obj, "fault_code", "PUMP_ERR");
                 cJSON_AddStringToObject(data_obj, "affected_subsystem", "motor.pump");
             }
-
-
-
+            else if (water_fault_code_send & WATER_FILTER_WATER_EX) {
+                cJSON_AddStringToObject(data_obj, "alert_level", "normal");
+                cJSON_AddStringToObject(data_obj, "fault_code", "FILTER_WATER_EXPIRED");
+                cJSON_AddStringToObject(data_obj, "affected_subsystem", "filter.water");
+            }
+            else if (water_fault_code_send & WATER_FILTER_DEBRIS_EX) {
+                cJSON_AddStringToObject(data_obj, "alert_level", "normal");
+                cJSON_AddStringToObject(data_obj, "fault_code", "FILTER_DEBRIS_EXPIRED");
+                cJSON_AddStringToObject(data_obj, "affected_subsystem", "filter.debris");
+            }
 
             // context 객체
             cJSON *context = cJSON_CreateObject();
             cJSON_AddItemToObject(data_obj, "context", context);
         break;
         case MESSEGE_HEALTH:
-      // 🔧 수정: W-100 서브시스템 정의 적용
-            // 2. 공통 스칼라 필드 추가
+
+
             cJSON_AddNumberToObject(data_obj, "uptime_sec", uptime);
             cJSON_AddNumberToObject(data_obj, "reset_reason", reason);
             cJSON_AddNumberToObject(data_obj, "rssi_dbm", rssi);
             subsystems = cJSON_CreateObject();
-            cJSON_AddStringToObject(subsystems, "water_supply", "ok");
-            cJSON_AddStringToObject(subsystems, "motor.pump", "ok");
-            cJSON_AddStringToObject(subsystems, "loadcell", "ok");
-            cJSON_AddStringToObject(subsystems, "tof", "ok");
+         // 각 서브시스템 상태 판정 (에러 발생 시 "fault", 정상 시 "ok")
+            if(water_fault_code_buf & (WATER_LOW_FAULT | WATER_EMPTY_FAULT))
+            {
+                cJSON_AddStringToObject(subsystems, "water_supply","fault");           
+            }
+            else
+            {
+                cJSON_AddStringToObject(subsystems, "water_supply","ok");
+            }
+            if(water_fault_code_buf & (WATER_BOWL_DETACHED_FAULT | WATER_LOADCELL_ERR))
+            {
+                cJSON_AddStringToObject(subsystems, "loadcell","fault");
+            }
+            else
+            {
+                cJSON_AddStringToObject(subsystems, "loadcell","ok");
+            }
+            if(water_fault_code_buf & WATER_PUMP_ERR)
+            {
+                    cJSON_AddStringToObject(subsystems, "motor.pump","fault");
+            }
+            else
+            {
+                    cJSON_AddStringToObject(subsystems, "motor.pump","ok");
+            }
+            cJSON_AddStringToObject(subsystems, "ir", "ok");
             cJSON_AddStringToObject(subsystems, "ble", "ok");
             cJSON_AddStringToObject(subsystems, "uv", "ok");
-            cJSON_AddStringToObject(subsystems, "filter.water", "ok");
-            cJSON_AddStringToObject(subsystems, "filter.debris", "ok");
-            cJSON_AddStringToObject(subsystems, "power",         "ok");
-            cJSON_AddItemToObject(data_obj, "subsystems", subsystems);   
+
+            if(water_fault_code_buf & WATER_FILTER_WATER_EX)
+            {
+                    cJSON_AddStringToObject(subsystems, "filter.water","degraded");
+            }
+            else
+            {
+                cJSON_AddStringToObject(subsystems, "filter.water","ok");
+            }
+            if(water_fault_code_buf & WATER_FILTER_DEBRIS_EX)
+            {
+                cJSON_AddStringToObject(subsystems, "filter.debris","degraded");
+            }
+            else
+            {
+                cJSON_AddStringToObject(subsystems, "filter.debris","ok");
+            }
+
+            cJSON_AddItemToObject(data_obj, "subsystems", subsystems);
 
             // 🔧 필수 추가: W-100 헬스 측정 데이터 항목 (§2.6 참조)
             cJSON_AddStringToObject(data_obj, "power_source", "ADAPTER");
-            cJSON_AddNumberToObject(data_obj, "water_level", 0);                // 0:충분, 1:부족, 2:없음
+            uint8_t water_level = 0;
+            if (water_fault_code_send & WATER_EMPTY_FAULT) {
+                water_level = 2;
+            } else if (water_fault_code_send & WATER_LOW_FAULT) {
+                water_level = 1;
+            }      
+            app_config_t* app_config = get_app_config();      
+            cJSON_AddNumberToObject(data_obj, "water_level", water_level);                // 0:충분, 1:부족, 2:없음
             cJSON_AddNumberToObject(data_obj, "pump_status", 0);                // 0:정상, 1:결착불량/이물질
-            cJSON_AddNumberToObject(data_obj, "water_filter_life_pct", 95);     // 정수 필터 잔여수명 (%)
-            cJSON_AddNumberToObject(data_obj, "debris_filter_life_pct", 80);    // 이물질 필터 잔여수명 (%)
+
+            uint32_t* motor_time = get_motor_time();
+            uint32_t* filter_time = get_filter_time();
+            #define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)
+
+            // 총 수명 (초 단위)
+            uint32_t total_life_sec = app_config->moter_life_days * SECONDS_IN_DAYS;
+            uint32_t used_sec = *motor_time;
+
+            uint8_t life_pct = 0;
+
+            if (total_life_sec > 0)
+            {
+                if (used_sec >= total_life_sec)
+                {
+                    life_pct = 100; // 사용 시간이 수명을 넘어서면 0%
+                }
+                else
+                {
+                    // 잔여 비율 계산: ((총수명 - 사용시간) * 100) / 총수명
+                    life_pct = (uint8_t)(((total_life_sec - used_sec) * 100UL) / total_life_sec);
+                }
+            }
+            cJSON_AddNumberToObject(data_obj, "water_filter_life_pct", life_pct);     // 정수 필터 잔여수명 (%)
+
+            used_sec = *filter_time;
+
+            if (total_life_sec > 0)
+            {
+                if (used_sec >= total_life_sec)
+                {
+                    life_pct = 100; // 사용 시간이 수명을 넘어서면 0%
+                }
+                else
+                {
+                    // 잔여 비율 계산: ((총수명 - 사용시간) * 100) / 총수명
+                    life_pct = (uint8_t)(((total_life_sec - used_sec) * 100UL) / total_life_sec);
+                }
+            }
+            cJSON_AddNumberToObject(data_obj, "debris_filter_life_pct", life_pct);    // 이물질 필터 잔여수명 (%)
             cJSON_AddNumberToObject(data_obj, "uv_status", 0);                  // 0:미소독, 1:소독중, 2:일시중지
-            cJSON_AddNumberToObject(data_obj, "current_mode", 0);               // 0:급수, 1:정지, 2:스마트
+            cJSON_AddNumberToObject(data_obj, "current_mode", app_config->op_mode);               // 0:급수, 1:정지, 2:스마트
+
         break;
         default:
         cJSON_Delete(data_obj);

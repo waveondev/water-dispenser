@@ -24,8 +24,8 @@ typedef enum {
 #endif
 
 #define PIN_PKEY_STAT 7  // PKEY_STAT
-
 #define IR_ENABLE 10
+//#define IR_ENABLE 2
 #define IR_LEFT 3
 #define IR_RIGHT 4
 

@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-
+			esp_err_t TPL0401_SetValue(int value);
 BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
     const char *pcParameter;
@@ -208,8 +208,12 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			else if (!strncmp(ag[1], "flag", 3))
 			{
 				write_nvs_registration_flag(atoi(ag[2])?true:false);
+			}		
+			else if (!strncmp(ag[1], "tpl", 3))
+			{
+				TPL0401_SetValue(atoi(ag[2]));
 			}				
-			
+
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

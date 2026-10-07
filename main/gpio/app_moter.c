@@ -298,6 +298,9 @@ void Clean_Mode_Disable(void)
 #else
 #include "driver/rmt_tx.h"
 #include "app_adc.h"
+#define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
+#include "hal/gpio_ll.h"
+esp_err_t TPL0401_SetValue(int value);
 rmt_channel_handle_t pwm_chan = NULL;
 rmt_encoder_handle_t copy_encoder = NULL;
 
@@ -452,7 +455,8 @@ static void motor_boost_task(void *pvParameters)
                 }
                     #else
                         set_motor_speed_percent(100);
-                        for(int i = 0;i<50;i++)
+                        //TPL0401_SetValue(127);
+                        for(int i = 0;i<30;i++)
                         {
                             vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
                            // ESP_LOGI(TAG,"100 = %d",i);
@@ -464,7 +468,7 @@ static void motor_boost_task(void *pvParameters)
 
                     #endif
             }
-
+            //TPL0401_SetValue(current_target_percentage);
             set_motor_speed_percent(current_target_percentage);
         }
         if(current_target_percentage != 0)
@@ -542,8 +546,7 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
         ESP_LOGI("SENDER", "모터 동작 세마포어 송신!");
     }
 }
-#define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
-#include "hal/gpio_ll.h"
+void TPL0401_init(void);
 void init_motor_ledc(void) {
     // 1. RMT TX 채널 설정 (DMA 활성화)
     rmt_tx_channel_config_t tx_config = {
@@ -592,7 +595,369 @@ void init_motor_ledc(void) {
         
         ESP_LOGE(TAG, "Error creating motor_boost_task on Core 1");
     }
+    //TPL0401_init();
+}
 
+#include "driver/i2c.h"
+
+
+#include "driver/i2c.h"
+#include "esp_log.h"
+
+#define TPL0401_ADDR      0x2E
+#define TPL0401_REG_WIPER 0x00
+
+#define I2C_PORT           I2C_NUM_0
+
+
+
+
+/**
+ * TPL0401 Wiper 값 설정
+ *
+ * value : 0 ~ 127
+ */
+esp_err_t TPL0401_SetValue(int value)
+{
+    // 범위 제한
+    if (value < 0) {
+        value = 0;
+    }
+
+    if (value > 127) {
+        value = 127;
+    }
+
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+    if (cmd == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    i2c_master_start(cmd);
+
+    // Slave Address + Write
+    i2c_master_write_byte(
+        cmd,
+        (TPL0401_ADDR << 1) | I2C_MASTER_WRITE,
+        true
+    );
+
+    // Wiper Register
+    i2c_master_write_byte(
+        cmd,
+        TPL0401_REG_WIPER,
+        true
+    );
+
+    // Wiper Value
+    i2c_master_write_byte(
+        cmd,
+        (uint8_t)value,
+        true
+    );
+
+    i2c_master_stop(cmd);
+
+    esp_err_t ret = i2c_master_cmd_begin(
+        I2C_PORT,
+        cmd,
+        pdMS_TO_TICKS(100)
+    );
+
+    i2c_cmd_link_delete(cmd);
+
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "Wiper = %d", value);
+    } else {
+        ESP_LOGE(TAG, "Set Wiper failed: %s",
+                 esp_err_to_name(ret));
+    }
+
+    return ret;
+}
+
+/**
+ * TPL0401 Wiper 값 쓰기
+ *
+ * value : 0 ~ 127
+ */
+esp_err_t TPL0401_Write(uint8_t value)
+{
+    if (value > 127) {
+        value = 127;
+    }
+
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+    i2c_master_start(cmd);
+
+    // Slave Address + Write
+    i2c_master_write_byte(
+        cmd,
+        (TPL0401_ADDR << 1) | I2C_MASTER_WRITE,
+        true
+    );
+
+    // Register Address
+    i2c_master_write_byte(
+        cmd,
+        TPL0401_REG_WIPER,
+        true
+    );
+
+    // Wiper Data
+    i2c_master_write_byte(
+        cmd,
+        value,
+        true
+    );
+
+    i2c_master_stop(cmd);
+
+    esp_err_t ret = i2c_master_cmd_begin(
+        I2C_PORT,
+        cmd,
+        pdMS_TO_TICKS(100)
+    );
+
+    i2c_cmd_link_delete(cmd);
+
+    return ret;
+}
+
+
+/**
+ * TPL0401 Wiper 값 읽기
+ */
+esp_err_t TPL0401_Read(uint8_t *value)
+{
+    if (value == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+    /*
+     * 먼저 Register Address 0x00 지정
+     */
+    i2c_master_start(cmd);
+
+    i2c_master_write_byte(
+        cmd,
+        (TPL0401_ADDR << 1) | I2C_MASTER_WRITE,
+        true
+    );
+
+    i2c_master_write_byte(
+        cmd,
+        TPL0401_REG_WIPER,
+        true
+    );
+
+    /*
+     * Repeated START 후 Read
+     */
+    i2c_master_start(cmd);
+
+    i2c_master_write_byte(
+        cmd,
+        (TPL0401_ADDR << 1) | I2C_MASTER_READ,
+        true
+    );
+
+    i2c_master_read_byte(
+        cmd,
+        value,
+        I2C_MASTER_NACK
+    );
+
+    i2c_master_stop(cmd);
+
+    esp_err_t ret = i2c_master_cmd_begin(
+        I2C_PORT,
+        cmd,
+        pdMS_TO_TICKS(100)
+    );
+
+    i2c_cmd_link_delete(cmd);
+
+    return ret;
+}
+
+
+void TPL0401_Test(void)
+{
+    uint8_t value;
+    esp_err_t ret;
+
+    ESP_LOGI(TAG, "===== TPL0401 TEST START =====");
+
+    /*
+     * 0
+     */
+    ret = TPL0401_Write(0);
+
+    ESP_LOGI(TAG,
+             "WRITE 0x00 -> %s",
+             esp_err_to_name(ret));
+
+    if (ret == ESP_OK) {
+
+        ret = TPL0401_Read(&value);
+
+        ESP_LOGI(TAG,
+                 "READ  -> 0x%02X (%d), %s",
+                 value,
+                 value,
+                 esp_err_to_name(ret));
+    }
+
+
+    /*
+     * 64
+     */
+    ret = TPL0401_Write(64);
+
+    ESP_LOGI(TAG,
+             "WRITE 0x40 -> %s",
+             esp_err_to_name(ret));
+
+    if (ret == ESP_OK) {
+
+        ret = TPL0401_Read(&value);
+
+        ESP_LOGI(TAG,
+                 "READ  -> 0x%02X (%d), %s",
+                 value,
+                 value,
+                 esp_err_to_name(ret));
+    }
+
+
+    /*
+     * 127
+     */
+    ret = TPL0401_Write(127);
+
+    ESP_LOGI(TAG,
+             "WRITE 0x7F -> %s",
+             esp_err_to_name(ret));
+
+    if (ret == ESP_OK) {
+
+        ret = TPL0401_Read(&value);
+
+        ESP_LOGI(TAG,
+                 "READ  -> 0x%02X (%d), %s",
+                 value,
+                 value,
+                 esp_err_to_name(ret));
+    }
+
+    ESP_LOGI(TAG, "===== TPL0401 TEST END =====");
+}
+
+
+
+void i2c_scan(void)
+{
+    for (uint8_t addr = 1; addr < 127; addr++) {
+
+        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+        i2c_master_start(cmd);
+
+        i2c_master_write_byte(
+            cmd,
+            (addr << 1) | I2C_MASTER_WRITE,
+            true
+        );
+
+        i2c_master_stop(cmd);
+
+        esp_err_t ret = i2c_master_cmd_begin(
+            I2C_NUM_0,
+            cmd,
+            pdMS_TO_TICKS(100)
+        );
+
+        i2c_cmd_link_delete(cmd);
+
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "FOUND: 0x%02X", addr);
+        }
+    }
+}
+static int percent = 50;
+static void tpl_task(void *pvParameters)
+{
+    int i=0;
+    int value = 0;
+    TPL0401_SetValue(127);
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    while(1)
+    {
+        if(percent != 0)
+        {
+            i++;
+            if(i > percent)
+            {
+                if(value !=90)
+                {
+                    value = 90;
+                    TPL0401_SetValue(value);
+                }
+            }
+            else
+            {
+                if(value != 127)
+                {
+                    value = 127;
+                    TPL0401_SetValue(value);
+                }            
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+            if(i >= 100)
+                i=0;
+        }
+
+        
+
+    }
+}
+void TPL0401_init(void)
+{
+    i2c_config_t i2c_bus0_cfg = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = 10,
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_io_num = 6,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
+        .master.clk_speed = 400000, // 400kHz
+    };
+    
+    if (i2c_param_config(I2C_NUM_0, &i2c_bus0_cfg) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to config I2C Port 0");
+    }
+    if (i2c_driver_install(I2C_NUM_0, i2c_bus0_cfg.mode, 0, 0, 0) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to install I2C Port 0");
+    }
+    i2c_scan();
+    TPL0401_SetValue(127);    
+ #if 0
+    if (xTaskCreate(
+            tpl_task,                  // 태스크 함수
+            "tpl_task",                // 태스크 이름
+            MOTOR_TASK_STACK_SIZE,       // 스택 크기
+            NULL,        // 파라미터
+            tskIDLE_PRIORITY + 1,      // 우선순위
+            NULL                  // 태스크 핸들
+        ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
+        
+        ESP_LOGE(TAG, "Error creating motor_boost_task on Core 1");
+    }
+        #endif
 }
 #endif
 

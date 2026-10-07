@@ -89,14 +89,15 @@ static void ble_spp_client_scan(void)
 
     // 🔴 [수정] 500ms 비콘 스캔을 위한 타이밍 최적화
     // interval과 window를 같게 설정하면 ESP32가 쉬지 않고 100% 확률로 계속 스캔 대기를 합니다.
-    disc_params.itvl = 400;            // 스캔 주기 (단위: 0.625ms, 즉 250ms)
-    disc_params.window = 400;          // 스캔 윈도우 (단위: 0.625ms, 즉 250ms) -> 100% 듀티 사이클
+    disc_params.itvl = 100;            // 스캔 주기 (단위: 0.625ms, 즉 250ms)
+    disc_params.window = 100;          // 스캔 윈도우 (단위: 0.625ms, 즉 250ms) -> 100% 듀티 사이클
 
     rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params, ble_spp_server_gap_event, NULL);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "Error discovering peers; rc=%d\n", rc);
     }
 }
+#define DEVICE_T 'W'
 static void ble_spp_server_advertise(void)
 {
     struct ble_gap_adv_params adv_params;
@@ -112,7 +113,7 @@ static void ble_spp_server_advertise(void)
 
     memset(mfg_data,0,sizeof(mfg_data));
     mfg_data[0] = 0x31;
-    mfg_data[1] = 0x46;
+    mfg_data[1] = DEVICE_T;
     if(aws_connected_state())
     {
         mfg_data[2] |= 0x01;
@@ -530,7 +531,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         }
         else if (svc_uuid == 0x4321)
         {
-            if (event->disc.rssi < -60)
+            if (event->disc.rssi < -50)
             {
                 return 0; // RSSI 기준 미달 차단
             }

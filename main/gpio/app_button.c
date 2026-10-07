@@ -80,6 +80,7 @@ void bf_LongPress3SecAction(void) {
 
 void bf_LongPress5SecAction(void) {
     ESP_LOGI(TAG,"Long Press 5 Sec Action executed \r\n");
+    write_nvs_registration_flag(false);
     Wifi_Disconnect();
      wifi_scan_start();
 }
