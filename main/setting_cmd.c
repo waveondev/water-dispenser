@@ -9,6 +9,7 @@
 #include "debug_cli.h"
 #include "app_led.h"
 #include "opmode_task.h"
+#include "gpio_util.h"
 static const char *TAG = __FILE__;
 #if 0
 typedef enum
@@ -18,7 +19,7 @@ typedef enum
   HX711_GetValue    = 2,
 }Setting_cmd_e;
 #endif
-
+void TPL_SetValue(int value);
 static Motion_Packet_t Motion_Packet_buf;
 void Setting_callback(Motion_Packet_t* Motion_Packet)
 {
@@ -71,7 +72,9 @@ void Setting_callback(Motion_Packet_t* Motion_Packet)
             Motion_Packet_buf.event_code = SETTING_RESPONSE;
             Motion_Packet_buf.setting_res.cmd_type = MOTOR_SetValue;
             int i = Motion_Packet_buf.setting_res.data[0];
+
             set_motor_speed(&i);
+
             ble_send_data_to_queue(NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
         break;    
         

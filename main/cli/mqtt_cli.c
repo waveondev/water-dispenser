@@ -6,7 +6,7 @@ BaseType_t prvMQTTformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen,
     const char *pcParameter;
     BaseType_t xParameterStringLength, xReturn;
     static BaseType_t lParameterNumber = 0;
-    char ag[6][40] = {0};
+    static char ag[6][40];
     char buf[64];
     int  offset=0;
     int j;
@@ -72,11 +72,11 @@ BaseType_t prvMQTTformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen,
                     {
                         mqtt_queue_send(MESSEGE_REGISTRATION,NULL,0);
                     }
-                    else if (!strncmp(ag[2], "boot", 4))
+                    if (!strncmp(ag[2], "boot", 4))
                     {
                         mqtt_queue_send(MESSEGE_BOOT,NULL,0);
                     }
-                    else if (!strncmp(ag[2], "acc", 3))
+                    if (!strncmp(ag[2], "acc", 3))
                     {
                         mqtt_queue_send(MESSEGE_ACCESS,NULL,0);
                     }
@@ -91,6 +91,14 @@ BaseType_t prvMQTTformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen,
                     else if (!strncmp(ag[2], "hea", 3))
                     {
                         mqtt_queue_send(MESSEGE_HEALTH,NULL,0);
+                    }
+                    else if (!strncmp(ag[2], "asu", 3))
+                    {
+                        mqtt_queue_send(AWS_MESSEGE_SHADOW_UPDATE,NULL,0);
+                    }
+                    else if (!strncmp(ag[2], "jog", 3))
+                    {
+                        mqtt_queue_send(AWS_MESSEGE_JOBS_GET,NULL,0);
                     }
             }
 			

@@ -28,24 +28,24 @@
 static const char *TAG = "IR_TEST";
 static int ir_count = 0;
 bool detect_object(void);
-bool VL53L0X_Detect(bool all_state)
+int VL53L0X_Detect(bool all_state)
 {
+    int value = 0;
     if(all_state)
     {
         if(GetTracker_Id_active())
         {
-            return true;
+            value |= 1 << 1;
+            return 2;
         }
     }
     app_config_t* app_config = get_app_config();
     #if 1
     if (ir_count >= 5) {
-        return true;
-        
-    } else {
-        return false;
-    }
+        value |= 1 << 0;
+    } 
     #endif
+    return value;
 }
 int left_value = 0;
 int right_value = 0;

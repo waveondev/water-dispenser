@@ -231,10 +231,19 @@ void set_rgb_len_no_Breathing(uint8_t R, uint8_t G, uint8_t B, uint8_t W)
         memset(&Breathing_Setting, 0, sizeof(Breathing_Setting_t));
     set_rgb_led(R, G, B, W);
 }
-
+#include "tx_mqtt.h"
+#include "aws_iot_task.h"
 void app_tof_sensor_poll_100ms(void)
 {
-    if (VL53L0X_Detect(true)) 
+    int tof_get = VL53L0X_Detect(true);
+    static int tof_get_buf = 0;
+    if(tof_get_buf != tof_get)
+    {
+        tof_get_buf = tof_get;
+        mqtt_queue_send(MESSEGE_TEST,&tof_get,sizeof(tof_get));
+        
+    }
+    if (tof_get) 
     {
         led_bit_enable(TOF_DETECT_BIT); 
     } 

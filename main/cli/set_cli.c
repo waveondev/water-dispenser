@@ -180,10 +180,10 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 				}	
 				if (!strncmp(ag[2], "app", 3))
 				{
-					facto_set(atoi(ag[3])?true:false);
-				 	filter_change();	
-				 	motor_change();									
-				}										
+					facto_set(atoi(ag[3])?true:false);							
+				}		
+				if (!strncmp(ag[2], "facto", 5))
+					erase_facto_configuration();								
 			}	
 			#define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)
 			else if (!strncmp(ag[1], "filter", 6))

@@ -3,9 +3,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_mac.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
+
 #include "ble_task.h"
 /* NimBLE 필수 헤더 */
 #include "nimble/nimble_port.h"
@@ -23,6 +21,9 @@
 #include "device_config.h"
 #include "aws_iot_task.h"
 static const char *TAG = __FILE__;
+
+#define SEC_TO_US(sec) ((uint64_t)(sec) * 1000000ULL)
+#define MIN_TO_US(min) ((uint64_t)(min) * 60ULL * 1000000ULL)
 
 #define MY_UUID128_BASE(XX, YY) \
     BLE_UUID128_DECLARE(0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0, \
@@ -179,16 +180,6 @@ static void ble_spp_server_advertise(void)
 
 
 
-typedef struct {
-    TimerHandle_t xMotionTimer;
-    TimerHandle_t xtimer;
-    uint32_t timer_count;
-    uint32_t first_delay_ms;    
-    uint16_t conn_handle;
-    uint8_t mac_addr[6];
-    bool is_connected;
-
-} client_info_t;
 
 client_info_t connected_clients[CONFIG_BT_NIMBLE_MAX_CONNECTIONS];
 
@@ -302,7 +293,8 @@ static void Tracker_Motion_send(TimerHandle_t xTimer) {
             }
             if(connected_clients[i].timer_count % app_config->motion_data_time == 0)
             {
-                motion_msg_send(conn_handle, MOTION_START_REQUEST,1);
+                if(connected_clients[i].data == NULL)
+                    motion_msg_send(conn_handle, MOTION_START_REQUEST,1);
             }
 
             break; 
@@ -323,6 +315,24 @@ void add_client(uint16_t conn_handle, const uint8_t *mac) {
             break;
         }
     }
+}
+client_info_t* get_conn_client_by_mac(const uint8_t *mac)
+{
+    if (mac == NULL) {
+        return NULL;
+    }
+
+    for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
+        // 연결된 상태이고 MAC 주소가 6바이트 일치하는지 확인
+        if (connected_clients[i].is_connected && 
+            memcmp(connected_clients[i].mac_addr, mac, 6) == 0) {
+            
+            return &connected_clients[i];
+        }
+    }
+
+    // 일치하는 클라이언트를 찾지 못한 경우
+    return NULL; 
 }
 uint16_t get_conn_handle_by_mac(const uint8_t *mac)
 {
@@ -421,9 +431,19 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             ESP_ERROR_CHECK(esp_timer_start_periodic(Mac_sending_timer,    3000000));
         } 
         if (event->connect.status == 26) {  
+            
             if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
                 // 2. 클라이언트 목록 배열에 추가!
                 add_client(event->connect.conn_handle, desc.peer_ota_addr.val);
+                    ESP_LOGI("BLE", "conn_itvl       = %u (%.2f ms)",
+                desc.conn_itvl, desc.conn_itvl * 1.25f);
+
+                ESP_LOGI("BLE", "conn_latency    = %u",
+                        desc.conn_latency);
+
+                ESP_LOGI("BLE", "supervision_timeout = %u (%.2f ms)",
+                        desc.supervision_timeout,
+                        desc.supervision_timeout * 10.0f);
             }
             ESP_LOGI("BLE_GAP", "현재 연결된 기기 수: %d / %d(%d)", 
                         count_client(), CONFIG_BT_NIMBLE_MAX_CONNECTIONS,event->connect.conn_handle);
@@ -486,14 +506,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         app_config_t* app_config = get_app_config();
         dev_info_t dev_list;
 
-        // -----------------------------------------------------------------
-        // 1. ⚡️ [새로운 필터] RSSI 조건 검사 (간혹 부호가 헷갈릴 수 있으니 주의)
-        //    * 수신 감도가 -55 dBm 이하(예: -56, -60, -70 dBm처럼 멀리 있는 기기)인 경우만 통과
-        //    * 만약 -55보다 신호가 쌘 것(-50, -40 dBm 등)을 원하신 거라면 `>`로 부호를 바꿔주세요.
-        // -----------------------------------------------------------------
-        if (event->disc.rssi < app_config->gate_way_rssi_th) {
-            return 0; // -55보다 큰 신호는 여기서 즉시 차단
-        }
+
 
         rc = ble_hs_adv_parse_fields(&fields, event->disc.data, event->disc.length_data);
         if (rc != 0) {
@@ -531,7 +544,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         }
         else if (svc_uuid == 0x4321)
         {
-            if (event->disc.rssi < -50)
+            if (event->disc.rssi < -40)
             {
                 return 0; // RSSI 기준 미달 차단
             }
@@ -918,15 +931,13 @@ static void mac_send_timer_callback(void* arg)
 void motion_msg_send(uint16_t conn_handle, uint8_t cmd,uint8_t sub_cmd)
 {
     Motion_Packet_t Motion_Packet;
-
     memset(&Motion_Packet,0,sizeof(Motion_Packet));
     struct timeval tv;
-
     switch(cmd)
     {
         case MOTION_START_REQUEST:
             Motion_Packet.event_code = cmd;
-            Motion_Packet.motion_res.req_type = sub_cmd;
+            Motion_Packet.motion_start_req.req_type = sub_cmd;
         break;
         case HEALTH_DATA_REQUEST:
             Motion_Packet.event_code = cmd;
@@ -987,7 +998,7 @@ void ble_task_init(void)
     assert(gatt_svr_init() == 0);
     char name[30] = {0};
 
-    sprintf(name,"%s-WAVE",CONFIG_DEVICE_PREFIX);
+    sprintf(name,"%s-water",CONFIG_DEVICE_PREFIX);
 
     assert(ble_svc_gap_device_name_set(name) == 0);
     ble_store_config_init();

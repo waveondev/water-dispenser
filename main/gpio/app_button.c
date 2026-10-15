@@ -89,7 +89,7 @@ void bf_LongPress10SecAction(void) {
     ESP_LOGI(TAG,"Long Press 10 Sec Action executed \r\n");
     //delay(1000); 
     //ESP.restart();
-    facto_set(true);
+    facto_set(false);
 }
 int button_press_state(void)
 {

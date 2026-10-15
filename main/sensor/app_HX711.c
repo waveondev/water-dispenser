@@ -134,8 +134,8 @@ void HX711_Sensing(void)
 
     float safe_min_threshold = (float)app_config->min_weight_threshold; 
 
-    if(before_weight == 0.0f)
-        before_weight = loadcell_data_get();
+    //if(before_weight == 0.0f)
+        //before_weight = loadcell_data_get();
     
     float currunt_weight = loadcell_data_get();
     float safe_release_threshold = safe_min_threshold + 10.0f; 

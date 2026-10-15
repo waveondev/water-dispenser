@@ -40,7 +40,7 @@ typedef struct{
     uint32_t case_raw_data;
     uint8_t Device_Serial[64];
 }app_facto_config_t;
-
+void reset_all_nvs_facto(void);
 void reset_all_nvs_data(void);
 void app_nvs_save_set(void);
 void wifi_nvs_save_set(void);
@@ -50,6 +50,7 @@ app_config_t* get_app_config(void);
 app_wifi_config_t* get_wifi_config(void);
 uint32_t* get_motor_time(void);
 uint32_t* get_filter_time(void);
+void erase_facto_configuration(void);
 void load_app_configuration(void);
 void load_wifi_configuration(void);
 void NVS_Flash_init(void);

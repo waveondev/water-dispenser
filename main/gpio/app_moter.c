@@ -442,34 +442,27 @@ static void motor_boost_task(void *pvParameters)
             {
                 uint8_t motor_index = 100;
 
-                #if 0
-                vTaskDelay(pdMS_TO_TICKS(2000)); // 정확히 1초(1000ms)만 대기
-                while(motor_index > 0)
+
+                #if MOTOR_I2C_MODE
+                    TPL0401_SetValue(50);
+                #else
+                    set_motor_speed_percent(100);
+                #endif    
+                for(int i = 0;i<5;i++)
                 {
-                    motor_index -= 2;
-                    set_motor_speed_percent(motor_index);
-                    vTaskDelay(pdMS_TO_TICKS(300)); // 정확히 1초(1000ms)만 대기     
-                    ESP_LOGI(TAG,"motor_index = %d", motor_index);
+                    vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
+                    // ESP_LOGI(TAG,"100 = %d",i);
                     if(current_target_percentage == 0)
                     break;
                 }
-                    #else
-                        set_motor_speed_percent(100);
-                        //TPL0401_SetValue(127);
-                        for(int i = 0;i<30;i++)
-                        {
-                            vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
-                           // ESP_LOGI(TAG,"100 = %d",i);
-                            if(current_target_percentage == 0)
-                            break;
-                        }
 
-                       // set_motor_speed_percent(70);
-
-                    #endif
             }
-            //TPL0401_SetValue(current_target_percentage);
-            set_motor_speed_percent(current_target_percentage);
+            
+            #if MOTOR_I2C_MODE
+                TPL0401_SetValue(current_target_percentage);
+            #else
+                set_motor_speed_percent(current_target_percentage);
+            #endif                
         }
         if(current_target_percentage != 0)
         {
@@ -595,7 +588,9 @@ void init_motor_ledc(void) {
         
         ESP_LOGE(TAG, "Error creating motor_boost_task on Core 1");
     }
-    //TPL0401_init();
+    #if MOTOR_I2C_MODE
+    TPL0401_init();
+    #endif
 }
 
 #include "driver/i2c.h"
@@ -611,12 +606,10 @@ void init_motor_ledc(void) {
 
 
 
-
-/**
- * TPL0401 Wiper 값 설정
- *
- * value : 0 ~ 127
- */
+void TPL_SetValue(int value)
+{
+    start_motor_with_boost(value,0);
+}
 esp_err_t TPL0401_SetValue(int value)
 {
     // 범위 제한
@@ -889,50 +882,13 @@ void i2c_scan(void)
         }
     }
 }
-static int percent = 50;
-static void tpl_task(void *pvParameters)
-{
-    int i=0;
-    int value = 0;
-    TPL0401_SetValue(127);
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    while(1)
-    {
-        if(percent != 0)
-        {
-            i++;
-            if(i > percent)
-            {
-                if(value !=90)
-                {
-                    value = 90;
-                    TPL0401_SetValue(value);
-                }
-            }
-            else
-            {
-                if(value != 127)
-                {
-                    value = 127;
-                    TPL0401_SetValue(value);
-                }            
-                vTaskDelay(pdMS_TO_TICKS(10));
-            }
-            if(i >= 100)
-                i=0;
-        }
-
-        
-
-    }
-}
 void TPL0401_init(void)
 {
     i2c_config_t i2c_bus0_cfg = {
         .mode = I2C_MODE_MASTER,
-        .sda_io_num = 10,
+        .sda_io_num = TPL_SDA,
         .sda_pullup_en = GPIO_PULLUP_ENABLE,
-        .scl_io_num = 6,
+        .scl_io_num = TPL_SCL,
         .scl_pullup_en = GPIO_PULLUP_ENABLE,
         .master.clk_speed = 400000, // 400kHz
     };
@@ -945,19 +901,7 @@ void TPL0401_init(void)
     }
     i2c_scan();
     TPL0401_SetValue(127);    
- #if 0
-    if (xTaskCreate(
-            tpl_task,                  // 태스크 함수
-            "tpl_task",                // 태스크 이름
-            MOTOR_TASK_STACK_SIZE,       // 스택 크기
-            NULL,        // 파라미터
-            tskIDLE_PRIORITY + 1,      // 우선순위
-            NULL                  // 태스크 핸들
-        ) != pdPASS) {                 // pdTRUE 대신 pdPASS를 쓰는 것이 FreeRTOS 관례입니다.
-        
-        ESP_LOGE(TAG, "Error creating motor_boost_task on Core 1");
-    }
-        #endif
+
 }
 #endif
 

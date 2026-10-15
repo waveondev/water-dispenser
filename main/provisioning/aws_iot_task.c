@@ -19,6 +19,8 @@ extern EventGroupHandle_t s_wifi_event_group;
 static bool is_aws_started = false;
 static QueueHandle_t mqtt_tx_queue = NULL;
 static QueueHandle_t tracker_mqtt_queue = NULL;
+
+
 static esp_timer_handle_t Health_timer;
 #define AWS_IOT_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 4)
 extern int aws_iot_provisioning_main( int argc, char ** argv );
@@ -43,14 +45,16 @@ static void Health_timer_callback(void* arg)
 
 }
 
+
 bool mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, void* data, uint32_t data_len)
 {
-   mqtt_packet_t mqtt_packet = {0};
+    mqtt_packet_t mqtt_packet = {0};
     if(mqtt_tx_queue == NULL)
     {
         ESP_LOGW("mqtt_tx", "mqtt_tx_queue NULL.");
         return false;        
     }
+    
     if(data != NULL)
     {
         mqtt_packet.data = calloc(1,data_len);
@@ -92,6 +96,8 @@ void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Pac
     mqtt_packet.data = data;
     ESP_LOGW("mqtt_tx", "tracker_mqtt_queue send.");
     if (xQueueSend(tracker_mqtt_queue, &mqtt_packet, 0) != pdPASS) {
+        if(data != NULL)
+            free(data);
         ESP_LOGW("mqtt_tx", "Queue full! Dropping packet and freeing memory.");
     }
 }
@@ -157,7 +163,7 @@ static void ble_discon_timer_set(bool state, uint64_t discon_timeout)
     else
         ESP_LOGI(TAG, "ble_discon_timer reset"); 
 }
-
+bool time_sync_get(void);
 static void aws_iot_main_entry(void *pvParameters)
 {
     ESP_LOGI(TAG, "AWS IoT 전담 태스크 시작");
@@ -169,12 +175,18 @@ static void aws_iot_main_entry(void *pvParameters)
         pdTRUE,
         portMAX_DELAY
     );
+    while(time_sync_get() == false)
+    {
+        vTaskDelay(1000);
+    }
     static uint32_t discon_timeout = 0;
     // -------------------------------------------------------------
     // 1. [1회성 초기화] 큐 및 타이머 생성을 루프 밖에서 단 1번만 수행
     // -------------------------------------------------------------
     mqtt_tx_queue = xQueueCreate(10, sizeof(mqtt_packet_t));
     tracker_mqtt_queue = xQueueCreate(10, sizeof(tracker_mqtt_packet_t));
+
+
 
     const esp_timer_create_args_t aws_success_args = {
         .callback = &aws_success_callback,
@@ -219,14 +231,15 @@ static void aws_iot_main_entry(void *pvParameters)
         xQueueReset(mqtt_tx_queue);
         xQueueReset(tracker_mqtt_queue);
 
+
         // AWS IoT 프로비저닝 및 MQTT 연결
         while(aws_iot_provisioning_main(0, NULL) != EXIT_SUCCESS)
         {
             vTaskDelay(pdMS_TO_TICKS(3000)); /* 3초 대기 */
             provisioning_count++;
             ESP_LOGI(TAG, "provisioning retry count = %d", provisioning_count);
-            if(provisioning_count > 10)
-                esp_restart();
+            //if(provisioning_count > 10)
+                //esp_restart();
         }
 
         

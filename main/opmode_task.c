@@ -80,17 +80,17 @@ void set_motor_speed(int* speed)
         {
             case OP_MODE_SMART:
                 Smart_used_Timer_Set(true);
-                Motor_Speed = 80;
+                Motor_Speed = 100;
             break;
             // 타 모드는 기본 구조 유지
             case OP_MODE_NORMAL:
-                Motor_Speed = 80;
+                Motor_Speed = 100;
             break;
             case OP_MODE_SLEEP:
                 Motor_Speed = 0;
             break;
             case OP_MODE_NIGHT:
-                Motor_Speed = 65;
+                Motor_Speed = 80;
                 
             break;
         }
@@ -158,7 +158,7 @@ void Smart_Water(void)
     static uint32_t smart_timer_target = 0; // 각 상태별 마감 시한 틱 저장
     static float start_weight = 0;
     uint8_t splash_count = 0;
-    bool sensor_detected = VL53L0X_Detect(false);
+    int sensor_detected = VL53L0X_Detect(false);
     uint32_t current_tick = xTaskGetTickCount();
     static uint32_t drink_start_tick = 0;          
     uint32_t drink_end_tick = 0;          

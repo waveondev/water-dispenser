@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 #include "app_config_flash.h"
 #include "opmode_task.h"
+#include "app_moter.h"
 static const char *TAG = __FILE__;
 
 
@@ -17,36 +18,13 @@ static const char *TAG = __FILE__;
 
 void facto_set(bool status)
 {
-    	app_config_t* app_config = get_app_config();
-        app_facto_config_t* facto_config = get_facto_config();
-        float hx1_scale_buf;
-        int32_t hx1_offset_buf;
-        uint32_t case_raw_data_buf;
-        hx1_scale_buf = app_config->hx1_scale;
-        hx1_offset_buf = app_config->hx1_offset;
-        case_raw_data_buf = app_config->case_raw_data;
-        memset(app_config, 0,sizeof(app_config_t));
-        app_config->op_mode = OP_MODE_NORMAL;
-        app_config->pump_clean_duration = 180;
-        app_config->filter_life_days = 30;
-        app_config->moter_life_days = 60;
-        app_config->min_weight_threshold = 900;
-        app_config->splash_delta_g = 100;
-        app_config->gate_way_rssi_th = -85;
-        app_config->hx1_scale = 1000.0f;
-        app_config->hx1_offset = 0;
-        app_config->case_raw_data = 0;
-        app_config->tof_sense_threshold_l = 50;
-        app_config->tof_sense_threshold_r = 50;
-        app_config->motion_data_time = 1800;
-        app_config->EFFECTIVE_DWELL_TIME = 5;
-        sprintf(app_config->env_mode,"dev");
-
-        app_config->hx1_scale = facto_config->hx1_scale;
-        app_config->case_raw_data = facto_config->case_raw_data;                    
-    
-
-        app_nvs_save_set();
+        if(status == false)
+        {
+            reset_all_nvs_data();
+            return;
+        }
+        else 
+            reset_all_nvs_facto();
 }
 void write_nvs_memory(const char* name, const char* key, const char* data)
 {

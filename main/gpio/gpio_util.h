@@ -23,9 +23,16 @@ typedef enum {
   #define PIN_HX711_SCK 18
 #endif
 
-#define PIN_PKEY_STAT 7  // PKEY_STAT
+#define PIN_PKEY_STAT 7 
+#define MOTOR_I2C_MODE 0
+#define TPL_SDA 10
+#define TPL_SCL 6
+
+#if !MOTOR_I2C_MODE
 #define IR_ENABLE 10
-//#define IR_ENABLE 2
+#else
+#define IR_ENABLE 2
+#endif
 #define IR_LEFT 3
 #define IR_RIGHT 4
 
