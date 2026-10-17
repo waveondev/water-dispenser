@@ -75,9 +75,13 @@ bool mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, void* data, uint32_t data_len)
     }
     return true;
 }
-void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Packet_t* packet,uint32_t data_len,  uint8_t* data )
+void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Packet_t* packet,uint32_t data_len,  uint8_t* data,
+    uint32_t total_points,
+    uint32_t send_points,
+    uint32_t non_save_points
+)
 {
-    tracker_mqtt_packet_t mqtt_packet;
+    tracker_mqtt_packet_t tracker_mqtt_packet = {0};
 
     if(tracker_mqtt_queue == NULL)
     {
@@ -88,14 +92,31 @@ void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Pac
     }
 
 
-    memset(&mqtt_packet,0,sizeof(tracker_mqtt_packet_t));
-    mqtt_packet.cmd = cmd;
-    memcpy(mqtt_packet.mac,mac,sizeof(mqtt_packet.mac));
-    memcpy(&mqtt_packet.packet,packet,sizeof(Motion_Packet_t));
-    mqtt_packet.data_len = data_len;
-    mqtt_packet.data = data;
+    memset(&tracker_mqtt_packet,0,sizeof(tracker_mqtt_packet_t));
+
+    memcpy(tracker_mqtt_packet.mac,mac,sizeof(tracker_mqtt_packet.mac));
+    memcpy(&tracker_mqtt_packet.packet,packet,sizeof(Motion_Packet_t));
+    if(data != NULL)
+    {
+        tracker_mqtt_packet.data = calloc(1,data_len);
+        if(tracker_mqtt_packet.data != NULL)
+        {   
+            memcpy(tracker_mqtt_packet.data,data,data_len);
+        }   
+        else
+        {
+            ESP_LOGW("mqtt_tx", "freeing memory.");
+            return;
+        }
+    }
+    tracker_mqtt_packet.total_points = total_points;
+    tracker_mqtt_packet.send_points = send_points;
+    tracker_mqtt_packet.non_save_points = non_save_points;
+    tracker_mqtt_packet.cmd = cmd;
+    tracker_mqtt_packet.data_len = data_len;
     ESP_LOGW("mqtt_tx", "tracker_mqtt_queue send.");
-    if (xQueueSend(tracker_mqtt_queue, &mqtt_packet, 0) != pdPASS) {
+    
+    if (xQueueSend(tracker_mqtt_queue, &tracker_mqtt_packet, 0) != pdPASS) {
         if(data != NULL)
             free(data);
         ESP_LOGW("mqtt_tx", "Queue full! Dropping packet and freeing memory.");

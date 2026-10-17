@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#include "app_button.h"
 #include "esp_timer.h"  // 👈 이 줄을 추가해 주세요!
 static const char *TAG = __FILE__;
 static esp_timer_handle_t minute10_timer;
@@ -100,7 +101,7 @@ void reset_all_nvs_data(void)
     // 결과 처리 및 재부팅
     if (err == ESP_OK) {
         ESP_LOGI("NVS", "WAVEON 초기화 완료! 변경사항을 적용하기 위해 재부팅합니다.");
-        esp_restart(); // ⚠️ 깨끗해진 구조 반영 및 안전한 재시작
+
     } else {
         ESP_LOGE("NVS", "WAVEON NVS 초기화 실패: %s", esp_err_to_name(err));
     }
@@ -186,6 +187,9 @@ void dump_all_configurations(void)
     ESP_LOGI(TAG, "  - facto scale          : %.2f", facto_config.hx1_scale);
     ESP_LOGI(TAG, "  - facto serial         : %s", (facto_config.Device_Serial[0] == '\0') ? "[EMPTY]" : (char*)facto_config.Device_Serial);
     ESP_LOGI(TAG, "--------------------------------------------------");
+
+    ESP_LOGI(TAG, "[Registation] = %s",read_nvs_registration_flag()?"true":"false" );
+    
 
 }
 
@@ -483,6 +487,7 @@ static void flash_task(void *pvParameter)
 
     ESP_ERROR_CHECK(esp_timer_start_periodic(minute10_timer, TIMER_10_MIN_IN_US));
     while (1) {
+
         if(app_save_flag)
         {
             app_save_flag = false;
@@ -508,7 +513,7 @@ static void flash_task(void *pvParameter)
             filter_save_flag = false;
             save_filter_time();
         }
-        
+
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
@@ -537,7 +542,7 @@ void NVS_Flash_init(void)
     load_motor_time();
     load_filter_time();    
     dump_all_configurations();
-    
+    //app_config.gate_way_rssi_th = -100;
 }
 
 

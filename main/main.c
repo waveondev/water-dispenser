@@ -50,6 +50,7 @@ static void filesystem_init(void)
 
 void app_main(void)
 {
+    bool qc_mode = false;
     // =========================================================================
     // 1️NVS (비휘발성 플래시 메모리) 초기화
     // AWS 프로비저닝 과정에서 발급받은 "고유 인증서"와 "개인키"를 
@@ -70,16 +71,23 @@ void app_main(void)
     init_motor_ledc();
     LED_task_init();
     sensor_init();
-    ble_task_init();
-    
-    button_task_init();
 
-    opmode_task_init();
-    Create_Tracker_Capture_Task();
     
-    
-    wifi_init();
-    aws_iot_task_init();
+    qc_mode = button_task_init();
+    ble_task_init(qc_mode);
+    if(qc_mode == false)
+    {
+    #if 1
+        opmode_task_init();
+        Create_Tracker_Capture_Task();
+        
+        
+        wifi_init();
+        aws_iot_task_init();
+    #endif
+    }
+
+
 
 
 }

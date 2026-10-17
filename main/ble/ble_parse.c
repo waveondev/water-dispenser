@@ -435,6 +435,7 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
     ESP_LOG_BUFFER_HEXDUMP(TAG, data, len, ESP_LOG_INFO);
     client_info_t* client;
     client = get_conn_client_by_mac(mac);
+
     switch(Motion_Packet->event_code)
     {   
         case MOTION_START_RESPONSE:
@@ -451,9 +452,8 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                     client->data = (uint8_t*)calloc(client->send_point,sizeof(uint8_t));
                     if(client->data == NULL)
                         break;
-                    
+                    client->start_res_seq = (unsigned int)esp_log_timestamp();
                     Motion_Timer_Set(mac, true);
-                    //tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet,0,NULL);
             }
 
         break;
@@ -510,9 +510,12 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                 Motion_Timer_Set(mac, false);
                 uint8_t* client_data = client->data;
                 uint32_t send_count = client->send_point;
+        
+                tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet,send_count,client_data,client->total_point,client->send_point, client->start_res.motion_start_res.non_save_points);
+                
+                free(client->data);
                 client->data = NULL;
-                tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet,send_count,client_data);
-
+                client->total_point = 0;
                 client->input_count  = 0;
                 client->send_point = 0;    
                          
@@ -526,7 +529,7 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
         case HEALTH_DATA_RESPONSE:
                     // event_code 및 health_data_res 내부 구조체 포인터
                 // health_data_res 구조체 직접 접근
-    
+                client->start_res_seq = (unsigned int)esp_log_timestamp();
                 memcpy(&client->health_res,Motion_Packet,sizeof(Motion_Packet_t));
                 ESP_LOGI(TAG,"\n================ [ Health Data Res ] ================\n");
                 ESP_LOGI(TAG," Event Code    : 0x%02X (%u)", Motion_Packet->event_code, Motion_Packet->event_code);
@@ -557,10 +560,10 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                 if(Motion_Packet->health_data_res.fault_flag.bit.Bat_Status == 2 || Motion_Packet->health_data_res.fault_flag.bit.storage ||
                 Motion_Packet->health_data_res.fault_flag.bit.BLE_Err || Motion_Packet->health_data_res.fault_flag.bit.IMU_Err ||
                 Motion_Packet->health_data_res.fault_flag.bit.reserved)
-                    tracker_mqtt_queue_send(TRACKER_MESSEGE_DIAGNOSTICS,mac, Motion_Packet,0,NULL);
+                    tracker_mqtt_queue_send(TRACKER_MESSEGE_DIAGNOSTICS,mac, Motion_Packet,0,NULL,0,0,0);
                 
 
-                tracker_mqtt_queue_send(TRACKER_MESSEGE_HEALTH,mac, Motion_Packet,0,NULL);
+                tracker_mqtt_queue_send(TRACKER_MESSEGE_HEALTH,mac, Motion_Packet,0,NULL,0,0,0);
                 
 
         break;

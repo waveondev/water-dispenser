@@ -32,9 +32,15 @@ typedef struct
 
 typedef struct
 {
-    messege_tx_mqtt_cmd_e cmd;     
+    messege_tx_mqtt_cmd_e cmd;    
+    uint32_t seq;
     uint8_t mac[6];    
+    
     Motion_Packet_t packet;
+    uint32_t total_points;
+    uint32_t send_points;
+    uint32_t non_save_points;
+
     uint8_t* data;
     uint32_t data_len;
 }tracker_mqtt_packet_t;

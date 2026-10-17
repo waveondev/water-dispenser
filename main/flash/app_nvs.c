@@ -18,6 +18,7 @@ static const char *TAG = __FILE__;
 
 void facto_set(bool status)
 {
+        write_nvs_registration_flag(false);
         if(status == false)
         {
             reset_all_nvs_data();

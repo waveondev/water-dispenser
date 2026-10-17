@@ -393,7 +393,8 @@ void filter_change(void)
 }
 static void motor_used_timer_callback(void* arg)
 {
-
+    if(hardware_error_enable())
+        return;
     app_config_t* app_config = get_app_config();
     (*Motor_Used_Time)++;
     if(*Motor_Used_Time >= (app_config->moter_life_days *SECONDS_IN_DAYS) )

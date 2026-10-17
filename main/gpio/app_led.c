@@ -240,6 +240,7 @@ void app_tof_sensor_poll_100ms(void)
     if(tof_get_buf != tof_get)
     {
         tof_get_buf = tof_get;
+
         mqtt_queue_send(MESSEGE_TEST,&tof_get,sizeof(tof_get));
         
     }
@@ -393,6 +394,19 @@ static void LED_task(void *pvParameter)
                 vTaskDelay(pdMS_TO_TICKS(LED_TASK_DELAY));
                 continue;
             }
+            #if 1
+            if(get_factory_flag())
+            {
+                facto_set(false);
+                set_rgb_len_no_Breathing(0, 0, 255, 0);
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                set_rgb_len_no_Breathing(255, 0, 0, 0);
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                set_rgb_len_no_Breathing(0, 255, 0, 0);
+                vTaskDelay(pdMS_TO_TICKS(2000));     
+                esp_restart(); // ⚠️ 깨끗해진 구조 반영 및 안전한 재시작          
+            }
+            #endif
             int button_state = button_press_state();
             if(button_state)
             {
@@ -413,7 +427,10 @@ static void LED_task(void *pvParameter)
                     }
                     last_op_mode = -1; 
                     #if 1
-                    if(hardware_error_enable() || Pump_error_enable() || Water_empty_enable() || Loadcell_error_enable())
+                    if (TOF_enable()){
+                        set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
+                    }                          
+                    else if(hardware_error_enable() || Pump_error_enable() || Water_empty_enable() || Loadcell_error_enable())
                     {
                         set_rgb_len_no_Breathing(LED_brightness_value,0 , 0, 0); 
                     }
@@ -432,9 +449,7 @@ static void LED_task(void *pvParameter)
                         Breathing_Setup(1,2,0,LED_brightness_value,255,0,255,0);
                         Breathing_LED();
                     }                  
-                    else if (TOF_enable()){
-                        set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
-                    }         
+   
                     else if (pairing_enable()) {
                         Breathing_Setup(1,2,0,LED_brightness_value,0,0,255,0);
                         Breathing_LED();

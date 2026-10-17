@@ -1,7 +1,9 @@
 #ifndef __APP_BUTTON_H__
 #define __APP_BUTTON_H__
 
-void button_task_init(void);
+bool get_factory_flag(void);
+bool button_task_init(void);
+
 
 void bf_LongPress10SecAction(void);
 void bf_LongPress5SecAction(void) ;

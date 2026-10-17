@@ -25,6 +25,11 @@ typedef struct {
     uint32_t duration_sec;
 }DRINK_Packet_t;
 
+typedef struct{
+    int detect_flag;
+    int start_weight;
+}ACCESS_Packet_t;
+
 void Night_Mode(bool state);
 void opmode_task_init(void);
 void Opmode_Set(void);

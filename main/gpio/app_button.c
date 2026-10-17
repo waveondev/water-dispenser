@@ -41,7 +41,7 @@ static bool is_pressed = false;
 static QueueHandle_t gpio_evt_queue = NULL;
 static TimerHandle_t double_click_timer = NULL;
 // ⚠️ long_press_timer 및 long_press_stage 변수는 더 이상 필요 없으므로 삭제됨
-
+static bool factory_flag = false;
 // 함수 선언
 static void Button_task(void* arg);
 static void double_click_timer_callback(TimerHandle_t xTimer);
@@ -52,6 +52,12 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
     uint32_t gpio_num = (uint32_t) arg;
     xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
+
+bool get_factory_flag(void)
+{
+    return factory_flag;
+}
+
 
 void bf_SingleClickAction(void) {
     Opmode_Set();
@@ -89,7 +95,8 @@ void bf_LongPress10SecAction(void) {
     ESP_LOGI(TAG,"Long Press 10 Sec Action executed \r\n");
     //delay(1000); 
     //ESP.restart();
-    facto_set(false);
+    factory_flag = true;
+    //facto_set(false);
 }
 int button_press_state(void)
 {
@@ -179,7 +186,7 @@ static void double_click_timer_callback(TimerHandle_t xTimer)
     click_count = 0; // 카운트 초기화
 }
 
-void button_task_init(void)
+bool button_task_init(void)
 {
     static uint8_t ucParameterToPass;
 
@@ -191,7 +198,9 @@ void button_task_init(void)
         .intr_type = GPIO_INTR_ANYEDGE
     };
     gpio_config(&io_conf);
-    
+    int  current_level= gpio_get_level(PIN_PKEY_STAT);
+    if(current_level == 0)
+        return true;
     gpio_install_isr_service(0);
     gpio_isr_handler_add(PIN_PKEY_STAT, gpio_isr_handler, (void*) PIN_PKEY_STAT);
 
@@ -212,5 +221,5 @@ void button_task_init(void)
         ) != pdPASS) {
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");
     }
-    int current_level = gpio_get_level(PIN_PKEY_STAT);
+    return false;
 }

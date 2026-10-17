@@ -49,7 +49,6 @@ void Night_Mode(bool state)
     if(NightMode)
     {
         current_opmode = OP_MODE_NIGHT;  
-        
         LED_Bright_Set(0);  
     }
     else 
@@ -90,7 +89,7 @@ void set_motor_speed(int* speed)
                 Motor_Speed = 0;
             break;
             case OP_MODE_NIGHT:
-                Motor_Speed = 80;
+                Motor_Speed = 100;
                 
             break;
         }
@@ -164,10 +163,11 @@ void Smart_Water(void)
     uint32_t drink_end_tick = 0;          
     app_config_t* app_config = get_app_config();
     DRINK_Packet_t DRINK_Packet = {0};
+    ACCESS_Packet_t ACCESS_Packet = {0};
     switch (smart_state)
     {
         case SMART_IDLE:
-        if (sensor_detected) 
+        if (sensor_detected & (1<<0)) 
         {
             splash_count = 0;
             water_fault_disable(WATER_SPLASHING_FAULT);
@@ -214,8 +214,10 @@ void Smart_Water(void)
         if ((int32_t)(smart_timer_target - current_tick) <= 0) 
         {
             drink_start_tick = current_tick;
+            ACCESS_Packet.detect_flag = sensor_detected;
+            ACCESS_Packet.start_weight = start_weight;
             // 5초 동안 급격하게 튀지 않고 무사히 통과 완료!
-            mqtt_queue_send(MESSEGE_ACCESS,&start_weight,sizeof(start_weight));
+            mqtt_queue_send(MESSEGE_ACCESS,&ACCESS_Packet,sizeof(ACCESS_Packet));
             smart_state = SMART_RUN_STABLE;
             ESP_LOGI(TAG, "SMART: 5-second verification SUCCESS. Stable running...");
         }
@@ -227,7 +229,15 @@ void Smart_Water(void)
             if (!sensor_detected) 
             {
                 // 💡 3. 꺼진 후 3초 동안 계속 감지 안 되는지 체크 시작
-                smart_timer_target = current_tick + (3000 / portTICK_PERIOD_MS);
+                if(current_opmode == OP_MODE_SMART)
+                {
+                    smart_timer_target = current_tick + (15000 / portTICK_PERIOD_MS);
+                }
+                else
+                {
+                    smart_timer_target = current_tick + (3000 / portTICK_PERIOD_MS);
+                }
+  
                 smart_state = SMART_STOP_CHECK;
                 ESP_LOGI(TAG, "SMART: Sensor lost. Motor STOPPED immediately. Checking 3s stable off...");
             }
@@ -285,7 +295,7 @@ static void Opmode_task(void *pvParameter)
         }
         else
         {
-            if(ota_enable() || hardware_error_enable())
+            if(ota_enable())
             {
                 start_motor_with_boost(0, 0);
             }
@@ -303,13 +313,13 @@ static void Opmode_task(void *pvParameter)
                         }
                         else
                         {
-                            if(VL53L0X_Detect(true))
-                            {
+                            int value = VL53L0X_Detect(true);
+                            if (value) {
                                 Smart_used_Timer_Set(true);
                                 start_motor_with_boost(Motor_Speed, 0);
-                            }
-                            else
-                                start_motor_with_boost(0, 0);
+                            } else {
+                                 start_motor_with_boost(0, 0);
+                            }                               
                         }
                     }
                     break;

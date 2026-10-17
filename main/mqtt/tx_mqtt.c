@@ -52,15 +52,18 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd,  tracker_mqtt_packet_t
         return root;
     /* Root 레벨 필수 필드 추가 */
     char buffer[40];
-    sprintf(buffer,"123e4567-e89b-12d3-5431-%012u", (unsigned int)esp_log_timestamp());
-    cJSON_AddStringToObject(root, "id", buffer); /* 실제로는 uuid 생성 함수 사용 */
+
     if(TRACKER_MESSEGE_ACTIVITY <= cmd)
     {
+        sprintf(buffer,"123e4567-e89b-12d3-5431-%012u", (unsigned int)client->start_res_seq);
+        cJSON_AddStringToObject(root, "id", buffer); /* 실제로는 uuid 생성 함수 사용 */
         cJSON_AddStringToObject(root, "env", "alpha");
         cJSON_AddStringToObject(root, "device_type", "tracker"); 
     }
     else
     {
+        sprintf(buffer,"123e4567-e89b-12d3-5431-%012u", (unsigned int)esp_log_timestamp());
+        cJSON_AddStringToObject(root, "id", buffer); /* 실제로는 uuid 생성 함수 사용 */
         cJSON_AddStringToObject(root, "env", "alpha");
         cJSON_AddStringToObject(root, "device_type", CONFIG_DEVICE_TYPE); 
     }
@@ -149,8 +152,10 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
     float data_weight = 0;
     Tracker_Device_t* Tracker_Name = NULL;
     DRINK_Packet_t *DRINK_Packet = NULL;
+    ACCESS_Packet_t *ACCESS_Packet = NULL;
     esp_reset_reason_t reason = esp_reset_reason();
     double weight = 0;
+    int detect_type = 0;
     uint16_t water_fault_code_send = 0;
 
     // 2. state 객체 생성 ({})
@@ -219,11 +224,12 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
 // 🔧 수정: 문자열이 아닌 Float(숫자) 타입으로 전달해야 함
             if(mqtt_packet->data != NULL)
             {
-                data_weight = *(float *)mqtt_packet->data;
-                weight = round((double)data_weight * 100.0) / 100.0;
+                ACCESS_Packet = (ACCESS_Packet_t*)mqtt_packet->data;
+                weight = round((double)ACCESS_Packet->start_weight * 100.0) / 100.0;
+                detect_type = ACCESS_Packet->detect_flag;
             }   
             cJSON_AddNumberToObject(data_obj, "start_weight", weight);
-
+            cJSON_AddNumberToObject(data_obj, "detect_type", detect_type);
             
         break;
         case MESSEGE_DRINK:
@@ -579,9 +585,9 @@ static cJSON* Get_cJSON_Data_for_Tracker(messege_tx_mqtt_cmd_e cmd, tracker_mqtt
             cJSON_AddStringToObject(data_obj, "tracker_id", dynamicMacStr); // 예: "TRACKER_AABBCCDDEEFF"        
             cJSON_AddStringToObject(data_obj, "activity_id", "123e4567-e89b-12d3-a456-426614174000");
             cJSON_AddNumberToObject(data_obj, "seq_num", packet->motion_data.seq);
-            cJSON_AddNumberToObject(data_obj, "total_points", client->start_res.motion_start_res.total_points);            
-            cJSON_AddNumberToObject(data_obj, "send_points", client->start_res.motion_start_res.send_points);
-            cJSON_AddNumberToObject(data_obj, "non_save_points", client->start_res.motion_start_res.non_save_points);
+            cJSON_AddNumberToObject(data_obj, "total_points", tracker_mqtt_packet->total_points);            
+            cJSON_AddNumberToObject(data_obj, "send_points", tracker_mqtt_packet->send_points);
+            cJSON_AddNumberToObject(data_obj, "non_save_points", tracker_mqtt_packet->non_save_points);
             
             // 4. points 배열 추가 (uint16_t 그대로 추가, 비트 언패킹은 백엔드가 수행)
             cJSON *points_array = cJSON_CreateArray();

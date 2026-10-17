@@ -41,7 +41,6 @@ static const ble_uuid128_t nus_tx_uuid  = BLE_UUID128_INIT(BLE_CHR_2_UUID128_ARR
 
 static uint8_t own_addr_type;
 static uint16_t ble_spp_svc_gatt_notify_val_handle;
-static bool conn_handle_subs[CONFIG_BT_NIMBLE_MAX_CONNECTIONS + 1];
 
 static void mac_send_timer_callback(void* arg);
 
@@ -55,6 +54,7 @@ static QueueHandle_t ble_tx_queue = NULL; // 이름을 수신용(rx)에서 송�
 
 uint16_t g_ble_max_payload = 20; // ble로 최대 보낼 수 있는 Length 저장
 #define BLE_TRX_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
+static bool qc_mode = false;
 // NimBLE 예제에 정의된 주소 출력 함수
 static void print_addr(const void *addr)
 {
@@ -90,15 +90,16 @@ static void ble_spp_client_scan(void)
 
     // 🔴 [수정] 500ms 비콘 스캔을 위한 타이밍 최적화
     // interval과 window를 같게 설정하면 ESP32가 쉬지 않고 100% 확률로 계속 스캔 대기를 합니다.
-    disc_params.itvl = 100;            // 스캔 주기 (단위: 0.625ms, 즉 250ms)
-    disc_params.window = 100;          // 스캔 윈도우 (단위: 0.625ms, 즉 250ms) -> 100% 듀티 사이클
-
+    disc_params.itvl = 32;   // 32 * 0.625ms = 20ms
+    disc_params.window = 32; // 20ms (100% Duty Cycle)
     rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params, ble_spp_server_gap_event, NULL);
     if (rc != 0) {
         MODLOG_DFLT(ERROR, "Error discovering peers; rc=%d\n", rc);
     }
 }
 #define DEVICE_T 'W'
+#define DEVICE_NAME CONFIG_DEVICE_PREFIX
+//#define DEVICE_NAME "W-100"
 static void ble_spp_server_advertise(void)
 {
     struct ble_gap_adv_params adv_params;
@@ -132,7 +133,21 @@ static void ble_spp_server_advertise(void)
    // fields.num_uuids128 = 1;
    // fields.uuids128_is_complete = 1;
 
+    char device_name[30] = {0};
+    if(qc_mode == true)
+    {
+        snprintf(device_name, sizeof(device_name), "%s-QC", DEVICE_NAME);
+    }
+    else
+    {
+        if (read_nvs_registration_flag() == false) {
+            snprintf(device_name, sizeof(device_name), "%s-R-water", DEVICE_NAME);
+        } else {
+            snprintf(device_name, sizeof(device_name), "%s-water", DEVICE_NAME);
+        }
+    }
 
+    ble_svc_gap_device_name_set(device_name);
 
     const char *name = ble_svc_gap_device_name();
 
@@ -468,22 +483,19 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         }
         current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
-        if (event->disconnect.conn.conn_handle <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-            conn_handle_subs[event->disconnect.conn.conn_handle] = false;
-        }
+  
         delay_adv_timer_cb(NULL);
         return 0;
 
     case BLE_GAP_EVENT_SUBSCRIBE:
         MODLOG_DFLT(INFO, "subscribe event; conn_handle=%d attr_handle=%d \n",
                     event->subscribe.conn_handle, event->subscribe.attr_handle);
-        if (event->subscribe.conn_handle <= CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
-            conn_handle_subs[event->subscribe.conn_handle] = true;
-        }
+
         return 0;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
-        delay_adv_timer_cb(NULL);
+           ESP_LOGE(TAG, "BLE_GAP_EVENT_ADV_COMPLETE");
+        //delay_adv_timer_cb(NULL);
         return 0;
     case BLE_GAP_EVENT_CONN_UPDATE:
             MODLOG_DFLT(INFO, "Connection updated; status=%d\n", event->conn_update.status);
@@ -544,7 +556,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         }
         else if (svc_uuid == 0x4321)
         {
-            if (event->disc.rssi < -40)
+            if (event->disc.rssi < -50)
             {
                 return 0; // RSSI 기준 미달 차단
             }
@@ -966,7 +978,7 @@ void motion_msg_send(uint16_t conn_handle, uint8_t cmd,uint8_t sub_cmd)
     // 설정값이 0보다 클 때만 타이머 실행 (안전성 강화)
 }
 #include "esp_bt.h" // 필요한 헤더 포함
-void ble_task_init(void)
+void ble_task_init(bool qc)
 {
     esp_err_t ret;
     ret = nimble_port_init();
@@ -975,15 +987,12 @@ void ble_task_init(void)
         return;
     }
 
-    for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
-        conn_handle_subs[i] = false;
-    }
 
     ble_hs_cfg.reset_cb = ble_spp_server_on_reset;
     ble_hs_cfg.sync_cb = ble_spp_server_on_sync;
     ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
-    esp_err_t err = esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P15);
+    esp_err_t err = esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
     
     if (err == ESP_OK) {
         ESP_LOGI(TAG,"BLE TX Power set successfully!");
@@ -996,11 +1005,25 @@ void ble_task_init(void)
     ble_hs_cfg.sm_io_cap = CONFIG_EXAMPLE_IO_TYPE;
 
     assert(gatt_svr_init() == 0);
-    char name[30] = {0};
 
-    sprintf(name,"%s-water",CONFIG_DEVICE_PREFIX);
+    char device_name[30] = {0};
+    qc_mode = qc;
+    if(qc_mode == true)
+    {
+        snprintf(device_name, sizeof(device_name), "%s-QC", DEVICE_NAME);
+    }
+    else
+    {
+        if (read_nvs_registration_flag() == false) {
+            snprintf(device_name, sizeof(device_name), "%s-R-water", DEVICE_NAME);
+        } else {
+            snprintf(device_name, sizeof(device_name), "%s-water", DEVICE_NAME);
+        }
+    }
 
-    assert(ble_svc_gap_device_name_set(name) == 0);
+
+    assert(ble_svc_gap_device_name_set(device_name) == 0);
+    
     ble_store_config_init();
 
     const esp_timer_create_args_t mac_sending_timer_args = {
