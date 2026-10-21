@@ -49,16 +49,17 @@ typedef struct {
       struct
       {
         uint32_t total_points;
-        uint8_t send_points;
+        uint16_t send_points;
         uint8_t non_save_points;
-        uint8_t reserved;
         uint16_t padding[6];
       } motion_start_res;
+
       struct
       {
         uint8_t seq;
         uint8_t MLC_data[18]; 
       } motion_data;
+
       struct
       {
         uint8_t req_type;
@@ -74,9 +75,10 @@ typedef struct {
         uint8_t minor;
         uint8_t patch;
         int8_t target_rssi;
-        fault_code fault_flag;
+        fault_code fault_flag; // sizeof(fault_code)가 1byte라고 가정
         uint16_t padding[4];
       } health_data_res;
+
       struct
       {
         uint8_t read_write;
@@ -90,25 +92,29 @@ typedef struct {
         uint8_t req_type;
         uint16_t padding[9];
       } motion_start_req;
+
       struct
       {
         uint8_t ack_seq_no;
         uint16_t padding[9];
       } motion_ack;
+
       struct
       {
         uint8_t cmd_type;
         uint16_t padding[9];
       } ota_req;
+
       struct
       {
         uint8_t cmd_type;
         uint8_t status;
         uint8_t padding[17];
       } ota_res;
+
       struct
       {
-        uint8_t cmd_type; // 1byte (독립된 cmd_type 위치 확보)
+        uint8_t cmd_type;
         union
         {
           struct
@@ -145,21 +151,89 @@ typedef struct {
         uint8_t cmd_type;
         uint8_t padding[18];
       } time_req;
+
       struct
       {
         uint8_t cmd_type;
         uint32_t epoch_sec;
         uint8_t padding[14];
       } time_res;
+
       struct
       {
         uint8_t cmd_type;
-        uint8_t data[18];
+        union
+        {
+          struct
+          {
+            uint8_t status;
+            uint8_t padding[17];
+          } hx711_case_cal;
+
+          struct
+          {
+            uint16_t cal_weight;
+            uint8_t padding[16];
+          } hx711_weight_cal;
+
+          struct
+          {
+            uint8_t index_bit;
+            uint8_t red;
+            uint8_t green;
+            uint8_t blue;
+            uint8_t white;
+            uint8_t padding[13];
+          } led_setvalue;
+
+          struct
+          {
+            uint8_t value;
+            uint8_t padding[17];
+          } motor_set_value;   
+
+          struct
+          {
+            uint8_t IR_Left;
+            uint8_t IR_Right;
+            uint8_t padding[16];
+          } IR_set_value;      
+
+          struct
+          {
+            int8_t beacon_rssi;
+            uint8_t padding[17];
+          } beacon_set_value; 
+
+        };
       } setting_req;
+
       struct
       {
         uint8_t cmd_type;
-        uint8_t data[18];
+        union
+        {
+          struct
+          {
+            uint32_t current_weight;
+            uint8_t padding[14];
+          } hx711_getvalue;
+
+          struct
+          {
+            uint16_t Getmotor_adc;
+            uint16_t current_ir_left;
+            uint16_t current_ir_right;
+            uint16_t center_ir_left;
+            uint16_t center_ir_right;
+            uint8_t padding[8]; // ⭕ uint8_t 8바이트로 수정 (기존 uint8_t padding[8]의 타입 확인 필요)
+          } IR_getvalue;
+          struct
+          {
+            int8_t beacon_rssi;
+            uint8_t padding[17];
+          } beacon_get_value; 
+        };
       } setting_res;
   };
 } Motion_Packet_t;

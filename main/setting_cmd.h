@@ -12,6 +12,9 @@ typedef enum
   IR_GetValue       = 3,  
   LED_SetValue      = 4,    
   MOTOR_SetValue    = 5,    
+  IR_SetValue       = 6,    
+  Beacon_GetValue   = 7,      
+  Beacon_SetValue   = 8,    
 }Setting_cmd_e;
 
 void Setting_callback(Motion_Packet_t* Motion_Packet);

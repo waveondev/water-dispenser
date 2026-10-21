@@ -6,13 +6,12 @@
 #define OTA_START_BIT       (1<<14)
 #define HARDWARE_ERR_BIT    (1<<13)
 #define TOF_DETECT_BIT      (1<<12)
-#define CLEAN_MODE_BIT      (1<<11)
-#define WATER_LOW_BIT       (1<<10)
-#define WATER_EMPTY_BIT     (1<<9)
-#define LOADCELL_ERR_BIT    (1<<8)
-#define FILTER_WATER_BIT    (1<<7)
-#define FILTER_DEBRIS_BIT   (1<<6)
-#define PUMP_ERR_BIT        (1<<5)
+#define WATER_LOW_BIT       (1<<11)
+#define WATER_EMPTY_BIT     (1<<10)
+#define LOADCELL_ERR_BIT    (1<<9)
+#define FILTER_WATER_BIT    (1<<8)
+#define FILTER_DEBRIS_BIT   (1<<7)
+#define PUMP_ERR_BIT        (1<<6)
 
 void LED_Bright_Set(uint8_t value);
 bool TOF_enable(void);
@@ -41,7 +40,6 @@ void led_status_print(void);
 void LED_task_init(void);
 bool ota_enable(void);
 bool hardware_error_enable(void);
-bool Clean_enable(void);
 bool Water_low_enable(void);
 bool Water_empty_enable(void);
 bool Loadcell_error_enable(void);

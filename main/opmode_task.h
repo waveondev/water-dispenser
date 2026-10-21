@@ -4,7 +4,6 @@
 #include "esp_log.h"
 typedef enum {
     OP_MODE_NORMAL = 0,
-    OP_MODE_SMART,
     OP_MODE_SLEEP,
     OP_MODE_NIGHT,
     OP_MODE_TEST

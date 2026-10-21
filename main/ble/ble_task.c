@@ -514,6 +514,36 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
     // 🔴 [추가] 주변에서 비콘 패킷을 가로챘을 때 일어나는 이벤트
     case BLE_GAP_EVENT_DISC:
     {
+        uint8_t ev_type = event->disc.event_type;
+        bool is_connectable = false;
+
+        // 1. 연결 가능 여부 판별
+        if (ev_type == BLE_HCI_ADV_RPT_EVTYPE_ADV_IND || 
+            ev_type == BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
+            is_connectable = true;
+        }
+
+        // 2. 판별 결과 출력 및 분기 처리
+        if (is_connectable) {
+            /*ESP_LOGI(TAG, "[Connectable] %02x:%02x:%02x:%02x:%02x:%02x (RSSI: %d)",
+                     event->disc.addr.val[5], event->disc.addr.val[4],
+                     event->disc.addr.val[3], event->disc.addr.val[2],
+                     event->disc.addr.val[1], event->disc.addr.val[0],
+                     event->disc.rssi);*/
+
+            // 연결을 시도하고 싶은 대상 목록에 추가하거나 직접 connect 시도
+            // connect_to_target(&event->disc.addr);
+
+        } else {
+            /*ESP_LOGW(TAG, "[Non-Connectable / Beacon] %02x:%02x:%02x:%02x:%02x:%02x (RSSI: %d)",
+                     event->disc.addr.val[5], event->disc.addr.val[4],
+                     event->disc.addr.val[3], event->disc.addr.val[2],
+                     event->disc.addr.val[1], event->disc.addr.val[0],
+                     event->disc.rssi);*/
+
+            // 데이터 수신/파싱만 수행하고 연결 시도는 하지 않음
+        }
+
         // 주변 기기 정보를 통합 저장할 저장소 (최대 20개)
         app_config_t* app_config = get_app_config();
         dev_info_t dev_list;
@@ -1004,6 +1034,8 @@ void ble_task_init(bool qc)
     #endif
     ble_hs_cfg.sm_io_cap = CONFIG_EXAMPLE_IO_TYPE;
 
+    ESP_LOGI("motion", "Motion_Packet_t = %d", sizeof(Motion_Packet_t));
+    
     assert(gatt_svr_init() == 0);
 
     char device_name[30] = {0};

@@ -213,8 +213,6 @@ int GetIR_RIGHT(void) { return ir_right_mv; }
 
 // 필터링 버퍼
 
-static uint32_t ch0_buffer[FILTER_WINDOW_SIZE] = {0};
-
 static uint8_t adc_index = 0;
 static uint8_t adc_count = 0;
 
@@ -245,7 +243,7 @@ void ADC_Sensing(void)
         ESP_LOGE(TAG, "ADC handles are not initialized!");
         return;
     }
-    int current_level = gpio_get_level(PIN_PUMP_PWM);
+
 
     // ==========================================
     // 2. CH0 채널 기존 DMA 연속 모드로 읽기
@@ -284,27 +282,18 @@ void ADC_Sensing(void)
     // [전 채널 원형 버퍼 이동 평균 필터링]
     // ==========================================
 
-    ch0_buffer[adc_index] = raw_val_ch0;
+    motor_adc = raw_val_ch0;
 
     adc_index = (adc_index + 1) % FILTER_WINDOW_SIZE;
     if (adc_count < FILTER_WINDOW_SIZE) {
         adc_count++;
     }
 
-    uint32_t sum_ch0 = 0;
-    for (int i = 0; i < adc_count; i++) {
-
-        sum_ch0 += ch0_buffer[i];
-    }
-
-    if(current_level)
-        motor_adc   = sum_ch0 / adc_count;
-
     if (DBG_Resister && DBG_Resister->adc) {
-        ESP_LOGI(TAG, "[Mixed Filtered] CH3(Oneshot): %lu | CH4(Oneshot): %lu| CH0(DMA): %lu (Raw: %lu)", 
+        ESP_LOGI(TAG, "[Mixed Filtered] CH3(Oneshot): %lu | CH4(Oneshot): %lu| CH0(DMA): %lu", 
                  ir_left_mv,  
                  ir_right_mv,  
-                 motor_adc, raw_val_ch0);
+                 motor_adc);
     }
 }
 

@@ -18,16 +18,13 @@ static const char* TAG = __FILE__;
 #define OPMODE_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 static uint32_t current_opmode = OP_MODE_NORMAL;
 static esp_timer_handle_t opmode_timer = NULL;
-static int Motor_Speed = 80;
+static int Motor_Speed = 100;
 #ifndef max
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #endif
-static esp_timer_handle_t smart_used_timer = NULL;
-static uint32_t smart_water_enable = 0;
 // 1초 뒤 타이머가 만료되면 실행될 콜백 함수
 #define SEC_TO_US(sec) ((uint64_t)(sec) * 1000000ULL)
 #define MIN_TO_US(min) ((uint64_t)(min) * 60ULL * 1000000ULL)
-void Smart_used_Timer_Set(bool state);
 static void opmode_timer_callback(void* arg)
 {
     //ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
@@ -35,11 +32,6 @@ static void opmode_timer_callback(void* arg)
      //   water_fault_enable(WATER_MODECHANGE);
     //water_fault_disable(WATER_MODECHANGE);
     // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
-}
-static void smart_used_timer_callback(void* arg)
-{
-    smart_water_enable = 600;
-    Smart_used_Timer_Set(true);
 }
 static bool NightMode = false;
 void Night_Mode(bool state)
@@ -71,16 +63,10 @@ void set_motor_speed(int* speed)
         if(Motor_Speed < 0)
             Motor_Speed = 0;
     }
-        
     else
     {
-        Smart_used_Timer_Set(false);
         switch(current_opmode)
         {
-            case OP_MODE_SMART:
-                Smart_used_Timer_Set(true);
-                Motor_Speed = 100;
-            break;
             // 타 모드는 기본 구조 유지
             case OP_MODE_NORMAL:
                 Motor_Speed = 100;
@@ -90,7 +76,6 @@ void set_motor_speed(int* speed)
             break;
             case OP_MODE_NIGHT:
                 Motor_Speed = 100;
-                
             break;
         }
     }
@@ -130,19 +115,7 @@ void Opmode_Set(void)
     }
 
 }
-void Smart_used_Timer_Set(bool state)
-{
-    if (esp_timer_is_active(smart_used_timer)) {
-        esp_timer_stop(smart_used_timer);
-    } 
-    if(state)
-    {
-        esp_timer_start_once(smart_used_timer, MIN_TO_US(1440));
-        //ESP_LOGI(TAG, "smart_enable set"); 
-    }
-    //else
-        //ESP_LOGI(TAG, "smart_enable reset"); 
-}
+
 
 static smart_state_t smart_state = SMART_IDLE;
 smart_state_t Time_ratio_state(void)
@@ -151,19 +124,83 @@ smart_state_t Time_ratio_state(void)
 }
 
 #if 1
+typedef enum {
+    ACCESS_MQTT_IDLE,
+    ACCESS_MQTT_VERIFY_5S
+} access_mqtt_state_t;
 
 void Smart_Water(void)
 {
     static uint32_t smart_timer_target = 0; // 각 상태별 마감 시한 틱 저장
     static float start_weight = 0;
     uint8_t splash_count = 0;
+    static int sensor_detected_buf = 0;
     int sensor_detected = VL53L0X_Detect(false);
     uint32_t current_tick = xTaskGetTickCount();
     static uint32_t drink_start_tick = 0;          
     uint32_t drink_end_tick = 0;          
     app_config_t* app_config = get_app_config();
     DRINK_Packet_t DRINK_Packet = {0};
-    ACCESS_Packet_t ACCESS_Packet = {0};
+    
+    // 💡 ACCESS MQTT 5초 지속 유지 검증용 변수
+    static ACCESS_Packet_t ACCESS_Packet = {0};
+    static access_mqtt_state_t access_mqtt_state = ACCESS_MQTT_IDLE;
+    static uint32_t access_timer_target = 0;
+    static int target_sensor_val = 0; // 검증 기준이 될 센서 값 저장
+
+    static int detected_tick = 0;
+
+    // =========================================================================
+    // 💡 1. 센서 상태 변경 감지
+    // =========================================================================
+    if(sensor_detected != sensor_detected_buf)
+    {
+        // 센서 상태가 바뀌는 순간 타이머 및 기준 데이터 세팅
+        target_sensor_val = sensor_detected; // 유지해야 할 센서 목표값 저장
+        ACCESS_Packet.detect_flag = sensor_detected;
+        ACCESS_Packet.start_weight = 0;
+        if((sensor_detected_buf - sensor_detected)  & (1<<0)) 
+        {
+            ACCESS_Packet.start_weight = loadcell_data_get();
+        }
+        // 5초 타겟 설정 및 검증 상태 시작
+        access_timer_target = current_tick + (5000 / portTICK_PERIOD_MS);
+        access_mqtt_state = ACCESS_MQTT_VERIFY_5S;
+        ESP_LOGI(TAG, "Sensor state changed (0x%02X -> 0x%02X)! Verifying 5s hold...", sensor_detected_buf, sensor_detected);
+
+        sensor_detected_buf = sensor_detected; // 센서 변경 버퍼 업데이트
+    }
+
+
+    // =========================================================================
+    // 💡 2. [독립 상태 머신] 5초 동안 상태 유지가 완벽한지 체크
+    // =========================================================================
+    switch (access_mqtt_state)
+    {
+        case ACCESS_MQTT_IDLE:
+            break;
+
+        case ACCESS_MQTT_VERIFY_5S:
+            // ⚠️ 5초를 채우는 도중, 현재 센서 값이 변경 시작 시점의 값과 달라진 경우 -> 취소
+            if (sensor_detected != target_sensor_val)
+            {
+                access_mqtt_state = ACCESS_MQTT_IDLE;
+                ESP_LOGW(TAG, "Sensor changed during 5s hold. ACCESS MQTT CANCELED.");
+                break;
+            }
+
+            // 💡 5초 동안 목표 센서 값이 단 한 번도 변하지 않고 유지된 경우 -> 무조건 전송
+            if ((int32_t)(access_timer_target - current_tick) <= 0)
+            {
+                mqtt_queue_send(MESSEGE_ACCESS, &ACCESS_Packet, sizeof(ACCESS_Packet));
+                ESP_LOGI(TAG, "SMART: Sensor state maintained for 5s! ACCESS MQTT SENT.");
+                access_mqtt_state = ACCESS_MQTT_IDLE; // 전송 완료 후 대기
+            }
+            break;
+    }
+    // =========================================================================
+    // 메인 음수 제어 상태 머신 (기존 동작 유지)
+    // =========================================================================
     switch (smart_state)
     {
         case SMART_IDLE:
@@ -181,7 +218,7 @@ void Smart_Water(void)
 
     case SMART_RUN_VERIFY:
         // 5초가 가기 전에 센서가 끊기면 칼같이 끄고 대기 상태로 복귀
-        if (!sensor_detected) 
+        if (!sensor_detected & (1<<0)) 
         {
             smart_state = SMART_IDLE;
             ESP_LOGI(TAG, "SMART: Sensor lost before 5s. Motor STOPPED.");
@@ -192,8 +229,6 @@ void Smart_Water(void)
         float current_w = loadcell_data_get();
 
         // 💡 시작 무게(또는 직전 데이터)와 비교해 급격하게 50g 이상 위아래로 튀었는지 검사
-        // (fabs를 써서 +50g 스파이크나 -50g 드롭을 모두 잡아냅니다)
-            
         if (current_w > 0 && fabsf(current_w - start_weight) >= app_config->splash_delta_g) 
         {
             splash_count++;
@@ -206,7 +241,7 @@ void Smart_Water(void)
                 smart_state = SMART_IDLE; // 즉시 대기 상태로 복귀
                 water_fault_enable(WATER_SPLASHING_FAULT);
                 break;
-            }  
+            }   
 
         }
 
@@ -214,10 +249,9 @@ void Smart_Water(void)
         if ((int32_t)(smart_timer_target - current_tick) <= 0) 
         {
             drink_start_tick = current_tick;
-            ACCESS_Packet.detect_flag = sensor_detected;
-            ACCESS_Packet.start_weight = start_weight;
-            // 5초 동안 급격하게 튀지 않고 무사히 통과 완료!
-            mqtt_queue_send(MESSEGE_ACCESS,&ACCESS_Packet,sizeof(ACCESS_Packet));
+            
+            // 기존의 즉시 전송 코드는 제거됨
+
             smart_state = SMART_RUN_STABLE;
             ESP_LOGI(TAG, "SMART: 5-second verification SUCCESS. Stable running...");
         }
@@ -226,18 +260,12 @@ void Smart_Water(void)
         case SMART_RUN_STABLE:
 
             // 💡 2. 5초 이상 유지된 이후 센서 감지가 사라지면 "바로 끄기"
-            if (!sensor_detected) 
+            if (!(sensor_detected & (1<<0)))
             {
-                // 💡 3. 꺼진 후 3초 동안 계속 감지 안 되는지 체크 시작
-                if(current_opmode == OP_MODE_SMART)
-                {
-                    smart_timer_target = current_tick + (15000 / portTICK_PERIOD_MS);
-                }
-                else
                 {
                     smart_timer_target = current_tick + (3000 / portTICK_PERIOD_MS);
                 }
-  
+
                 smart_state = SMART_STOP_CHECK;
                 ESP_LOGI(TAG, "SMART: Sensor lost. Motor STOPPED immediately. Checking 3s stable off...");
             }
@@ -245,7 +273,7 @@ void Smart_Water(void)
 
         case SMART_STOP_CHECK:
             // ⚠️ 3초 버티는 도중에 센서가 다시 감지되었다면? -> 끄기 취소하고 다시 안정 구동으로!
-            if (sensor_detected) 
+            if (sensor_detected & (1<<0)) 
             {
                 smart_state = SMART_RUN_STABLE;
 
@@ -279,11 +307,6 @@ static void Opmode_task(void *pvParameter)
     ESP_LOGI(TAG, "Starting Opmode_task");
     app_config_t* app_config = get_app_config();
 
-    const esp_timer_create_args_t smart_mode_used_arg = {
-        .callback = &smart_used_timer_callback,
-        .name = "Slid_weight_timer_timer"
-    };
-    esp_timer_create(&smart_mode_used_arg, &smart_used_timer);
 
     set_motor_speed(NULL);
 
@@ -303,26 +326,6 @@ static void Opmode_task(void *pvParameter)
             {
                 switch(current_opmode)
                 {
-                    case OP_MODE_SMART:
-                    {
-                        Smart_Water();
-                        if(smart_water_enable)
-                        {
-                            smart_water_enable--;
-                            start_motor_with_boost(Motor_Speed, 0);
-                        }
-                        else
-                        {
-                            int value = VL53L0X_Detect(true);
-                            if (value) {
-                                Smart_used_Timer_Set(true);
-                                start_motor_with_boost(Motor_Speed, 0);
-                            } else {
-                                 start_motor_with_boost(0, 0);
-                            }                               
-                        }
-                    }
-                    break;
                     // 타 모드는 기본 구조 유지
                     case OP_MODE_NORMAL:
                         Smart_Water();
@@ -334,9 +337,9 @@ static void Opmode_task(void *pvParameter)
                     break;
                     case OP_MODE_SLEEP:
                         start_motor_with_boost(Motor_Speed, 0);
-                        break;
+                    break;
                     default:
-                        break;
+                    break;
                 }
             }
         }

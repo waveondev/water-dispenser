@@ -155,10 +155,9 @@ void dump_all_configurations(void)
     ESP_LOGI(TAG, "  - HX1 Tare Offset      : %ld", app_config.hx1_offset);
     ESP_LOGI(TAG, "  - case_raw_data        : %ld", app_config.case_raw_data);
     
-
-
     ESP_LOGI(TAG, "  - tof_sense_threshold_l: %ld", app_config.tof_sense_threshold_l);
     ESP_LOGI(TAG, "  - tof_sense_threshold_r: %ld", app_config.tof_sense_threshold_r);
+
     ESP_LOGI(TAG, "  - motion_data_time     : %ld", app_config.motion_data_time);
     ESP_LOGI(TAG, "  - EFFECTIVE_DWELL_TIME : %ld", app_config.EFFECTIVE_DWELL_TIME);
     ESP_LOGI(TAG, "--------------------------------------------------");

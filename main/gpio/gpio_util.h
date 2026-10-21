@@ -24,7 +24,7 @@ typedef enum {
 #endif
 
 #define PIN_PKEY_STAT 7 
-#define MOTOR_I2C_MODE 0
+#define MOTOR_I2C_MODE 1
 #define TPL_SDA 10
 #define TPL_SCL 6
 

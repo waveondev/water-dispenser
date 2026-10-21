@@ -12,294 +12,19 @@
 #include "app_config_flash.h"
 #include "tx_mqtt.h"
 #include "aws_iot_task.h"
-#if 0
-#include "driver/ledc.h"
-#define MOTOR_IN1_GPIO       (PIN_PUMP_PWM)
 
 
-#define LEDC_MODE            LEDC_LOW_SPEED_MODE
-#define LEDC_TIMER           LEDC_TIMER_0
-#define LEDC_DUTY_RES        LEDC_TIMER_10_BIT  // 10비트 해상도 (0 ~ 1023)
-#define LEDC_FREQUENCY       (3000)            // 20kHz 설정
-
-#define LEDC_CH0_MOTOR_IN1   LEDC_CHANNEL_0
-static const char *TAG = __FILE__;
-
-void init_ledc(){
-    printf("Hello");
-}
-
-void init_motor_ledc(void) {
-    #if 1
-    // 1. 타이머 설정 (20kHz, 10비트 해상도)
-    ledc_timer_config_t ledc_timer = {
-        .speed_mode       = LEDC_MODE,
-        .timer_num        = LEDC_TIMER,
-        .duty_resolution  = LEDC_DUTY_RES,
-        .freq_hz          = LEDC_FREQUENCY,
-        .clk_cfg          = LEDC_AUTO_CLK
-    };
-    ESP_ERROR_CHECK(ledc_timer_config(&ledc_timer));
-
-    // 2. 채널 0 설정 (MOTOR_IN1)
-    ledc_channel_config_t ledc_ch0 = {
-        .speed_mode     = LEDC_MODE,
-        .channel        = LEDC_CH0_MOTOR_IN1,
-        .timer_sel      = LEDC_TIMER,
-        .intr_type      = LEDC_INTR_DISABLE,
-        .gpio_num       = MOTOR_IN1_GPIO,
-        .duty           = 0, // 초기값 0
-        .hpoint         = 0
-    };
-    ESP_ERROR_CHECK(ledc_channel_config(&ledc_ch0));
-    #else
-        // 2. PIN_HX711_SCK 설정 (아웃풋 모드)
-    gpio_config_t io_conf_sck = {
-        .pin_bit_mask = (1ULL << PIN_PUMP_PWM),
-        .mode = GPIO_MODE_OUTPUT,               // ⚠️ 아웃풋 모드로 변경
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
-    };
-    gpio_config(&io_conf_sck);
-
-    // 3. digitalWrite(PIN_HX711_SCK, LOW); 대체
-    // 초기 시작 시 클럭 핀을 0(LOW) 상태로 안전하게 내려둡니다.
-    gpio_set_level(PIN_PUMP_PWM, 1);
-    #endif
-}
-
-
-// 모터 제어 함수 (percentage: 0 ~ 100)
-void set_motor_speed_percent(int percentage) 
-{
-    // 1. 값의 범위를 0% ~ 100% 사이로 안전하게 제한
-    if (percentage < 0)   percentage = 0;
-    if (percentage > 100) percentage = 100;
-    
-    static int last_percentage = -1; // 이전 값을 기억할 변수
-    if (percentage == last_percentage) {
-        return; 
-    }
-    last_percentage = percentage; // 새로운 속도 저장
-
-    ESP_LOGI(TAG, "percentage = %d", percentage);
-
-    // -------------------------------------------------------------
-    // [경우 1] 100% 출력: PWM을 끄고 순수 GPIO HIGH로 고정
-    // -------------------------------------------------------------
-    if (percentage == 100) {
-        // 1. 진행 중이던 PWM 타이머를 멈춤
-        ledc_stop(LEDC_MODE, LEDC_CH0_MOTOR_IN1, 1);
-        
-        // 2. 핀을 완벽한 일반 출력(OUTPUT) 모드로 덮어쓰기
-        gpio_config_t io_conf_motor = {
-            .pin_bit_mask = (1ULL << MOTOR_IN1_GPIO),
-            .mode = GPIO_MODE_OUTPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE
-        };
-        gpio_config(&io_conf_motor);
-        
-        // 3. 3.3V 직선 출력 고정
-        gpio_set_level(MOTOR_IN1_GPIO, 1);
-        
-        // ❌ 주의: 여기서 절대 ledc_set_duty나 ledc_update_duty를 부르면 안 됩니다!
-    }
-    // -------------------------------------------------------------
-    // [경우 2] 0% 출력: PWM을 끄고 순수 GPIO LOW로 고정
-    // -------------------------------------------------------------
-    else if (percentage == 0) {
-        ledc_stop(LEDC_MODE, LEDC_CH0_MOTOR_IN1, 0);
-        
-        gpio_config_t io_conf_motor = {
-            .pin_bit_mask = (1ULL << MOTOR_IN1_GPIO),
-            .mode = GPIO_MODE_OUTPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE
-        };
-        gpio_config(&io_conf_motor);
-        
-        gpio_set_level(MOTOR_IN1_GPIO, 0); // 완벽한 0V 접지
-        
-        // ❌ 주의: 여기서도 ledc_ 관련 함수 호출 금지!
-    }
-    // -------------------------------------------------------------
-    // [경우 3] 1% ~ 99% 구간: 다시 LEDC(PWM) 기능 활성화
-    // -------------------------------------------------------------
-    else {
-        // 0%나 100%에서 GPIO로 뺏어갔던 핀의 소유권을 다시 LEDC로 돌려주기 위해
-        // 채널을 재초기화 해줍니다. (필수)
-        ledc_channel_config_t ledc_ch0 = {
-            .speed_mode     = LEDC_MODE,
-            .channel        = LEDC_CH0_MOTOR_IN1,
-            .timer_sel      = LEDC_TIMER,
-            .intr_type      = LEDC_INTR_DISABLE,
-            .gpio_num       = MOTOR_IN1_GPIO,
-            .duty           = 0,
-            .hpoint         = 0
-        };
-        ledc_channel_config(&ledc_ch0);
-
-        // 10비트(0~1023) 해상도에 맞게 듀티 계산 후 적용
-        uint32_t duty = (percentage * 1023) / 100;
-        ledc_set_duty(LEDC_MODE, LEDC_CH0_MOTOR_IN1, duty);
-        ledc_update_duty(LEDC_MODE, LEDC_CH0_MOTOR_IN1);
-    }
-}
-
-
-// 백그라운드 태스크 및 진행 상태 감시용 전역 변수
-static TaskHandle_t xMotorBoostTaskHandle = NULL;
-static int duration_sec_buf = 0; // 0이 아니면 현재 "시간 제한 모드"가 작동 중임을 의미
-
-typedef struct {
-    int target_percentage;
-    int duration_sec; 
-} motor_boost_args_t;
-
-// [set_motor_speed_percent 등 기존 하드웨어 제어 함수는 동일]
-
-// ---------------------------------------------------------------------------
-// ⏳ 백그라운드에서 부스트 및 총 가동 시간을 계산하는 일꾼 태스크
-// ---------------------------------------------------------------------------
-static void motor_boost_task(void *pvParameters)
-{
-    motor_boost_args_t *args = (motor_boost_args_t *)pvParameters;
-    int target_speed = args->target_percentage;
-    int duration = args->duration_sec;
-    free(args); 
-
-    // 1. 🚀 무조건 첫 10초는 100% 초기 부스트 구동
-    ESP_LOGI(TAG, "[PUMP] 🚀 100%% 초기 부스트 스타트! (10초 대기)");
-
-    set_motor_speed_percent(100);
-    vTaskDelay(pdMS_TO_TICKS(3000));    
-
-    // 2. 부스트가 끝났으니 목표 속도로 전환
-    ESP_LOGI(TAG, "[PUMP] ⏱️ 초기 부스트 완료. 목표 속도 %d%%로 전환", target_speed);
-    set_motor_speed_percent(target_speed);
-
-// 3. ⏳ 가동 시간(duration)에 따른 분기 처리 (반복문 적용 버전)
-    if (duration == 0) {
-        ESP_LOGI(TAG, "[PUMP] ♾️ 가동 시간 제한 없음 모드. 상시 가동합니다.");
-        while (1) {
-            vTaskDelay(pdMS_TO_TICKS(1000)); 
-        }
-    } 
-    else {
-        int remaining_sec = duration - 10; // 초기 부스트 10초를 뺀 남은 시간 계산
-
-        // ⭐️ 1초씩 쪼개서 대기하며 실시간으로 카운트다운을 찍는 반복문
-        while (remaining_sec > 0) {
-            ESP_LOGI(TAG, "[PUMP] ⏳ 설정된 남은 가동 시간 %d초 유지 중...", remaining_sec);
-            
-            vTaskDelay(pdMS_TO_TICKS(1000)); // 정확히 1초(1000ms)만 대기
-            remaining_sec--;                 // 1초 차감
-            
-            // 💡 [꿀팁] 만약 가동 도중에 외부에서 모터 정지(0%) 명령을 내리면 
-            // 170초를 멍하니 기다리지 않고 즉시 탈출하는 코드를 넣고 싶다면 아래 주석을 푸세요!
-            // if (current_target_percentage == 0) { break; }
-        }
-
-        // 4. 🏁 약속된 시간을 무사히 다 채웠으므로 자동 종료
-        ESP_LOGI(TAG, "[PUMP] 🏁 약속된 가동 시간이 만료되어 모터를 자동으로 끕니다.");
-        set_motor_speed_percent(0);
-    }
-    // 🔥 [중요] 지옥의 레이스(지정 시간 가동)가 끝났으므로 자물쇠를 풀고 초기화합니다.
-    duration_sec_buf = 0; 
-    xMotorBoostTaskHandle = NULL;
-    vTaskDelete(NULL); 
-}
-
-static int current_target_percentage = 0; 
-
-void start_motor_with_boost(int target_percentage, int duration_sec)
-{
-    // 1. [락 로직] 현재 시간 제한 모드(duration_sec_buf가 양수)가 돌고 있다면 무조건 무시!
-    if (duration_sec_buf > 0) {
-        //ESP_LOGW(TAG, "[PUMP] ❌ 거부: 시간 제한 가동 중 (%d초 대기 필요)", duration_sec_buf);
-        return; 
-    }
-
-    // 2. 예외 처리: 목표 속도가 0% 이거나, 가동 시간이 10초 이하인 경우 예외 정지 처리
-    if (target_percentage <= 0 || (duration_sec > 0 && duration_sec <= 10)) {
-       // ESP_LOGI(TAG, "[PUMP] 🛑 모터 즉시 정지 (0%%)");
-        set_motor_speed_percent(0);
-        
-        // 정지했으므로 상태 변수들도 초기화
-        current_target_percentage = 0;
-        if (xMotorBoostTaskHandle != NULL) {
-            vTaskDelete(xMotorBoostTaskHandle);
-            xMotorBoostTaskHandle = NULL;
-        }
-        return; 
-    }
-
-    // ⭐️ [핵심 수정] 무한 모드(duration_sec == 0)일 때, 똑같은 속도 명령이 또 들어온 거라면?
-    // 이미 잘 돌고 있으므로 태스크를 지우고 새로 만들 필요가 전혀 없습니다! 그냥 통과!
-    if (duration_sec == 0 && target_percentage == current_target_percentage && xMotorBoostTaskHandle != NULL) {
-        // 100ms마다 들어오는 동일한 명령은 여기서 전부 안전하게 걸러집니다.
-        return; 
-    }
-
-    // 만약 "무한 모드 도중에 속도가 바뀌었거나", "새로운 시간 제한 명령"이 들어온 경우라면?
-    // 기존 태스크를 끊고 새 명령을 수행해야 합니다.
-    if (xMotorBoostTaskHandle != NULL) {
-        ESP_LOGW(TAG, "[PUMP] ⚠️ 목표 속도 변경 또는 모드 변경으로 기존 태스크를 교체합니다. (이전:%d%% -> 새:%d%%)", 
-                 current_target_percentage, target_percentage);
-        vTaskDelete(xMotorBoostTaskHandle);
-        xMotorBoostTaskHandle = NULL;
-    }
-
-    // 상태 업데이트
-    duration_sec_buf = duration_sec;
-    current_target_percentage = target_percentage; // 현재 속도 타겟 저장
-
-    // 태스크 생성 인수 할당
-    motor_boost_args_t *args = malloc(sizeof(motor_boost_args_t));
-    if (args == NULL) return;
-    args->target_percentage = target_percentage;
-    args->duration_sec = duration_sec;
-
-    xTaskCreate(motor_boost_task, "motor_boost_task", 2048, (void *)args, 5, &xMotorBoostTaskHandle);
-}
-static uint32_t* Motor_Used_Time;
-static uint32_t* Filter_Used_Time;
-#define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)
-static volatile bool filter_send_flag = false; // volatile 추가
-static volatile bool moter_send_flag = false; // volatile 추가
-
-void motor_change(void)
-{
-    (*Motor_Used_Time) = 0;
-    motor_nvs_save_set();
-    led_bit_disable(FILTER_WATER_BIT);
-    water_fault_disable(WATER_FILTER_WATER_EX);
-    moter_send_flag = false;
-}
-void filter_change(void)
-{
-    (*Filter_Used_Time) = 0;
-    filter_nvs_save_set();
-    led_bit_disable(FILTER_DEBRIS_BIT);
-    water_fault_disable(WATER_FILTER_DEBRIS_EX);
-    filter_send_flag = false;
-}
-void Clean_Mode_Disable(void)
-{
-    duration_sec_buf = 0;
-    current_target_percentage = 0;
-    set_motor_speed_percent(0);
-    led_bit_disable(CLEAN_MODE_BIT); 
-}
-#else
+#include "driver/i2c.h"
+#include "esp_log.h"
 #include "driver/rmt_tx.h"
 #include "app_adc.h"
+
+#if 0
+#else
+
 #define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
-#include "hal/gpio_ll.h"
+
+void TPL0401_init(void);
 esp_err_t TPL0401_SetValue(int value);
 rmt_channel_handle_t pwm_chan = NULL;
 rmt_encoder_handle_t copy_encoder = NULL;
@@ -365,7 +90,6 @@ void set_motor_speed_percent(int percentage) {
 
 // 백그라운드 태스크 및 진행 상태 감시용 전역 변수
 static TaskHandle_t xMotorBoostTaskHandle = NULL;
-static int duration_sec_buf = 0; // 0이 아니면 현재 "시간 제한 모드"가 작동 중임을 의미
 
 // 큐 핸들 변수 선언
 SemaphoreHandle_t motor_semaphore = NULL;
@@ -421,34 +145,95 @@ static void motor_used_timer_callback(void* arg)
     }
 }
 
-void Clean_Mode_Disable(void)
-{
-    duration_sec_buf = 0;
-    current_target_percentage = 0;
-    set_motor_speed_percent(0);
-    led_bit_disable(CLEAN_MODE_BIT); 
-}
-
 static void motor_boost_task(void *pvParameters)
 {
     static uint32_t empty_count = 0;
-
+    int current_value = 0;
+    int min_value = 0;
     while(1)
     {
         if (xSemaphoreTake(motor_semaphore, pdMS_TO_TICKS(1000)) == pdTRUE) 
         {
-            ESP_LOGW("RECEIVER", "큐 수신 완료! -> [모터 구동] %d, time = %d",current_target_percentage, duration_sec_buf);
+            ESP_LOGW("RECEIVER", "큐 수신 완료! -> [모터 구동] %d",current_target_percentage);
             
-            if(current_target_percentage != 100)
-            {
-                uint8_t motor_index = 100;
+            #if MOTOR_I2C_MODE
+                TPL0401_SetValue(0);
+                current_value = current_target_percentage;
+                if(min_value == 0)
+                {
+                    vTaskDelay(pdMS_TO_TICKS(1000)); // 정확히 1초(1000ms)만 대기   
+                    for(;current_value<100;current_value++)
+                    {
+                        TPL0401_SetValue(current_value);
+                        vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
+                        // ESP_LOGI(TAG,"100 = %d",i);
+                        if(GetMotor_adc() < 30)
+                        {
+                            min_value = current_value - 4;
+                            break;;
+                        }
+                        if(current_target_percentage == 100)
+                        {
+                            TPL0401_SetValue(current_target_percentage);
+                            break;
+                        }
+                    }
+                }
+                ESP_LOGW("min_value", " %d",min_value);
+                TPL0401_SetValue(0);  
+                for(int i = 0; i <30;i++)
+                {
+
+                    vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
+                    if(current_target_percentage == 100)
+                    {
+                        TPL0401_SetValue(current_target_percentage);
+                        break;
+                    }
+                }
+                { 
+                    for(int i = 30 ;i<min_value;i++)
+                    {
+
+                        TPL0401_SetValue(i);
+                         ESP_LOGI(TAG,"i = %d",i);
+                        if(current_target_percentage == 100)
+                        {
+                            TPL0401_SetValue(current_target_percentage);
+                            break;
+                        }
+                        vTaskDelay(pdMS_TO_TICKS(50)); // 정확히 1초(1000ms)만 대기   
+                    }
+                    for(int i = min_value;i>30;i--)
+                    {
+                        TPL0401_SetValue(i);
+                         ESP_LOGI(TAG,"i = %d",i);
+                        if(current_target_percentage == 100)
+                        {
+                            TPL0401_SetValue(current_target_percentage);
+                            break;
+                        }
+                        vTaskDelay(pdMS_TO_TICKS(50)); // 정확히 1초(1000ms)만 대기   
+                    }
+                    for(int i = 30 ;i<=min_value;i++)
+                    {
+                        TPL0401_SetValue(i);
+                         ESP_LOGI(TAG,"i = %d",i);
+                        if(current_target_percentage == 100)
+                        {
+                            TPL0401_SetValue(current_target_percentage);
+                            break;
+                        }
+                        vTaskDelay(pdMS_TO_TICKS(50)); // 정확히 1초(1000ms)만 대기   
+                    }
+                }
+                //TPL0401_SetValue(min_value);
 
 
-                #if MOTOR_I2C_MODE
-                    TPL0401_SetValue(50);
-                #else
+            #else
+   
                     set_motor_speed_percent(100);
-                #endif    
+
                 for(int i = 0;i<5;i++)
                 {
                     vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
@@ -457,23 +242,25 @@ static void motor_boost_task(void *pvParameters)
                     break;
                 }
 
-            }
             
-            #if MOTOR_I2C_MODE
-                TPL0401_SetValue(current_target_percentage);
-            #else
+  
                 set_motor_speed_percent(current_target_percentage);
             #endif                
         }
+        #if MOTOR_I2C_MODE        
+        if(current_target_percentage != 100)
+        #else
         if(current_target_percentage != 0)
+        #endif
         {
-            //int level = gpio_get_level(MOTOR_IN1_GPIO);
-            //if(level)
+
             {
                 if(GetMotor_adc() < 100)
                 {
                     if(empty_count < 10)
+                    {
                         empty_count++;
+                    }
 
                 }
                 else
@@ -484,7 +271,7 @@ static void motor_boost_task(void *pvParameters)
                 }                
             }
 
-            //if(led_bit_status(WATER_LOW_BIT))
+
             {
                 if(empty_count >= 5)
                 {
@@ -501,38 +288,32 @@ static void motor_boost_task(void *pvParameters)
                     ESP_LOGI(TAG,"empty_count = %d", empty_count);
             }
         }
-        if(duration_sec_buf)
-        {
-            duration_sec_buf--;
-            if(duration_sec_buf == 0)
-            {
-                Clean_Mode_Disable();
-            }
-        }
     }
 }
 
 
 void start_motor_with_boost(int target_percentage, int duration_sec)
 {
-
-    if(duration_sec_buf > 0)
-    {
-        return;
+#if MOTOR_I2C_MODE
+    target_percentage = 100 - target_percentage;
+    if (target_percentage >= 100 && current_target_percentage != target_percentage ) {
+       // ESP_LOGI(TAG, "[PUMP] 🛑 모터 즉시 정지 (0%%)");
+        current_target_percentage = target_percentage;
+        TPL0401_SetValue(current_target_percentage);
+        return; 
     }
-
-
+#else
     if (target_percentage <= 0) {
        // ESP_LOGI(TAG, "[PUMP] 🛑 모터 즉시 정지 (0%%)");
         set_motor_speed_percent(0);
         current_target_percentage = 0;
         return; 
     }
-
-    if (duration_sec == 0 && target_percentage == current_target_percentage) {
+#endif
+    if (target_percentage == current_target_percentage) {
         return; 
     }
-    duration_sec_buf = duration_sec;
+
     current_target_percentage = target_percentage;
 
     if (motor_semaphore != NULL) {
@@ -540,7 +321,7 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
         ESP_LOGI("SENDER", "모터 동작 세마포어 송신!");
     }
 }
-void TPL0401_init(void);
+
 void init_motor_ledc(void) {
     // 1. RMT TX 채널 설정 (DMA 활성화)
     rmt_tx_channel_config_t tx_config = {
@@ -552,7 +333,7 @@ void init_motor_ledc(void) {
         .flags.with_dma = false,     // 🌟 핵심: DMA 통신 켜기
     };
     ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_config, &pwm_chan));
-    gpio_ll_input_enable(&GPIO, MOTOR_IN1_GPIO);
+
     // 2. 심볼(Symbol) 데이터를 그대로 복사해주는 기본 인코더 사용
     rmt_copy_encoder_config_t encoder_config = {};
     ESP_ERROR_CHECK(rmt_new_copy_encoder(&encoder_config, &copy_encoder));
@@ -594,23 +375,14 @@ void init_motor_ledc(void) {
     #endif
 }
 
-#include "driver/i2c.h"
 
 
-#include "driver/i2c.h"
-#include "esp_log.h"
 
 #define TPL0401_ADDR      0x2E
 #define TPL0401_REG_WIPER 0x00
 
 #define I2C_PORT           I2C_NUM_0
 
-
-
-void TPL_SetValue(int value)
-{
-    start_motor_with_boost(value,0);
-}
 esp_err_t TPL0401_SetValue(int value)
 {
     // 범위 제한
@@ -780,80 +552,6 @@ esp_err_t TPL0401_Read(uint8_t *value)
 }
 
 
-void TPL0401_Test(void)
-{
-    uint8_t value;
-    esp_err_t ret;
-
-    ESP_LOGI(TAG, "===== TPL0401 TEST START =====");
-
-    /*
-     * 0
-     */
-    ret = TPL0401_Write(0);
-
-    ESP_LOGI(TAG,
-             "WRITE 0x00 -> %s",
-             esp_err_to_name(ret));
-
-    if (ret == ESP_OK) {
-
-        ret = TPL0401_Read(&value);
-
-        ESP_LOGI(TAG,
-                 "READ  -> 0x%02X (%d), %s",
-                 value,
-                 value,
-                 esp_err_to_name(ret));
-    }
-
-
-    /*
-     * 64
-     */
-    ret = TPL0401_Write(64);
-
-    ESP_LOGI(TAG,
-             "WRITE 0x40 -> %s",
-             esp_err_to_name(ret));
-
-    if (ret == ESP_OK) {
-
-        ret = TPL0401_Read(&value);
-
-        ESP_LOGI(TAG,
-                 "READ  -> 0x%02X (%d), %s",
-                 value,
-                 value,
-                 esp_err_to_name(ret));
-    }
-
-
-    /*
-     * 127
-     */
-    ret = TPL0401_Write(127);
-
-    ESP_LOGI(TAG,
-             "WRITE 0x7F -> %s",
-             esp_err_to_name(ret));
-
-    if (ret == ESP_OK) {
-
-        ret = TPL0401_Read(&value);
-
-        ESP_LOGI(TAG,
-                 "READ  -> 0x%02X (%d), %s",
-                 value,
-                 value,
-                 esp_err_to_name(ret));
-    }
-
-    ESP_LOGI(TAG, "===== TPL0401 TEST END =====");
-}
-
-
-
 void i2c_scan(void)
 {
     for (uint8_t addr = 1; addr < 127; addr++) {
@@ -901,7 +599,8 @@ void TPL0401_init(void)
         ESP_LOGE(TAG, "Failed to install I2C Port 0");
     }
     i2c_scan();
-    TPL0401_SetValue(127);    
+    current_target_percentage = 100;
+    TPL0401_SetValue(current_target_percentage);    
 
 }
 #endif

@@ -63,10 +63,6 @@ bool pairing_enable(void)
 {
     return (led_status_resister & PAIRING_BIT);
 }
-bool Clean_enable(void)
-{
-    return (led_status_resister & CLEAN_MODE_BIT);
-}
 bool Water_low_enable(void)
 {
     return (led_status_resister & WATER_LOW_BIT);
@@ -106,8 +102,6 @@ void led_status_print(void)
         ESP_LOGI(TAG, "Water_empty_enable");
     if(Water_low_enable())
         ESP_LOGI(TAG, "Water_low_enable");    
-    if(Clean_enable())
-        ESP_LOGI(TAG, "Clean_enable");
     if(pairing_enable())
         ESP_LOGI(TAG, "pairing_enable");
     if(hardware_error_enable())
@@ -194,13 +188,9 @@ void set_rgb_led_for_number(uint32_t index, uint8_t R, uint8_t G, uint8_t B, uin
         memset(&Breathing_Setting, 0, sizeof(Breathing_Setting_t));
     if(index >= LED_NUMBERS)
         return;
-    for(int i=0;i<LED_NUMBERS;i++)
-    {
-         led_strip_set_pixel_rgbw(led_strip, i, 0, 0, 0, 0);
-    }        
-    {
-         led_strip_set_pixel_rgbw(led_strip, index, R, G, B, W);
-    }
+
+    led_strip_set_pixel_rgbw(led_strip, index, R, G, B, W);
+
     // 실제 SK6812 칩들로 32비트 정밀 신호 전송
 
     led_strip_refresh(led_strip); 
@@ -441,11 +431,7 @@ static void LED_task(void *pvParameter)
                     }
                     else 
                     #endif
-                    if (Clean_enable()){
-                        Breathing_Setup(1,2,0,LED_brightness_value,0,255,0,0);
-                        Breathing_LED();
-                    }         
-                    else if (ota_enable()) {
+                    if (ota_enable()) {
                         Breathing_Setup(1,2,0,LED_brightness_value,255,0,255,0);
                         Breathing_LED();
                     }                  
@@ -470,8 +456,7 @@ static void LED_task(void *pvParameter)
                         {
                             switch(last_op_mode) {
                                 case OP_MODE_NORMAL: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
-                                case OP_MODE_NIGHT:  set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
-                                case OP_MODE_SMART:  set_rgb_len_no_Breathing(0, 0, LED_brightness_value, 0); break;
+                                case OP_MODE_NIGHT:  set_rgb_len_no_Breathing(0, 0, 0, 0); break;
                                 case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(0, 0, 0, 0); break;
                                 default: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
                             }
