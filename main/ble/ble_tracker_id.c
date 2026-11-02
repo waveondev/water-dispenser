@@ -67,6 +67,33 @@ void dump_tracker_device_info(const char* label, const Tracker_Device_t* dev)
     ESP_LOGI(TAG," rssi             : %d", dev->dev_info.rssi);
 
     ESP_LOGI(TAG,"-----------------------------");
+    uint8_t addr_buf[6];
+    memcpy(addr_buf,dev->dev_info.addr,sizeof(addr_buf));
+    for (int i = 0; i < 3; i++) {
+        uint8_t temp =addr_buf[i];
+        addr_buf[i] = addr_buf[5 - i];
+        addr_buf[5 - i] = temp;
+    }    
+    client_info_t* client = get_conn_client_by_mac(addr_buf);
+    if(client != NULL)
+    {
+
+        const Motion_Packet_t* res = &client->health_res;
+        fault_code fc = client->health_res.health_data_res.fault_flag;
+
+        ESP_LOGI(TAG, "Uptime: %" PRIu32 "s | Bat: %u%% (%uV) | FW: v%u.%u.%u | RSSI: %d dBm",
+                res->health_data_res.uptime_sec, res->health_data_res.Bat_Level, res->health_data_res.Bat_Voltage,
+                res->health_data_res.major, res->health_data_res.minor, res->health_data_res.patch, res->health_data_res.target_rssi);
+
+        ESP_LOGI(TAG, "Fault[0x%02X] -> BatStat:%u, IMU_Err:%u, BLE_Err:%u, Storage:%u, ResetReason:%u",
+                fc.byte,
+                fc.bit.Bat_Status,
+                fc.bit.IMU_Err,
+                fc.bit.BLE_Err,
+                fc.bit.storage,
+                fc.bit.reset_reason);
+     
+    }
 }
 
 // 2. 전체 Tracker_Device 배열 및 UNKNOWN 객체를 덤프하는 함수
@@ -172,7 +199,7 @@ void Tracker_In_ID(dev_info_t* dev_info, char* Tracker_ID)
 {
     int target_index = -1;
     Tracker_Device_t* Tracker_target = Get_Tracker_Device(dev_info->addr);
-#if 1
+#if 0
     ESP_LOGI(TAG, " addr             : %02X%02X%02X%02X%02X%02X",dev_info->addr[0],dev_info->addr[1],dev_info->addr[2],dev_info->addr[3],dev_info->addr[4],dev_info->addr[5]);
     ESP_LOGI(TAG, " name             : %s", dev_info->name);
     ESP_LOGI(TAG, " rssi             : %d", dev_info->rssi);

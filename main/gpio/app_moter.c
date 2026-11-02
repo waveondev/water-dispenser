@@ -19,17 +19,19 @@
 #include "driver/rmt_tx.h"
 #include "app_adc.h"
 
-#if 0
-#else
 
 #define MOTOR_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
 
 void TPL0401_init(void);
 esp_err_t TPL0401_SetValue(int value);
+
+
 rmt_channel_handle_t pwm_chan = NULL;
 rmt_encoder_handle_t copy_encoder = NULL;
 
+#if !MOTOR_I2C_MODE
 #define MOTOR_IN1_GPIO       (PIN_PUMP_PWM)
+#endif
 #define LEDC_FREQUENCY      ( 20 * 1000 * 1000)            // 20kHz 설정
 static const char *TAG = __FILE__;
 static int current_target_percentage = 0; 
@@ -90,7 +92,7 @@ void set_motor_speed_percent(int percentage) {
 
 // 백그라운드 태스크 및 진행 상태 감시용 전역 변수
 static TaskHandle_t xMotorBoostTaskHandle = NULL;
-
+static bool filter_alert_enabled = false;
 // 큐 핸들 변수 선언
 SemaphoreHandle_t motor_semaphore = NULL;
 static uint32_t* Motor_Used_Time;
@@ -98,7 +100,10 @@ static uint32_t* Filter_Used_Time;
 #define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)
 static volatile bool filter_send_flag = false; // volatile 추가
 static volatile bool moter_send_flag = false; // volatile 추가
-
+void set_filter_alert_enabled(bool state)
+{
+    filter_alert_enabled = state;
+}
 void motor_change(void)
 {
     (*Motor_Used_Time) = 0;
@@ -123,24 +128,30 @@ static void motor_used_timer_callback(void* arg)
     (*Motor_Used_Time)++;
     if(*Motor_Used_Time >= (app_config->moter_life_days *SECONDS_IN_DAYS) )
     {
-        water_fault_enable(WATER_FILTER_WATER_EX);
-        led_bit_enable(FILTER_WATER_BIT);
-        if(moter_send_flag == false)
+        if(filter_alert_enabled == true)
         {
-            moter_send_flag = true;
-            motor_nvs_save_set();
+            water_fault_enable(WATER_FILTER_WATER_EX);
+            led_bit_enable(FILTER_WATER_BIT);
+            if(moter_send_flag == false)
+            {
+                moter_send_flag = true;
+                motor_nvs_save_set();
+            }
         }
     }
 
     (*Filter_Used_Time)++;
     if(*Filter_Used_Time >= (app_config->filter_life_days *SECONDS_IN_DAYS) )
     {
-        water_fault_enable(WATER_FILTER_DEBRIS_EX);
-        led_bit_enable(FILTER_DEBRIS_BIT);
-        if(filter_send_flag == false)
-        {
-            filter_send_flag = true;
-            filter_nvs_save_set();
+        if(filter_alert_enabled == true)
+        {        
+            water_fault_enable(WATER_FILTER_DEBRIS_EX);
+            led_bit_enable(FILTER_DEBRIS_BIT);
+            if(filter_send_flag == false)
+            {
+                filter_send_flag = true;
+                filter_nvs_save_set();
+            }
         }
     }
 }
@@ -180,6 +191,11 @@ static void motor_boost_task(void *pvParameters)
                     }
                 }
                 ESP_LOGW("min_value", " %d",min_value);
+                TPL0401_SetValue(0);   
+                vTaskDelay(pdMS_TO_TICKS(100));
+                TPL0401_SetValue(min_value);
+
+                #if 0
                 TPL0401_SetValue(0);  
                 for(int i = 0; i <30;i++)
                 {
@@ -227,6 +243,7 @@ static void motor_boost_task(void *pvParameters)
                         vTaskDelay(pdMS_TO_TICKS(50)); // 정확히 1초(1000ms)만 대기   
                     }
                 }
+                    #endif
                 //TPL0401_SetValue(min_value);
 
 
@@ -284,8 +301,8 @@ static void motor_boost_task(void *pvParameters)
                     led_bit_disable(WATER_EMPTY_BIT);
                     water_fault_disable(WATER_EMPTY_FAULT); 
                 }
-                if(empty_count)
-                    ESP_LOGI(TAG,"empty_count = %d", empty_count);
+                //if(empty_count)
+                   // ESP_LOGI(TAG,"empty_count = %d", empty_count);
             }
         }
     }
@@ -323,6 +340,18 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
 }
 
 void init_motor_ledc(void) {
+    #if MOTOR_I2C_MODE
+    
+    gpio_config_t io_conf = {                   
+        .pin_bit_mask =(1ULL << PUMP_EN),             // 설정할 GPIO 핀 15, 16, 2 지정
+        .mode = GPIO_MODE_OUTPUT,             // 출력 모드로 설정
+        .pull_up_en = GPIO_PULLUP_DISABLE,    // 내부 풀업 비활성화
+        .pull_down_en = GPIO_PULLDOWN_DISABLE, // 내부 풀다운 활성화 (기본 LOW 상태 유지)
+        .intr_type = GPIO_INTR_DISABLE,       // 인터럽트 사용 안 함
+    };
+    gpio_config(&io_conf);    
+    gpio_set_level(PUMP_EN, 1); 
+    #else
     // 1. RMT TX 채널 설정 (DMA 활성화)
     rmt_tx_channel_config_t tx_config = {
         .clk_src = RMT_CLK_SRC_DEFAULT,
@@ -340,10 +369,10 @@ void init_motor_ledc(void) {
 
     // 3. RMT 채널 하드웨어 켜기
     ESP_ERROR_CHECK(rmt_enable(pwm_chan));
-
+    #endif
     Motor_Used_Time = get_motor_time();
     Filter_Used_Time = get_filter_time();
-
+    
     const esp_timer_create_args_t Motor_Used_timer_args = {
         .callback = &motor_used_timer_callback,
         .name = "Motor_used_timer"
@@ -603,5 +632,5 @@ void TPL0401_init(void)
     TPL0401_SetValue(current_target_percentage);    
 
 }
-#endif
+
 

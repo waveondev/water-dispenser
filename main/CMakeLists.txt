@@ -59,7 +59,13 @@ idf_component_register(
         backoffAlgorithm
         esp_netif
 )
-
+# 전역 프로젝트 매크로 정의
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    WATER_MAJOR=1
+    WATER_MINOR=1
+    WATER_PATCH=6
+    MOTOR_I2C_MODE=0
+)
 # target_compile_definitions(${COMPONENT_LIB} PRIVATE
 #     "-DconfigGENERATE_RUN_TIME_STATS=1"
 #     "-DportGET_RUN_TIME_COUNTER_VALUE()=((unsigned_long)esp_timer_get_time())"

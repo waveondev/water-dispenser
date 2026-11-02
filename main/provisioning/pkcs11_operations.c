@@ -159,8 +159,8 @@ typedef struct SigningCallbackContext
 static SigningCallbackContext_t signingContext = { 0 };
 
 #if MBEDTLS_VERSION_NUMBER >= 0x03000000
-static mbedtls_ctr_drbg_context ctr_drbg;
-static mbedtls_entropy_context entropy;
+//static mbedtls_ctr_drbg_context ctr_drbg;
+//static mbedtls_entropy_context entropy;
 #endif
 
 /*-----------------------------------------------------------*/
@@ -683,10 +683,10 @@ static CK_RV provisionPrivateKey( CK_SESSION_HANDLE session,
     mbedResult = mbedtls_pk_parse_key( &mbedPkContext, ( const uint8_t * ) privateKey,
                                        privateKeyLength, NULL, 0);
 #else
+    // &session 을 randomCallback의 pCtx 파라미터로 넘김
     mbedResult = mbedtls_pk_parse_key( &mbedPkContext, ( const uint8_t * ) privateKey,
-                                       privateKeyLength, NULL, 0,  mbedtls_ctr_drbg_random, &ctr_drbg);
-#endif /* MBEDTLS_VERSION_NUMBER < 0x03000000 */
-
+                                       privateKeyLength, NULL, 0, randomCallback, &session);
+#endif
     if( mbedResult != 0 )
     {
         LogError( ( "Unable to parse private key." ) );
@@ -837,6 +837,7 @@ bool loadClaimCredentials( CK_SESSION_HANDLE p11Session,
                            const char * pClaimPrivKeyPath,
                            const char * pClaimPrivKeyLabel )
 {
+    #if 0
 #if (MBEDTLS_VERSION_NUMBER >= 0x03000000)
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
@@ -846,7 +847,7 @@ bool loadClaimCredentials( CK_SESSION_HANDLE p11Session,
         return false;
     }
 #endif
-    
+    #endif
     bool status;
     //char claimCert[ CLAIM_CERT_BUFFER_LENGTH ] = { 0 };
 
@@ -1101,7 +1102,6 @@ static int randomCallback( void * pCtx,
 }
 
 /*-----------------------------------------------------------*/
-
 static CK_RV generateKeyPairEC( CK_SESSION_HANDLE session,
                                 const char * privateKeyLabel,
                                 const char * publicKeyLabel,
@@ -1123,21 +1123,19 @@ static CK_RV generateKeyPairEC( CK_SESSION_HANDLE session,
         { CKA_LABEL,     ( void * ) publicKeyLabel, strlen( publicKeyLabel ) }
     };
 
-    /* Aggregate initializers must not use the address of an automatic variable. */
     publicKeyTemplate[ 0 ].pValue = &keyType;
     publicKeyTemplate[ 1 ].pValue = &trueObject;
     publicKeyTemplate[ 2 ].pValue = &ecParams;
 
     CK_ATTRIBUTE privateKeyTemplate[] =
     {
-        { CKA_KEY_TYPE, NULL /* &keyType */,        sizeof( keyType )         },
-        { CKA_TOKEN,    NULL /* &trueObject */,     sizeof( trueObject )      },
-        { CKA_PRIVATE,  NULL /* &trueObject */,     sizeof( trueObject )      },
-        { CKA_SIGN,     NULL /* &trueObject */,     sizeof( trueObject )      },
+        { CKA_KEY_TYPE, NULL /* &keyType */,         sizeof( keyType )         },
+        { CKA_TOKEN,    NULL /* &trueObject */,      sizeof( trueObject )      },
+        { CKA_PRIVATE,  NULL /* &trueObject */,      sizeof( trueObject )      },
+        { CKA_SIGN,     NULL /* &trueObject */,      sizeof( trueObject )      },
         { CKA_LABEL,    ( void * ) privateKeyLabel, strlen( privateKeyLabel ) }
     };
 
-    /* Aggregate initializers must not use the address of an automatic variable. */
     privateKeyTemplate[ 0 ].pValue = &keyType;
     privateKeyTemplate[ 1 ].pValue = &trueObject;
     privateKeyTemplate[ 2 ].pValue = &trueObject;
@@ -1148,21 +1146,59 @@ static CK_RV generateKeyPairEC( CK_SESSION_HANDLE session,
     if( result != CKR_OK )
     {
         LogError( ( "Could not get a PKCS #11 function pointer." ) );
+        return result;
     }
-    else
+
+    // =========================================================================
+    // [누수 방지 추가] 기존에 생성된 키 객체가 있다면 먼저 파기
+    // =========================================================================
+    CK_OBJECT_HANDLE xExistingObject = CK_INVALID_HANDLE;
+    CK_OBJECT_CLASS xPrivClass = CKO_PRIVATE_KEY;
+    CK_ATTRIBUTE xFindPrivTemplate[] =
     {
-        result = functionList->C_GenerateKeyPair( session,
-                                                  &mechanism,
-                                                  publicKeyTemplate,
-                                                  sizeof( publicKeyTemplate ) / sizeof( CK_ATTRIBUTE ),
-                                                  privateKeyTemplate, sizeof( privateKeyTemplate ) / sizeof( CK_ATTRIBUTE ),
-                                                  publicKeyHandlePtr,
-                                                  privateKeyHandlePtr );
+        { CKA_CLASS, &xPrivClass, sizeof( xPrivClass ) },
+        { CKA_LABEL, ( void * ) privateKeyLabel, strlen( privateKeyLabel ) }
+    };
+    
+    if( functionList->C_FindObjectsInit( session, xFindPrivTemplate, 2 ) == CKR_OK )
+    {
+        CK_ULONG ulFound = 0;
+        if( ( functionList->C_FindObjects( session, &xExistingObject, 1, &ulFound ) == CKR_OK ) && ( ulFound > 0 ) )
+        {
+            functionList->C_DestroyObject( session, xExistingObject );
+        }
+        functionList->C_FindObjectsFinal( session );
     }
+
+    CK_OBJECT_CLASS xPubClass = CKO_PUBLIC_KEY;
+    CK_ATTRIBUTE xFindPubTemplate[] =
+    {
+        { CKA_CLASS, &xPubClass, sizeof( xPubClass ) },
+        { CKA_LABEL, ( void * ) publicKeyLabel, strlen( publicKeyLabel ) }
+    };
+
+    if( functionList->C_FindObjectsInit( session, xFindPubTemplate, 2 ) == CKR_OK )
+    {
+        CK_ULONG ulFound = 0;
+        if( ( functionList->C_FindObjects( session, &xExistingObject, 1, &ulFound ) == CKR_OK ) && ( ulFound > 0 ) )
+        {
+            functionList->C_DestroyObject( session, xExistingObject );
+        }
+        functionList->C_FindObjectsFinal( session );
+    }
+    // =========================================================================
+
+    result = functionList->C_GenerateKeyPair( session,
+                                              &mechanism,
+                                              publicKeyTemplate,
+                                              sizeof( publicKeyTemplate ) / sizeof( CK_ATTRIBUTE ),
+                                              privateKeyTemplate,
+                                              sizeof( privateKeyTemplate ) / sizeof( CK_ATTRIBUTE ),
+                                              publicKeyHandlePtr,
+                                              privateKeyHandlePtr );
 
     return result;
 }
-
 /*-----------------------------------------------------------*/
 
 bool generateKeyAndCsr( CK_SESSION_HANDLE p11Session,
@@ -1279,11 +1315,8 @@ bool pkcs11CloseSession( CK_SESSION_HANDLE p11Session )
 
     if( result == CKR_OK )
     {
-        result = functionList->C_CloseSession( p11Session );
-    }
-
-    if( result == CKR_OK )
-    {
+        // ✅ 에러가 나더라도 무시하고 무조건 C_Finalize를 호출하도록 변경
+        (void) functionList->C_CloseSession( p11Session );
         result = functionList->C_Finalize( NULL );
     }
 

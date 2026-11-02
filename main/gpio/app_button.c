@@ -60,12 +60,13 @@ bool get_factory_flag(void)
 
 
 void bf_SingleClickAction(void) {
-    Opmode_Set();
+    Opmode_Set(NULL);
     ESP_LOGI(TAG,"Single Click Action executed \r\n");
 }
 
 void bf_DoubleClickAction(void) {
     app_config_t* app_config = get_app_config();
+    ble_advertising_reset(true);
     ESP_LOGI(TAG,"Double Click Action executed\r\n");
 }
 
@@ -78,7 +79,8 @@ void bf_LongPress5SecAction(void) {
     ESP_LOGI(TAG,"Long Press 5 Sec Action executed \r\n");
     write_nvs_registration_flag(false);
     Wifi_Disconnect();
-     wifi_scan_start();
+    //wifi_scan_start();
+    ble_advertising_reset(true);
 }
 
 void bf_LongPress10SecAction(void) {

@@ -23,11 +23,11 @@
 #define SERVER_TX_TOPIC_TEST           TOPIC_HEADER "_%s/test"
 //#define TRACKER_TOPIC_HEADER "things/"CONFIG_TRACKER_DEVICE_TYPE"/"CONFIG_TRACKER_PREFIX"_"
 
-#define TRACKER_TOPIC_HEADER "things/tracker/TRACKER_"
-#define TRACKER_TX_TOPIC_ACTIVITY      TRACKER_TOPIC_HEADER "%s/activity"
-#define TRACKER_TX_TOPIC_DIAGNOSTICS   TRACKER_TOPIC_HEADER "%s/diagnostics"
+#define TRACKER_TOPIC_HEADER "things/"CONFIG_TRACKER_DEVICE_TYPE"/"CONFIG_TRACKER_PREFIX
+#define TRACKER_TX_TOPIC_ACTIVITY      TRACKER_TOPIC_HEADER "_%s/activity"
+#define TRACKER_TX_TOPIC_DIAGNOSTICS   TRACKER_TOPIC_HEADER "_%s/diagnostics"
 
-#define TRACKER_TX_TOPIC_HEALTH        TRACKER_TOPIC_HEADER "%s/health"
+#define TRACKER_TX_TOPIC_HEALTH        TRACKER_TOPIC_HEADER "_%s/health"
 
 
 
@@ -51,5 +51,6 @@
 // 3. Shadow 상태 보고 (MAC 주소 1개 매칭)
 #define AWS_TX_TOPIC_SHADOW_UPDATE      "$aws/things/" CONFIG_DEVICE_PREFIX "_%s/shadow/update"
 
-
+// 3. Shadow 상태 보고 (MAC 주소 1개 매칭)
+#define AWS_TX_TOPIC_SHADOW_GET         "$aws/things/" CONFIG_DEVICE_PREFIX "_%s/shadow/get"
 #endif

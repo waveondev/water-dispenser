@@ -37,7 +37,7 @@ void Setting_callback(Motion_Packet_t* Motion_Packet)
             Motion_Packet_buf.event_code = SETTING_RESPONSE;
             Motion_Packet_buf.setting_res.cmd_type = HX711_GetValue;
             Motion_Packet_buf.setting_res.hx711_getvalue.current_weight = (uint32_t)(loadcell_data_get() * 100.0f);   
-            ble_send_data_to_queue(NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
+            ble_send_data_to_queue(NULL,NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
         break;        
         case IR_GetValue:
             Motion_Packet_buf.event_code = SETTING_RESPONSE;
@@ -48,7 +48,7 @@ void Setting_callback(Motion_Packet_t* Motion_Packet)
             Motion_Packet_buf.setting_res.IR_getvalue.center_ir_left = app_config->tof_sense_threshold_l;
             Motion_Packet_buf.setting_res.IR_getvalue.center_ir_right =  app_config->tof_sense_threshold_r;                                
             //sprintf((char*)Motion_Packet_buf.setting_res.data,"%04d %04d %04d",GetMotor_adc(), GetIR_LEFT(),GetIR_RIGHT());
-            ble_send_data_to_queue(NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));
+            ble_send_data_to_queue(NULL,NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));    
         break;        
         case LED_SetValue:
             Motion_Packet_buf.event_code = SETTING_RESPONSE;
@@ -72,17 +72,18 @@ void Setting_callback(Motion_Packet_t* Motion_Packet)
             }            
 
 
-            ble_send_data_to_queue(NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
+            ble_send_data_to_queue(NULL,NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));      
         break;              
         case MOTOR_SetValue:
             Motion_Packet_buf.event_code = SETTING_RESPONSE;
             Motion_Packet_buf.setting_res.cmd_type = MOTOR_SetValue;
-
+            #if (MOTOR_I2C_MODE)
             esp_err_t TPL0401_SetValue(int value);
-            TPL0401_SetValue(Motion_Packet->setting_req.motor_set_value.value);
+            TPL0401_SetValue(Motion_Packet->setting_req.motor_set_value.slid_value);
+            #endif
             //set_motor_speed(&i);
 
-            ble_send_data_to_queue(NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
+            ble_send_data_to_queue(NULL,NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
         break;    
         case IR_SetValue:
             Motion_Packet_buf.event_code = SETTING_RESPONSE;
@@ -90,24 +91,24 @@ void Setting_callback(Motion_Packet_t* Motion_Packet)
             app_config->tof_sense_threshold_l = Motion_Packet->setting_req.IR_set_value.IR_Left;
             app_config->tof_sense_threshold_r = Motion_Packet->setting_req.IR_set_value.IR_Right;         
 
-            ble_send_data_to_queue(NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
+            ble_send_data_to_queue(NULL,NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));     
         break;      
         case Beacon_GetValue:
             Motion_Packet_buf.event_code = SETTING_RESPONSE;
             Motion_Packet_buf.setting_res.cmd_type = Beacon_GetValue;
             Motion_Packet_buf.setting_res.beacon_get_value.beacon_rssi = app_config->gate_way_rssi_th;
-            ble_send_data_to_queue(NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
+            ble_send_data_to_queue(NULL,NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));      
         break;      
         case Beacon_SetValue:
             Motion_Packet_buf.event_code = SETTING_RESPONSE;
             Motion_Packet_buf.setting_res.cmd_type = Beacon_SetValue;
             app_config->gate_way_rssi_th = Motion_Packet->setting_req.beacon_set_value.beacon_rssi;
-            ble_send_data_to_queue(NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
+            ble_send_data_to_queue(NULL,NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
         break;              
     }
 }
 
-
+void Set_tare_request(void);
 void Setting_Enable(Setting_cmd_e cmd)
 {
     Motion_Packet_t Motion_Packet;
@@ -116,8 +117,8 @@ void Setting_Enable(Setting_cmd_e cmd)
     Motion_Packet.event_code = SETTING_RESPONSE;
     Motion_Packet.setting_res.cmd_type = cmd;
  
-    ble_send_data_to_queue(NULL,(uint8_t*)&Motion_Packet,sizeof(Motion_Packet_t));   
-
+    ble_send_data_to_queue(NULL,NULL,(uint8_t*)&Motion_Packet,sizeof(Motion_Packet_t));   
+    Set_tare_request();
 }
 
 

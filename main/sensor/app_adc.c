@@ -194,7 +194,12 @@ static const char *TAG = "ADC_MIXED";
 
 // 1. DMA용 채널 설정: 이제 CH0(모터)만 남김 (필요시 채널 수 조정)
 #define ADC_LEN 1
-static adc_channel_t adc1_dma_channels[ADC_LEN] = {ADC_CHANNEL_0};
+#if MOTOR_I2C_MODE
+#define MOTOR_ADC_CHAN ADC_CHANNEL_1
+#else
+#define MOTOR_ADC_CHAN ADC_CHANNEL_1
+#endif
+static adc_channel_t adc1_dma_channels[ADC_LEN] = {MOTOR_ADC_CHAN};
 
 // 2. ADC Oneshot용 핸들 선언 (CH3: GPIO3, CH4: GPIO4)
 static adc_oneshot_unit_handle_t adc1_oneshot_handle = NULL;
@@ -270,7 +275,7 @@ void ADC_Sensing(void)
             uint32_t chan = p->type2.channel;
             uint32_t data = p->type2.data;
 
-            if (chan == ADC_CHANNEL_0) {
+            if (chan == MOTOR_ADC_CHAN) {
                 raw_val_ch0 += data;
                 cnt_ch0++;
             }

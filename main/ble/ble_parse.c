@@ -14,7 +14,7 @@
 #include "app_HX711.h"
 #include "setting_cmd.h"
 #define OTA_URL "https://evtago.s3.ap-northeast-2.amazonaws.com/water-dispenser-c3.bin"
-#define OTA_URL1 "https://evtago.s3.ap-northeast-2.amazonaws.com/water-dispenser-c3-v1.bin"
+#define OTA_URL1 "https://evtago.s3.amazonaws.com/uploads/waveon/water-dispenser-c3.bin"
 // 분할 전송 시 사용할 MTU 사이즈를 저장할 전역/정적 변수 [앱에서 받을 수 있는 ble의 사이즈를 저장]
 
 
@@ -139,7 +139,7 @@ void ble_send_encrypted_event(const char* event_type, const char* plain_data) {
     // 5. 전송 큐에 넣기
     ESP_LOGI(TAG,"[BLE_SEC] 암호화된 ACK 전송: %s", event_type);
     ESP_LOGI(TAG,"[BLE_SEC] 암호화된 전송할 JSON Payload: %s", final_json);
-    ble_send_data_to_queue(NULL,(uint8_t*)final_json, strlen(final_json));
+    ble_send_data_to_queue(NULL,NULL,(uint8_t*)final_json, strlen(final_json));
 
     // 6. 메모리 정리
     free(ciphertext);
@@ -202,7 +202,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                             ESP_LOGI(TAG,"[BLE_SEC] 전송할 JSON Payload: %s", ack_buf);
 
                             // 송신 큐를 이용해 앱으로 전송
-                            ble_send_data_to_queue(NULL, (uint8_t*)ack_buf, strlen(ack_buf));
+                            ble_send_data_to_queue(NULL,NULL, (uint8_t*)ack_buf, strlen(ack_buf));
                             ESP_LOGI(TAG,"[BLE_SEC] Sent Device PubKey & Handshake Complete.");
                         }
                     }
@@ -356,11 +356,11 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
     {
         char hx_data[30];
         sprintf(hx_data,"%.2fg", loadcell_data_get());         
-        ble_send_data_to_queue(NULL,(uint8_t*)hx_data,strlen(hx_data));
+        ble_send_data_to_queue(NULL,NULL,(uint8_t*)hx_data,strlen(hx_data));
         return;
     }
 
-#if 0
+#if 1
     char *cmd;
     char *index;
     char *ssid;
@@ -511,17 +511,20 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                 uint8_t* client_data = client->data;
                 uint32_t send_count = client->send_point;
         
-                tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet,send_count,client_data,client->total_point,client->send_point, client->start_res.motion_start_res.non_save_points);
+                if(tracker_mqtt_queue_send(TRACKER_MESSEGE_ACTIVITY,mac, Motion_Packet,send_count,client_data,client->total_point,client->send_point, client->start_res.motion_start_res.non_save_points) == NULL)
+                {
+                    free(client->data);
+                }
                 
-                free(client->data);
+                
                 client->data = NULL;
-                client->total_point = 0;
+                //client->total_point = 0;
                 client->input_count  = 0;
                 client->send_point = 0;    
                          
-                motion_msg_send(get_conn_handle_by_mac(mac),MOTION_DATA_ACK,Motion_Packet->motion_data.seq);
+                motion_msg_send(client->conn_handle,client->attribute_handle,MOTION_DATA_ACK,Motion_Packet->motion_data.seq);
                 if(client->total_point)
-                    motion_msg_send(get_conn_handle_by_mac(mac),MOTION_START_REQUEST,1);
+                    motion_msg_send(client->conn_handle,client->attribute_handle,MOTION_START_REQUEST,1);
             }
             else
                 Motion_Timer_Set(mac, true);
@@ -583,7 +586,7 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
                 ESP_LOGI(TAG,"-----------------------\n");
         break;
         case TIME_REQUEST:
-            motion_msg_send(get_conn_handle_by_mac(mac),TIME_RESPONSE,0); 
+            motion_msg_send(client->conn_handle,client->attribute_handle,TIME_RESPONSE,0); 
         break;
         case SETTING_REQUEST:
             Setting_callback(Motion_Packet);

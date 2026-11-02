@@ -899,37 +899,41 @@ MbedtlsPkcs11Status_t Mbedtls_Pkcs11_Connect( NetworkContext_t * pNetworkContext
 
 void Mbedtls_Pkcs11_Disconnect( NetworkContext_t * pNetworkContext )
 {
-    MbedtlsPkcs11Context_t * pMbedtlsPkcs11Context = NULL;
+    MbedtlsPkcs11Context_t * pContext = NULL;
     int tlsStatus = 0;
 
-    if( ( pNetworkContext != NULL ) && ( pNetworkContext->pParams != NULL ) )
+    if( ( pNetworkContext != NULL ) &&
+        ( pNetworkContext->pParams != NULL ) )
     {
-        pMbedtlsPkcs11Context = pNetworkContext->pParams;
-        /* Attempting to terminate TLS connection. */
-        tlsStatus = mbedtls_ssl_close_notify( &( pMbedtlsPkcs11Context->context ) );
+        pContext = pNetworkContext->pParams;
+
+        // 중복 해제 방지: 먼저 포인터 제거
+        //pNetworkContext->pParams = NULL;
+
+        /*
+         * TLS close notify
+         */
+        tlsStatus = mbedtls_ssl_close_notify( &( pContext->context ) );
 
         if( tlsStatus == 0 )
         {
-            LogInfo( ( "Closing TLS connection: TLS close-notify sent." ) );
+            LogInfo( ( "TLS close-notify sent." ) );
         }
-        else if( ( tlsStatus == MBEDTLS_ERR_SSL_WANT_READ ) &&
+        else if( ( tlsStatus == MBEDTLS_ERR_SSL_WANT_READ ) ||
                  ( tlsStatus == MBEDTLS_ERR_SSL_WANT_WRITE ) )
         {
-            /* WANT_READ and WANT_WRITE can be ignored. Logging for debugging purposes. */
-            LogInfo( ( "TLS close-notify sent; "
-                       "received %s as the TLS status which can be ignored for close-notify.",
-                       ( tlsStatus == MBEDTLS_ERR_SSL_WANT_READ ) ? "WANT_READ" : "WANT_WRITE" ) );
+            LogInfo( ( "TLS close-notify returned WANT_READ/WANT_WRITE." ) );
         }
         else
         {
-            /* Ignore the WANT_READ and WANT_WRITE return values. */
-            LogError( ( "Failed to send TLS close-notify: mbedTLSError= %s : %s.",
-                        mbedtlsHighLevelCodeOrDefault( tlsStatus ),
-                        mbedtlsLowLevelCodeOrDefault( tlsStatus ) ) );
+            LogError( ( "TLS close-notify failed: %s",
+                        mbedtlsHighLevelCodeOrDefault( tlsStatus ) ) );
         }
 
-        /* Free contexts. */
-        contextFree( pMbedtlsPkcs11Context );
+        /*
+         * Release TLS resources (한 번만 호출)
+         */
+        contextFree( pContext );
     }
 }
 

@@ -5,6 +5,8 @@
 #include "esp_mac.h"
 #include "cJSON.h"
 #include "app_nvs.h"
+#include "tx_mqtt.h"
+#include "aws_iot_task.h"
 static const char *TAG = __FILE__;
 
 static uint8_t topic_count = 0;
@@ -259,7 +261,7 @@ static void registration_callback(cJSON* result)
     if(strcmp(result->valuestring, "ok") == 0) 
     {
         ESP_LOGI(TAG,"[BLE_SEC] 백엔드 등록 성공 수신 완료! 앱에 prov_complete 전송");
-
+        
         // MAC 주소를 동적으로 획득하여 thing_name 조립
         write_nvs_registration_flag( true );
         uint8_t mac_byte[6];
@@ -270,9 +272,10 @@ static void registration_callback(cJSON* result)
 
         char payload_buf[128];
         snprintf(payload_buf, sizeof(payload_buf), "{\"thing_name\":\"%s_%s\"}",CONFIG_DEVICE_PREFIX, dynamicMacStr);
-
+        
         // 3. 앱에 암호화된 최종 완료 통보 쏘기
         ble_send_encrypted_event("prov_complete", payload_buf);
+        mqtt_queue_send(AWS_MESSEGE_SHADOW_GET,NULL,0);
     }
     else
     {

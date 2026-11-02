@@ -47,10 +47,7 @@ void LED_Bright_Set(uint8_t value)
     LED_brightness_value = value;
 }
 
-bool TOF_enable(void)
-{
-    return (led_status_resister & TOF_DETECT_BIT);
-}
+
 bool ota_enable(void)
 {
     return (led_status_resister & OTA_START_BIT);
@@ -106,8 +103,6 @@ void led_status_print(void)
         ESP_LOGI(TAG, "pairing_enable");
     if(hardware_error_enable())
         ESP_LOGI(TAG, "hardware_error_enable");      
-    if(TOF_enable())
-        ESP_LOGI(TAG, "TOF_enable");
     if(ota_enable())
         ESP_LOGI(TAG, "ota_enable");        
         
@@ -230,17 +225,6 @@ void app_tof_sensor_poll_100ms(void)
     if(tof_get_buf != tof_get)
     {
         tof_get_buf = tof_get;
-
-        mqtt_queue_send(MESSEGE_TEST,&tof_get,sizeof(tof_get));
-        
-    }
-    if (tof_get) 
-    {
-        led_bit_enable(TOF_DETECT_BIT); 
-    } 
-    else 
-    {
-        led_bit_disable(TOF_DETECT_BIT); // ⭐️ 손 치우면 즉시 꺼짐 호출
     }
     app_config_t* app_config = get_app_config();
     if(last_op_mode != app_config->op_mode && led_status_resister == 0)
@@ -306,52 +290,48 @@ void Breathing_Setup_Debug(uint8_t enable, uint8_t step,
     Breathing_Setting.target_b = target_b;    
     Breathing_Setting.target_w = target_w;   
 }
-
-
 static void Breathing_LED(void)
 {
     if (Breathing_Setting.used == 0)
         return;
 
-    // 1. 설정된 min ~ max 범위로 경계 제한
-    if (Breathing_Setting.brightness > Breathing_Setting.max_brightness) 
-        Breathing_Setting.brightness = Breathing_Setting.max_brightness;
-    if (Breathing_Setting.brightness < Breathing_Setting.min_brightness) 
-        Breathing_Setting.brightness = Breathing_Setting.min_brightness;
-
-    // 2. 현재 밝기를 [0.0 ~ 1.0] 비율로 정규화
-    float scale = (float)Breathing_Setting.brightness / 255.0f;
-
-    // 3. 목표 색상에 비율 적용
-    uint8_t r = (uint8_t)(Breathing_Setting.target_r * scale);
-    uint8_t g = (uint8_t)(Breathing_Setting.target_g * scale);
-    uint8_t b = (uint8_t)(Breathing_Setting.target_b * scale);
-    uint8_t w = (uint8_t)(Breathing_Setting.target_w * scale);
-
-    // 물리 LED에 반영
-    set_rgb_led(r, g, b, w);
-
-    // 4. 홀드 타임 처리
     static int hold_count = 0;
     if (hold_count > 0) {
         hold_count--;
         return;
     }
 
-    // 5. 밝기 증감
     Breathing_Setting.brightness += Breathing_Setting.step;
 
-    // 6. 설정한 max_brightness / min_brightness에서 방향 반전
     if (Breathing_Setting.brightness >= Breathing_Setting.max_brightness && Breathing_Setting.step > 0) {
         Breathing_Setting.brightness = Breathing_Setting.max_brightness;
-        Breathing_Setting.step = -Breathing_Setting.step; // 부호 반전
+        Breathing_Setting.step = -Breathing_Setting.step;
         hold_count = 10;
     } 
     else if (Breathing_Setting.brightness <= Breathing_Setting.min_brightness && Breathing_Setting.step < 0) {
         Breathing_Setting.brightness = Breathing_Setting.min_brightness;
-        Breathing_Setting.step = -Breathing_Setting.step; // 부호 반전
-        hold_count = 10;
+        Breathing_Setting.step = -Breathing_Setting.step;
+        hold_count = 10; // 완전히 꺼진 상태에서 잠시 대기
     }
+
+    // 1. 완전히 0이거나 거의 바닥(밝기 10 이하)일 때는 잔류 색상 없이 전부 0으로 소등
+    if (Breathing_Setting.brightness <= 5) {
+        set_rgb_led(0, 0, 0, 0);
+        return;
+    }
+
+// 0.0 ~ 1.0 선형 비율
+    float linear_scale = (float)Breathing_Setting.brightness / 255.0f;
+    
+    // 제곱을 적용해 사람 눈에 맞는 지수 곡선 형성 (감마 보정 효과)
+    float scale = linear_scale * linear_scale;
+
+    uint8_t r = (uint8_t)((Breathing_Setting.target_r * scale) + 0.5f);
+    uint8_t g = (uint8_t)((Breathing_Setting.target_g * scale) + 0.5f);
+    uint8_t b = (uint8_t)((Breathing_Setting.target_b * scale) + 0.5f);
+    uint8_t w = (uint8_t)((Breathing_Setting.target_w * scale) + 0.5f);
+
+    set_rgb_led(r, g, b, w);
 }
 
 static void LED_task(void *pvParameter)
@@ -378,25 +358,28 @@ static void LED_task(void *pvParameter)
         }
         else
         {
-            if(LED_brightness_value == 0)
-            {
-                set_rgb_len_no_Breathing(0 ,0, 0, 0); 
-                vTaskDelay(pdMS_TO_TICKS(LED_TASK_DELAY));
-                continue;
-            }
             #if 1
             if(get_factory_flag())
             {
                 facto_set(false);
-                set_rgb_len_no_Breathing(0, 0, 255, 0);
+                set_rgb_len_no_Breathing(COLOR_W100_BLUE);
                 vTaskDelay(pdMS_TO_TICKS(2000));
-                set_rgb_len_no_Breathing(255, 0, 0, 0);
+                set_rgb_len_no_Breathing(COLOR_W100_RED);
                 vTaskDelay(pdMS_TO_TICKS(2000));
-                set_rgb_len_no_Breathing(0, 255, 0, 0);
-                vTaskDelay(pdMS_TO_TICKS(2000));     
+                set_rgb_len_no_Breathing(COLOR_W100_GREEN);
+                vTaskDelay(pdMS_TO_TICKS(2000));   
+                set_rgb_len_no_Breathing(COLOR_W100_WHITE);
+                vTaskDelay(pdMS_TO_TICKS(2000));                     
                 esp_restart(); // ⚠️ 깨끗해진 구조 반영 및 안전한 재시작          
             }
             #endif
+            if(LED_brightness_value == 0)
+            {
+                set_rgb_len_no_Breathing(COLOR_W100_OFF); 
+                vTaskDelay(pdMS_TO_TICKS(LED_TASK_DELAY));
+                continue;
+            }
+#if 0
             int button_state = button_press_state();
             if(button_state)
             {
@@ -408,6 +391,7 @@ static void LED_task(void *pvParameter)
                 }
             }
             else
+#endif
             {
                 if (led_status_resister != 0) {
                     if(led_status_resister_buf != led_status_resister)
@@ -416,28 +400,28 @@ static void LED_task(void *pvParameter)
                         led_status_resister_buf = led_status_resister;
                     }
                     last_op_mode = -1; 
-                    #if 1
-                    if (TOF_enable()){
-                        set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
-                    }                          
-                    else if(hardware_error_enable() || Pump_error_enable() || Water_empty_enable() || Loadcell_error_enable())
+                    #if 1               
+                    if(hardware_error_enable() || Pump_error_enable() || Loadcell_error_enable())
                     {
-                        set_rgb_len_no_Breathing(LED_brightness_value,0 , 0, 0); 
+                        set_rgb_len_no_Breathing(COLOR_W100_RED); 
                     }
-                    else if(Water_low_enable() || Filter_water_enable() || Filter_debris_enable())
+                    if(Filter_water_enable() || Filter_debris_enable())
                     {
-                        Breathing_Setup(1,2,0,LED_brightness_value,255,0,0,0);
-                        Breathing_LED();
+                        set_rgb_len_no_Breathing(COLOR_W100_ORANGE); 
+                    }
+                    else if(Water_low_enable() || Water_empty_enable() )
+                    {
+                        set_rgb_len_no_Breathing(COLOR_W100_RED); 
                     }
                     else 
                     #endif
                     if (ota_enable()) {
-                        Breathing_Setup(1,2,0,LED_brightness_value,255,0,255,0);
+                        Breathing_Setup(1,2,0,LED_brightness_value,COLOR_W100_LIGHT_YELLOW);
                         Breathing_LED();
                     }                  
    
                     else if (pairing_enable()) {
-                        Breathing_Setup(1,2,0,LED_brightness_value,0,0,255,0);
+                        Breathing_Setup(1,2,0,LED_brightness_value,COLOR_W100_BLUE);
                         Breathing_LED();
                     }
                     
@@ -448,17 +432,16 @@ static void LED_task(void *pvParameter)
                     if(wifi_conn_enable)
                     {
                         wifi_conn_enable--;
-                        set_rgb_len_no_Breathing(0, LED_brightness_value, 0, 0); 
+                        set_rgb_len_no_Breathing(COLOR_W100_GREEN); 
                     }
                     else
                     {
 
                         {
                             switch(last_op_mode) {
-                                case OP_MODE_NORMAL: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
-                                case OP_MODE_NIGHT:  set_rgb_len_no_Breathing(0, 0, 0, 0); break;
-                                case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(0, 0, 0, 0); break;
-                                default: set_rgb_len_no_Breathing(0, 0, 0, LED_brightness_value); break;
+                                case OP_MODE_NORMAL: set_rgb_len_no_Breathing(COLOR_W100_WHITE); break;
+                                case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(COLOR_W100_OFF); break;
+                                default: set_rgb_len_no_Breathing(COLOR_W100_OFF); break;
                             }
                         }
                     }

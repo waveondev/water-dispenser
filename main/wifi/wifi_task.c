@@ -27,7 +27,7 @@ static const char* TAG = __FILE__;
 #include <esp_ota_ops.h>
 #include "esp_netif_sntp.h"
 #include "esp_sntp.h"  // v5.x 호환용
-
+static esp_timer_handle_t s_ntp_retry_timer = NULL;
 //메인 초기화 부분에 선언해두었던 이벤트 그룹과 비트들을 가져옵니다 (extern 또는 동일 파일 내 선언)
 EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
@@ -35,6 +35,7 @@ EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
 #define MAXIMUM_RETRY  5
 static bool s_allow_reconnect = true; // 💡 자동 재연결 허용 플래그
+void start_ntp_retry_timer(void);
 /**
  * @brief 기존 Wi-Fi 연결을 안전하게 끊습니다.
  * (esp_wifi_stop()까지는 할 필요 없이 disconnect 만으로 충분합니다)
@@ -79,7 +80,7 @@ void Wifi_Connect(const char* target_ssid, const char* target_password)
     esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Wi-Fi 설정 적용 실패!");
-        ble_send_data_to_queue(NULL, (uint8_t*)"CONNECT_AP FAIL", strlen("CONNECT_AP FAIL"));
+        ble_send_data_to_queue(NULL,NULL, (uint8_t*)"CONNECT_AP FAIL", strlen("CONNECT_AP FAIL"));
         return;
     }
 
@@ -102,13 +103,10 @@ void Wifi_Connect(const char* target_ssid, const char* target_password)
     // 8. 대기 결과에 따른 처리
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "새 AP 연결 최종 성공!");
-        //ble_send_data_to_queue((uint8_t*)"CONNECT_AP SUCCESS", strlen("CONNECT_AP SUCCESS"));
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGE(TAG, "새 AP 연결 실패 (비밀번호 오류 또는 AP 없음)!");
-        //ble_send_data_to_queue((uint8_t*)"CONNECT_AP FAIL", strlen("CONNECT_AP FAIL"));
     } else {
         ESP_LOGE(TAG, "새 AP 연결 타임아웃! (15초 초과)");
-        //ble_send_data_to_queue((uint8_t*)"CONNECT_AP TIMEOUT", strlen("CONNECT_AP TIMEOUT"));
         esp_wifi_disconnect(); // 타임아웃 났으니 연결 시도 중단
     }
 
@@ -308,7 +306,9 @@ bool time_sync_get(void)
 // [단계 2] NTP 서버로부터 시간이 실제로 동기화되었을 때 호출되는 콜백 함수
 void time_sync_notification_cb(struct timeval *tv) {
     ESP_LOGI(TAG, "NTP 시간 동기화 완료!");
-    
+        esp_timer_stop(s_ntp_retry_timer);
+    esp_timer_delete(s_ntp_retry_timer);
+    s_ntp_retry_timer = NULL;
     // 한국 표준시(KST) 세팅 (UTC + 9시간)
     setenv("TZ", "KST-9", 1);
     tzset();
@@ -343,6 +343,7 @@ void sntp_init_and_sync(void) {
     esp_sntp_set_time_sync_notification_cb(time_sync_notification_cb);
     
     esp_sntp_init();
+    start_ntp_retry_timer();
 }
 // 백그라운드 이벤트 핸들러
 #include "esp_timer.h"
@@ -369,11 +370,11 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
         // 💡 중요: 여기서 esp_wifi_connect()를 절대 호출하지 않습니다!
         // 드라이버가 준비 완료(Start) 되었다는 로그만 남깁니다.
-        led_bit_enable(PAIRING_BIT);
+
         ESP_LOGI(TAG, "Wi-Fi 드라이버가 준비되었습니다 (STA_START).");
     } 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-            led_bit_enable(PAIRING_BIT);
+
                 xEventGroupClearBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
             if (s_allow_reconnect) {
                 if (s_retry_num < MAXIMUM_RETRY) {
@@ -399,12 +400,52 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
         ESP_LOGI(TAG, "IP 할당 완료: " IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
-        led_bit_disable(PAIRING_BIT);
+
         wifi_connect_success();
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         sntp_init_and_sync();
     }
 }
+
+
+
+// 타이머 콜백 함수 (매 60초마다 실행)
+static void ntp_retry_timer_callback(void *arg) {
+    sntp_sync_status_t status = esp_sntp_get_sync_status();
+
+    if (status == SNTP_SYNC_STATUS_COMPLETED) {
+        ESP_LOGI(TAG, "NTP 시간 동기화 성공! 재시도 타이머를 중단합니다.");
+        
+        // 동기화 완료 시 타이머 중지 및 핸들 정리
+        esp_timer_stop(s_ntp_retry_timer);
+        esp_timer_delete(s_ntp_retry_timer);
+        s_ntp_retry_timer = NULL;
+    } else {
+        ESP_LOGW(TAG, "NTP 동기화 미완료 상태. SNTP 재요청을 전송합니다...");
+        // 강제로 SNTP 재시작하여 즉각 패킷 재요청
+        esp_sntp_restart();
+    }
+}
+
+// 타이머 시작 함수
+void start_ntp_retry_timer(void) {
+    if (s_ntp_retry_timer != NULL) {
+        ESP_LOGW(TAG, "이미 재시도 타이머가 실행 중입니다.");
+        return;
+    }
+
+    const esp_timer_create_args_t timer_args = {
+        .callback = &ntp_retry_timer_callback,
+        .name = "ntp_retry_timer"
+    };
+
+    ESP_ERROR_CHECK(esp_timer_create(&timer_args, &s_ntp_retry_timer));
+
+    // 60초(60 * 1,000,000 마이크로초) 주기로 반복 실행
+    ESP_ERROR_CHECK(esp_timer_start_periodic(s_ntp_retry_timer, 60ULL * 1000000ULL));
+    ESP_LOGI(TAG, "NTP 재시도 타이머가 시작되었습니다. (주기: 60초)");
+}
+
 void wifi_init(void)
 {
     s_wifi_event_group = xEventGroupCreate();

@@ -132,7 +132,7 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
             }		
 			else if (!strncmp(ag[1], "mode", 8))
 			{
-                Opmode_Set();
+                Opmode_Set(NULL);
             }		
 			else if (!strncmp(ag[1], "discon", 6))
 			{
@@ -161,7 +161,7 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 				}
 				printf("\n");
 				uint16_t handle = GetHandle(index);
-				ble_send_data_to_queue(&handle, (uint8_t*)hex_array,sizeof(hex_array));
+				//ble_send_data_to_queue(&handle, (uint8_t*)hex_array,sizeof(hex_array));
 			}			
 			else if (!strncmp(ag[1], "motion", 6))
 			{

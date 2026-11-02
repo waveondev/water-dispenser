@@ -739,176 +739,262 @@ bool EstablishMqttSession( MQTTPublishCallback_t publishCallback,
                            char * pPrivateKeyLabel )
 {
     bool returnStatus = false;
+    bool networkConnected = false;
+
     MQTTStatus_t mqttStatus;
-    MQTTConnectInfo_t connectInfo;
+    MQTTConnectInfo_t connectInfo = { 0 };
     MQTTFixedBuffer_t networkBuffer;
     TransportInterface_t transport = { NULL };
+
     bool createCleanSession = false;
+    bool sessionPresent = false;
+
     MQTTContext_t * pMqttContext = &mqttContext;
     NetworkContext_t * pNetworkContext = &networkContext;
-    bool sessionPresent = false;
+
+    uint8_t mac_byte[6];
+    char dynamicMacStr[13];
+    char con_info_str[100];
 
     assert( pMqttContext != NULL );
     assert( pNetworkContext != NULL );
 
-    /* Initialize the mqtt context and network context. */
-    ( void ) memset( pMqttContext, 0U, sizeof( MQTTContext_t ) );
-    ( void ) memset( pNetworkContext, 0U, sizeof( NetworkContext_t ) );
-    uint8_t mac_byte[6];
-    char dynamicMacStr[13]; // 12자리 MAC 문자열 + 널 종료 문자(\0)
+    /*
+     * 1. 이전 연결 상태 확인
+     *
+     * 이전 연결이 살아 있는 상태에서 memset하면 안 됩니다.
+     * 호출 측에서 이전 세션을 정리했다는 전제가 필요합니다.
+     */
 
-    // ESP32의 기본 Wi-Fi MAC 주소를 읽어옵니다.
-    esp_read_mac(mac_byte, ESP_MAC_WIFI_STA);
-    
-    // 읽어온 MAC 주소를 콜론 없이 대문자 16진수 문자열로 포맷팅합니다 (예: "28372F9C283C")
-    snprintf(dynamicMacStr, sizeof(dynamicMacStr), "%02X%02X%02X%02X%02X%02X",
-             mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
-    returnStatus = connectToBrokerWithBackoffRetries( pNetworkContext,
-                                                      p11Session,
-                                                      pClientCertLabel,
-                                                      pPrivateKeyLabel );
+    if( mqttSessionEstablished == true )
+    {
+        LogError( ( "Previous MQTT session is still established." ) );
+        return false;
+    }
+
+    /*
+     * 2. Context 초기화
+     */
+
+    memset( pMqttContext, 0, sizeof( MQTTContext_t ) );
+    memset( pNetworkContext, 0, sizeof( NetworkContext_t ) );
+
+    mqttSessionEstablished = false;
+
+    /*
+     * 3. MAC 주소 읽기
+     */
+
+    esp_read_mac( mac_byte, ESP_MAC_WIFI_STA );
+
+    snprintf( dynamicMacStr,
+              sizeof( dynamicMacStr ),
+              "%02X%02X%02X%02X%02X%02X",
+              mac_byte[0],
+              mac_byte[1],
+              mac_byte[2],
+              mac_byte[3],
+              mac_byte[4],
+              mac_byte[5] );
+
+    /*
+     * 4. TLS 연결
+     */
+
+    returnStatus = connectToBrokerWithBackoffRetries(
+                       pNetworkContext,
+                       p11Session,
+                       pClientCertLabel,
+                       pPrivateKeyLabel );
 
     if( returnStatus != true )
     {
-        /* Log an error to indicate connection failure after all
-         * reconnect attempts are over. */
         LogError( ( "Failed to connect to MQTT broker %.*s.",
                     AWS_IOT_ENDPOINT_LENGTH,
                     AWS_IOT_ENDPOINT ) );
+
+        /*
+         * 중요:
+         * TLS 연결 함수가 실패했더라도 부분 초기화된
+         * 리소스가 남아 있을 수 있습니다.
+         *
+         * Disconnect가 부분 초기화 상태에서도 안전한지
+         * 반드시 구현을 확인해야 합니다.
+         */
+        goto cleanup;
+    }
+
+    networkConnected = true;
+
+    /*
+     * 5. Transport 초기화
+     */
+
+    transport.pNetworkContext = pNetworkContext;
+    transport.send = Mbedtls_Pkcs11_Send;
+    transport.recv = Mbedtls_Pkcs11_Recv;
+    transport.writev = NULL;
+
+    /*
+     * 6. MQTT Network Buffer
+     */
+
+    networkBuffer.pBuffer = buffer;
+    networkBuffer.size = CONFIG_MQTT_NETWORK_BUFFER_SIZE;
+
+    appPublishCallback = publishCallback;
+
+    /*
+     * 7. MQTT 초기화
+     */
+
+    mqttStatus = MQTT_Init(
+                     pMqttContext,
+                     &transport,
+                     Clock_GetTimeMs,
+                     mqttCallback,
+                     &networkBuffer );
+
+    if( mqttStatus != MQTTSuccess )
+    {
+        LogError( ( "MQTT_Init failed: %s",
+                    MQTT_Status_strerror( mqttStatus ) ) );
+
+        goto cleanup;
+    }
+
+    /*
+     * 8. MQTT Stateful QoS 초기화
+     */
+
+    mqttStatus = MQTT_InitStatefulQoS(
+                     pMqttContext,
+                     pOutgoingPublishRecords,
+                     OUTGOING_PUBLISH_RECORD_LEN,
+                     pIncomingPublishRecords,
+                     INCOMING_PUBLISH_RECORD_LEN );
+
+    if( mqttStatus != MQTTSuccess )
+    {
+        LogError( ( "MQTT_InitStatefulQoS failed: %s",
+                    MQTT_Status_strerror( mqttStatus ) ) );
+
+        goto cleanup;
+    }
+
+    /*
+     * 9. MQTT Connect 정보 설정
+     */
+
+    connectInfo.cleanSession = createCleanSession;
+
+    snprintf( con_info_str,
+              sizeof( con_info_str ),
+              "%s_%s",
+              CONFIG_DEVICE_PREFIX,
+              dynamicMacStr );
+
+    connectInfo.pClientIdentifier = con_info_str;
+    connectInfo.clientIdentifierLength = strlen( con_info_str );
+
+    connectInfo.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_SECONDS;
+
+    connectInfo.pUserName = METRICS_STRING;
+    connectInfo.userNameLength = METRICS_STRING_LENGTH;
+
+    connectInfo.pPassword = NULL;
+    connectInfo.passwordLength = 0U;
+
+    /*
+     * 10. MQTT Connect
+     */
+
+    mqttStatus = MQTT_Connect(
+                     pMqttContext,
+                     &connectInfo,
+                     NULL,
+                     CONNACK_RECV_TIMEOUT_MS,
+                     &sessionPresent );
+
+    if( mqttStatus != MQTTSuccess )
+    {
+        LogError( ( "MQTT_Connect failed: %s",
+                    MQTT_Status_strerror( mqttStatus ) ) );
+
+        goto cleanup;
+    }
+
+    /*
+     * 11. MQTT 연결 성공
+     */
+
+    mqttSessionEstablished = true;
+
+    LogDebug( ( "MQTT connection successfully established." ) );
+
+    /*
+     * 12. 기존 Publish 복구 처리
+     */
+
+    if( sessionPresent == true )
+    {
+        LogDebug( ( "Restoring previous MQTT session." ) );
+
+        returnStatus = handlePublishResend( pMqttContext );
+
+        if( returnStatus != true )
+        {
+            LogError( ( "handlePublishResend failed." ) );
+
+            goto cleanup;
+        }
     }
     else
     {
-        /* Fill in TransportInterface send and receive function pointers.
-         * For this demo, TCP sockets are used to send and receive data
-         * from the network. pNetworkContext is an SSL context for OpenSSL.*/
-        transport.pNetworkContext = pNetworkContext;
-        transport.send = Mbedtls_Pkcs11_Send;
-        transport.recv = Mbedtls_Pkcs11_Recv;
-        transport.writev = NULL;
+        LogDebug( ( "New MQTT session established." ) );
 
-        /* Fill the values for network buffer. */
-        networkBuffer.pBuffer = buffer;
-        networkBuffer.size = CONFIG_MQTT_NETWORK_BUFFER_SIZE;
-
-        /* Remember the publish callback supplied. */
-        appPublishCallback = publishCallback;
-
-        /* Initialize the MQTT library. */
-        mqttStatus = MQTT_Init( pMqttContext,
-                                &transport,
-                                Clock_GetTimeMs,
-                                mqttCallback,
-                                &networkBuffer );
-
-        if( mqttStatus != MQTTSuccess )
-        {
-            returnStatus = false;
-            LogError( ( "MQTT_Init failed with status %s.",
-                        MQTT_Status_strerror( mqttStatus ) ) );
-        }
-        else
-        {
-            mqttStatus = MQTT_InitStatefulQoS( pMqttContext,
-                                               pOutgoingPublishRecords,
-                                               OUTGOING_PUBLISH_RECORD_LEN,
-                                               pIncomingPublishRecords,
-                                               INCOMING_PUBLISH_RECORD_LEN );
-
-            if( mqttStatus != MQTTSuccess )
-            {
-                returnStatus = false;
-                LogError( ( "MQTT_InitStatefulQoS failed with status %s.",
-                            MQTT_Status_strerror( mqttStatus ) ) );
-            }
-            else
-            {
-                /* Establish an MQTT session by sending a CONNECT packet. */
-
-                /* If #createCleanSession is true, start with a clean session
-                 * i.e. direct the MQTT broker to discard any previous session data.
-                 * If #createCleanSession is false, direct the broker to attempt to
-                 * reestablish a session which was already present. */
-                connectInfo.cleanSession = createCleanSession;
-
-                /* The client identifier is used to uniquely identify this MQTT client to
-                 * the MQTT broker. In a production device the identifier can be something
-                 * unique, such as a device serial number. */
-                char con_info_str[100];
-                snprintf(con_info_str,sizeof(con_info_str),"%s_%s",CONFIG_DEVICE_PREFIX,dynamicMacStr);         
-                
-                connectInfo.pClientIdentifier = con_info_str;
-                connectInfo.clientIdentifierLength = strlen(con_info_str);
-
-                /* The maximum time interval in seconds which is allowed to elapse
-                 * between two Control Packets.
-                 * It is the responsibility of the client to ensure that the interval between
-                 * control packets being sent does not exceed the this keep-alive value. In the
-                 * absence of sending any other control packets, the client MUST send a
-                 * PINGREQ packet. */
-                connectInfo.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_SECONDS;
-
-                /* Username and password for authentication. Not used in this demo. */
-                connectInfo.pUserName = METRICS_STRING;
-                connectInfo.userNameLength = METRICS_STRING_LENGTH;
-                connectInfo.pPassword = NULL;
-                connectInfo.passwordLength = 0U;
-
-                /* Send an MQTT CONNECT packet to the broker. */
-                mqttStatus = MQTT_Connect( pMqttContext,
-                                           &connectInfo,
-                                           NULL,
-                                           CONNACK_RECV_TIMEOUT_MS,
-                                           &sessionPresent );
-
-                if( mqttStatus != MQTTSuccess )
-                {
-                    returnStatus = false;
-                    LogError( ( "Connection with MQTT broker failed with status %s.",
-                                MQTT_Status_strerror( mqttStatus ) ) );
-                    Mbedtls_Pkcs11_Disconnect(pNetworkContext);
-                }
-                else
-                {
-                    LogDebug( ( "MQTT connection successfully established with broker." ) );
-                }
-            }
-        }
-
-        if( returnStatus == true )
-        {
-            /* Keep a flag for indicating if MQTT session is established. This
-             * flag will mark that an MQTT DISCONNECT has to be sent at the end
-             * of the demo even if there are intermediate failures. */
-            mqttSessionEstablished = true;
-        }
-
-        if( returnStatus == true )
-        {
-            /* Check if a session is present and if there are any outgoing
-             * publishes that need to be resent. Resending unacknowledged
-             * publishes is needed only if the broker is re-establishing a
-             * session that was already present. */
-            if( sessionPresent == true )
-            {
-                LogDebug( ( "An MQTT session with broker is re-established. "
-                            "Resending unacked publishes." ) );
-
-                /* Handle all the resend of publish messages. */
-                returnStatus = handlePublishResend( &mqttContext );
-            }
-            else
-            {
-                LogDebug( ( "A clean MQTT connection is established."
-                            " Cleaning up all the stored outgoing publishes." ) );
-
-                /* Clean up the outgoing publishes waiting for ack as this new
-                 * connection doesn't re-establish an existing session. */
-                cleanupOutgoingPublishes();
-            }
-        }
+        cleanupOutgoingPublishes();
     }
 
+    returnStatus = true;
+
     return returnStatus;
+
+
+/*
+ * ============================================================
+ * 공통 실패 정리
+ * ============================================================
+ */
+
+cleanup:
+
+    LogError( ( "MQTT connection cleanup started." ) );
+
+    /*
+     * MQTT 연결이 실제로 성공한 경우에만
+     * MQTT DISCONNECT를 시도하도록 합니다.
+     */
+
+    if( mqttSessionEstablished == true )
+    {
+        MQTT_Disconnect( pMqttContext );
+        mqttSessionEstablished = false;
+    }
+
+    /*
+     * TLS / TCP 연결 정리
+     */
+
+    if( networkConnected == true )
+    {
+        Mbedtls_Pkcs11_Disconnect( pNetworkContext );
+        networkConnected = false;
+    }
+
+    LogError( ( "MQTT connection cleanup completed." ) );
+
+    return false;
 }
 
 /*-----------------------------------------------------------*/

@@ -20,6 +20,8 @@
 #include "opmode_task.h"
 #include "device_config.h"
 #include "aws_iot_task.h"
+#include "esp_central.h"
+#include "app_led.h"
 static const char *TAG = __FILE__;
 
 #define SEC_TO_US(sec) ((uint64_t)(sec) * 1000000ULL)
@@ -47,15 +49,18 @@ static void mac_send_timer_callback(void* arg);
 
 extern void ble_store_config_init(void);
 static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg);
-
+static void registation_timer_set(bool state, uint64_t discon_timeout);
 static uint16_t current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 static QueueHandle_t ble_rx_queue = NULL;
 static QueueHandle_t ble_tx_queue = NULL; // 이름을 수신용(rx)에서 송신용(tx) 개념으로
-
+static SemaphoreHandle_t g_attr_handle_mutex = NULL;
 uint16_t g_ble_max_payload = 20; // ble로 최대 보낼 수 있는 Length 저장
 #define BLE_TRX_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 static bool qc_mode = false;
+static esp_timer_handle_t Mac_sending_timer;
+static esp_timer_handle_t Registation_timer;
 // NimBLE 예제에 정의된 주소 출력 함수
+static volatile bool g_is_connecting = false; // 연결 진행 중 상태 플래그
 static void print_addr(const void *addr)
 {
     const uint8_t *u8p = addr;
@@ -82,7 +87,7 @@ static void ble_spp_server_print_conn_desc(struct ble_gap_conn_desc *desc)
 static void ble_spp_client_scan(void)
 {
     struct ble_gap_disc_params disc_params;
-    int rc;
+
 
     memset(&disc_params, 0, sizeof(disc_params));
     disc_params.filter_duplicates = 0; 
@@ -90,15 +95,26 @@ static void ble_spp_client_scan(void)
 
     // 🔴 [수정] 500ms 비콘 스캔을 위한 타이밍 최적화
     // interval과 window를 같게 설정하면 ESP32가 쉬지 않고 100% 확률로 계속 스캔 대기를 합니다.
-    disc_params.itvl = 32;   // 32 * 0.625ms = 20ms
-    disc_params.window = 32; // 20ms (100% Duty Cycle)
-    rc = ble_gap_disc(own_addr_type, BLE_HS_FOREVER, &disc_params, ble_spp_server_gap_event, NULL);
-    if (rc != 0) {
-        MODLOG_DFLT(ERROR, "Error discovering peers; rc=%d\n", rc);
-    }
+    disc_params.itvl = 160;   // 32 * 0.625ms = 20ms
+    disc_params.window = 160; // 20ms (100% Duty Cycle)
+
+        int rc = ble_gap_disc(
+            own_addr_type,
+            BLE_HS_FOREVER,
+            &disc_params,
+            ble_spp_server_gap_event,
+            NULL
+        );
+
+        if (rc == 0) {
+            ESP_LOGI(TAG, "Scan started");
+        } else {
+            ESP_LOGE(TAG, "Scan start failed rc=%d", rc);
+        }
+
 }
-#define DEVICE_T 'W'
-#define DEVICE_NAME CONFIG_DEVICE_PREFIX
+
+#define DEVICE_NAME CONFIG_BLE_DEVICE_NAME
 //#define DEVICE_NAME "W-100"
 static void ble_spp_server_advertise(void)
 {
@@ -106,76 +122,53 @@ static void ble_spp_server_advertise(void)
     struct ble_hs_adv_fields fields;
     struct ble_hs_adv_fields rsp_fields;
     int rc;
-    uint8_t mfg_data[7];
-
+  
     rc = ble_gap_adv_stop();
     if (rc != 0) {
         ESP_LOGD(TAG, "adv_stop rc=%d", rc);
     }
 
-    memset(mfg_data,0,sizeof(mfg_data));
-    mfg_data[0] = 0x31;
-    mfg_data[1] = DEVICE_T;
-    if(aws_connected_state())
-    {
-        mfg_data[2] |= 0x01;
-    }
-    
-    // Advertising packet
-    memset(&fields, 0, sizeof fields);
-
-    fields.flags =
-        BLE_HS_ADV_F_DISC_GEN |
-        BLE_HS_ADV_F_BREDR_UNSUP;
-
-    // ⭐ NUS 서비스 UUID 광고
-   // fields.uuids128 = &nus_svc_uuid;
-   // fields.num_uuids128 = 1;
-   // fields.uuids128_is_complete = 1;
-
     char device_name[30] = {0};
-    if(qc_mode == true)
-    {
+    if (qc_mode == true) {
         snprintf(device_name, sizeof(device_name), "%s-QC", DEVICE_NAME);
-    }
-    else
-    {
-        if (read_nvs_registration_flag() == false) {
-            snprintf(device_name, sizeof(device_name), "%s-R-water", DEVICE_NAME);
-        } else {
-            snprintf(device_name, sizeof(device_name), "%s-water", DEVICE_NAME);
-        }
+    } else {
+        snprintf(device_name, sizeof(device_name), "%s-R-water", DEVICE_NAME);
     }
 
+    ESP_LOGI(TAG, "DEVICE_NAME = '%s'", DEVICE_NAME);
+    ESP_LOGI(TAG, "device_name = '%s', len=%d",
+         device_name, (int)strlen(device_name));
+    // GAP 스택 이름 업데이트
     ble_svc_gap_device_name_set(device_name);
 
-    const char *name = ble_svc_gap_device_name();
+    // 3. Main Advertising Packet (Flags + Device Name)
+    memset(&fields, 0, sizeof fields);
+
+    fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
+
+    // 💡 ble_svc_gap_device_name() 대신 생성한 device_name을 직접 지정
+    fields.name = (uint8_t *)device_name;
+    fields.name_len = strlen(device_name);
+    fields.name_is_complete = 1;
 
     rc = ble_gap_adv_set_fields(&fields);
     if (rc != 0) {
+        ESP_LOGE(TAG, "ble_gap_adv_set_fields 실패 rc=%d", rc); 
         return;
     }
 
-
-    // Scan Response packet
+    // 4. Scan Response Packet (Manufacturer Specific Data)
     memset(&rsp_fields, 0, sizeof rsp_fields);
 
-
-    /* Manufacturer Specific Data */
-    rsp_fields.mfg_data = mfg_data;
-    rsp_fields.mfg_data_len = sizeof(mfg_data);
-
-    rsp_fields.name = (uint8_t *)name;
-    rsp_fields.name_len = strlen(name);
-    rsp_fields.name_is_complete = 1;
 
 
     rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
     if (rc != 0) {
-        printf("ble_gap_adv_set_fields failed: %d\n", rc);
+        ESP_LOGE(TAG, "ble_gap_adv_rsp_set_fields 실패 rc=%d", rc);
         return;
     }
 
+    // 5. 광고 시작
     memset(&adv_params, 0, sizeof adv_params);
 
     adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
@@ -183,6 +176,7 @@ static void ble_spp_server_advertise(void)
     adv_params.itvl_max = BLE_GAP_ADV_ITVL_MS(40);
     adv_params.itvl_min = BLE_GAP_ADV_ITVL_MS(20);
     adv_params.filter_policy = BLE_HCI_ADV_FILT_NONE;
+
     rc = ble_gap_adv_start(
         own_addr_type,
         NULL,
@@ -191,8 +185,8 @@ static void ble_spp_server_advertise(void)
         ble_spp_server_gap_event,
         NULL
     );
+    ESP_LOGI(TAG, "ble_spp_server_advertise 완료 rc=%d", rc); 
 }
-
 
 
 
@@ -237,7 +231,7 @@ static void Tracker_Motion_retry(TimerHandle_t xTimer) {
     for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
         // 타이머 핸들이 일치하고, 현재 해당 기기가 실제로 연결되어 있는지 확인
         if (connected_clients[i].is_connected && connected_clients[i].xMotionTimer == xTimer) {
-            motion_msg_send(connected_clients[i].conn_handle,MOTION_START_REQUEST,2);
+            motion_msg_send(connected_clients[i].conn_handle,connected_clients[i].attribute_handle,MOTION_START_REQUEST,2);
             break; 
         }
     }
@@ -284,7 +278,7 @@ void Tracker_All_Send(uint8_t cmd, uint8_t sub_cmd)
     for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
         // 타이머 핸들이 일치하고, 현재 해당 기기가 실제로 연결되어 있는지 확인
         if (connected_clients[i].is_connected) {
-            motion_msg_send(connected_clients[i].conn_handle,cmd,sub_cmd);
+            motion_msg_send(connected_clients[i].conn_handle,connected_clients[i].attribute_handle,cmd,sub_cmd);
         }
     }
 }
@@ -300,16 +294,16 @@ static void Tracker_Motion_send(TimerHandle_t xTimer) {
        
             if(connected_clients[i].timer_count == connected_clients[i].first_delay_ms)
             {
-                motion_msg_send(conn_handle, HEALTH_DATA_REQUEST,1);
+                motion_msg_send(conn_handle,connected_clients[i].attribute_handle, HEALTH_DATA_REQUEST,1);
             }
             else if(connected_clients[i].timer_count == (connected_clients[i].first_delay_ms * 2))
             {
-                motion_msg_send(conn_handle, MOTION_START_REQUEST,1);
+                motion_msg_send(conn_handle,connected_clients[i].attribute_handle, MOTION_START_REQUEST,1);
             }
             if(connected_clients[i].timer_count % app_config->motion_data_time == 0)
             {
                 if(connected_clients[i].data == NULL)
-                    motion_msg_send(conn_handle, MOTION_START_REQUEST,1);
+                    motion_msg_send(conn_handle,connected_clients[i].attribute_handle, MOTION_START_REQUEST,1);
             }
 
             break; 
@@ -317,19 +311,21 @@ static void Tracker_Motion_send(TimerHandle_t xTimer) {
     }
 }
 // 1. CONNECT 이벤트 발생 시 저장
-void add_client(uint16_t conn_handle, const uint8_t *mac) {
+client_info_t* add_client(uint16_t conn_handle, const uint8_t *mac) {
     for (int i = 0; i < CONFIG_BT_NIMBLE_MAX_CONNECTIONS; i++) {
         if (!connected_clients[i].is_connected) {
             connected_clients[i].conn_handle = conn_handle;
             memcpy(connected_clients[i].mac_addr, mac, 6);
+            ESP_LOGI(TAG," add_client = %02x%02x%02x%02x%02x%02x",connected_clients[i].mac_addr[0],connected_clients[i].mac_addr[1],connected_clients[i].mac_addr[2],connected_clients[i].mac_addr[3],connected_clients[i].mac_addr[4],connected_clients[i].mac_addr[5]);
             connected_clients[i].is_connected = true;
             connected_clients[i].xtimer = xTimerCreate("adv_delay", pdMS_TO_TICKS(1000), pdTRUE, NULL, Tracker_Motion_send);
             connected_clients[i].xMotionTimer = xTimerCreate("motion", pdMS_TO_TICKS(1000), pdTRUE, NULL, Tracker_Motion_retry);
             connected_clients[i].first_delay_ms = (esp_random() % 20) + 1;     
             xTimerStart(connected_clients[i].xtimer, 0);            
-            break;
+            return &connected_clients[i];
         }
     }
+    return NULL;
 }
 client_info_t* get_conn_client_by_mac(const uint8_t *mac)
 {
@@ -408,17 +404,127 @@ void remove_client(uint16_t conn_handle) {
         }
     }
 }
+// 지연 광고 재개 콜백 함수
+static void delay_scan_timer_cb(TimerHandle_t xTimer) {
 
+        ESP_LOGI("BLE_GAP", "지연 후 scan 재개...");
+        ble_spp_client_scan();
+
+}
 // 지연 광고 재개 콜백 함수
 static void delay_adv_timer_cb(TimerHandle_t xTimer) {
     
     // 현재 활성 연결 수가 최대 연결 수보다 적을 때만 재개
-    if (count_client() < CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
+   // if (count_client() < CONFIG_BT_NIMBLE_MAX_CONNECTIONS) {
         ESP_LOGI("BLE_GAP", "지연 후 광고 재개...");
         ble_spp_server_advertise(); // 프로젝트의 실제 광고 함수 호출
-    }
+        //ble_spp_client_scan();
+    //}
 }
-static esp_timer_handle_t Mac_sending_timer;
+
+static void ble_spp_client_write_subscribe(const struct peer *peer, client_info_t* client)
+{
+    uint8_t value[2];
+    int rc;
+    const struct peer_dsc *dsc;
+
+    /* 128-bit UUID 적용:
+     * CCCD(0x2902)는 16-bit 표준 Descriptor이므로 BLE_UUID16_DECLARE를 유지하고,
+     * Service 및 Characteristic UUID 부분만 128-bit (.u)로 변경합니다.
+     */
+    dsc = peer_dsc_find_uuid(peer,
+                            &nus_svc_uuid.u,
+                            &nus_tx_uuid.u, // Notify를 수신할 TX Characteristic의 UUID
+                            BLE_UUID16_DECLARE(BLE_GATT_DSC_CLT_CFG_UUID16));
+    if (dsc == NULL) {
+        MODLOG_DFLT(ERROR, "Error: Peer lacks a CCCD for the characteristic\n");
+        goto err;
+    }
+
+    value[0] = 1;
+    value[1] = 0;
+    rc = ble_gattc_write_flat(peer->conn_handle, dsc->dsc.handle,
+                              value, sizeof(value), NULL, NULL);
+
+    if (rc != 0) {
+        MODLOG_DFLT(ERROR, "Error: Failed to subscribe to characteristic; rc=%d\n", rc);
+        goto err;
+    }
+    return;
+
+err:
+    /* Terminate the connection. */
+    ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+}
+
+static void ble_spp_client_set_handle(const struct peer *peer, client_info_t* client)
+{
+    const struct peer_chr *chr;
+    const struct peer_dsc *dsc;
+    uint8_t value[2];
+
+    // 128-bit RX Characteristic UUID로 검색 (데이터를 쓸 주소)
+    chr = peer_chr_find_uuid(peer,
+                             &nus_svc_uuid.u,
+                             &nus_rx_uuid.u);
+
+    if (chr == NULL) {
+        MODLOG_DFLT(ERROR, "Error: Peer lacks SPP characteristic\n");
+        return;
+    }
+
+    if (g_attr_handle_mutex != NULL) {
+        xSemaphoreTake(g_attr_handle_mutex, portMAX_DELAY);
+    }
+    
+    client->attribute_handle = chr->chr.val_handle;
+    MODLOG_DFLT(INFO, "attribute_handle %x\n", client->attribute_handle);
+
+    if (g_attr_handle_mutex != NULL) {
+        xSemaphoreGive(g_attr_handle_mutex);
+    }
+
+    // Notification 구독용 CCCD(0x2902) Descriptor Handle 검색
+    dsc = peer_dsc_find_uuid(peer,
+                             &nus_svc_uuid.u,
+                             &nus_tx_uuid.u,
+                             BLE_UUID16_DECLARE(BLE_GATT_DSC_CLT_CFG_UUID16));
+    if (dsc == NULL) {
+        MODLOG_DFLT(ERROR, "Error: Peer lacks a CCCD for the subscribable characteristic\n");
+        return;
+    }
+
+    value[0] = 1;
+    value[1] = 0;
+    ble_gattc_write_flat(peer->conn_handle, dsc->dsc.handle,
+                          value, sizeof(value), NULL, NULL);
+}
+/**
+ * Called when service discovery of the specified peer has completed.
+ */
+static void
+ble_spp_client_on_disc_complete(const struct peer *peer, int status, void *arg)
+{
+    if (status != 0) {
+        /* Service discovery failed.  Terminate the connection. */
+        MODLOG_DFLT(ERROR, "Error: Service discovery failed; status=%d "
+                    "conn_handle=%d\n", status, peer->conn_handle);
+        ble_gap_terminate(peer->conn_handle, BLE_ERR_REM_USER_CONN_TERM);
+        return;
+    }
+    client_info_t* client = (client_info_t*) arg;
+    /* Service discovery has completed successfully.  Now we have a complete
+     * list of services, characteristics, and descriptors that the peer
+     * supports.
+     */
+    MODLOG_DFLT(INFO, "Service discovery complete; status=%d "
+                "conn_handle=%d\n", status, peer->conn_handle);
+
+    ble_spp_client_set_handle(peer,client);
+    ble_spp_client_write_subscribe(peer,client);
+
+}
+
 static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
 {
     struct ble_gap_conn_desc desc;
@@ -428,6 +534,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
 
     switch (event->type) {
     case BLE_GAP_EVENT_CONNECT:
+
         MODLOG_DFLT(INFO, "connection %s; status=%d \n",
                     event->connect.status == 0 ? "established" : "failed", event->connect.status);
         ESP_LOGE(TAG, "BLE_GAP_EVENT_CONNECT");
@@ -436,55 +543,134 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             ble_spp_server_print_conn_desc(&desc);
         }
 
-
-        // 1. 연결 성공 시 (status == 0)
-        if (event->connect.status == 0) {  
-            current_conn_handle = event->connect.conn_handle;
-            if (esp_timer_is_active(Mac_sending_timer)) {
-                esp_timer_stop(Mac_sending_timer);
-            }
-            ESP_ERROR_CHECK(esp_timer_start_periodic(Mac_sending_timer,    3000000));
-        } 
-        if (event->connect.status == 26) {  
-            
-            if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
-                // 2. 클라이언트 목록 배열에 추가!
-                add_client(event->connect.conn_handle, desc.peer_ota_addr.val);
-                    ESP_LOGI("BLE", "conn_itvl       = %u (%.2f ms)",
-                desc.conn_itvl, desc.conn_itvl * 1.25f);
-
-                ESP_LOGI("BLE", "conn_latency    = %u",
-                        desc.conn_latency);
-
-                ESP_LOGI("BLE", "supervision_timeout = %u (%.2f ms)",
-                        desc.supervision_timeout,
-                        desc.supervision_timeout * 10.0f);
-            }
-            ESP_LOGI("BLE_GAP", "현재 연결된 기기 수: %d / %d(%d)", 
+        if (desc.role == BLE_GAP_ROLE_MASTER) { // 또는 BLE_GAP_ROLE_CENTRAL
+            if (event->connect.status == 0) {  
+                g_is_connecting = false; // 연결 완료(성공 또는 타임아웃/실패) 시 해제
+                ESP_LOGI("BLE", "[Central 모드] 내가 상대방(Peripheral)에게 직접 연결함!");
+                client_info_t* client = add_client(event->connect.conn_handle, desc.peer_ota_addr.val);
+                ESP_LOGI("BLE_GAP", "현재 연결된 기기 수: %d / %d(%d)", 
                         count_client(), CONFIG_BT_NIMBLE_MAX_CONNECTIONS,event->connect.conn_handle);
-        } 
-        delay_adv_timer_cb(NULL);
-        #if 0
-        static TimerHandle_t adv_timer = NULL;
-        if (adv_timer == NULL) {
-            adv_timer = xTimerCreate("adv_delay", pdMS_TO_TICKS(300), pdFALSE, NULL, delay_adv_timer_cb);
+                rc = peer_add(event->connect.conn_handle);
+                if (rc != 0) {
+                    MODLOG_DFLT(ERROR, "Failed to add peer; rc=%d\n", rc);
+                    return 0;
+                }
+                /* Perform service discovery. */
+                rc = peer_disc_all(event->connect.conn_handle,
+                                ble_spp_client_on_disc_complete, client);
+                if (rc != 0) {
+                    MODLOG_DFLT(ERROR, "Failed to discover services; rc=%d\n", rc);
+                    return 0;
+                }
+
+            } 
+
+        } else if (desc.role == BLE_GAP_ROLE_SLAVE) { // 또는 BLE_GAP_ROLE_PERIPHERAL
+        // 1. 연결 성공 시 (status == 0)
+            if (event->connect.status == 0) {  
+                current_conn_handle = event->connect.conn_handle;
+                if (esp_timer_is_active(Mac_sending_timer)) {
+                    esp_timer_stop(Mac_sending_timer);
+                }
+                if (esp_timer_is_active(Registation_timer)) {
+                    esp_timer_stop(Registation_timer);
+                } 
+                ESP_ERROR_CHECK(esp_timer_start_periodic(Mac_sending_timer,    3000000));
+
+
+            } 
+            if (event->connect.status == 26) {  
+                
+                if (ble_gap_conn_find(event->connect.conn_handle, &desc) == 0) {
+                    // 2. 클라이언트 목록 배열에 추가!
+                    add_client(event->connect.conn_handle, desc.peer_ota_addr.val);
+                        ESP_LOGI("BLE", "conn_itvl       = %u (%.2f ms)",
+                    desc.conn_itvl, desc.conn_itvl * 1.25f);
+
+                    ESP_LOGI("BLE", "conn_latency    = %u",
+                            desc.conn_latency);
+
+                    ESP_LOGI("BLE", "supervision_timeout = %u (%.2f ms)",
+                            desc.supervision_timeout,
+                            desc.supervision_timeout * 10.0f);
+                }
+                ESP_LOGI("BLE_GAP", "현재 연결된 기기 수: %d / %d(%d)", 
+                            count_client(), CONFIG_BT_NIMBLE_MAX_CONNECTIONS,event->connect.conn_handle);
+            } 
         }
-        xTimerStart(adv_timer, 0);
-        #endif
+        
+
+        delay_scan_timer_cb(NULL);
+
         return 0;
+    case BLE_GAP_EVENT_NOTIFY_RX:
 
-    case BLE_GAP_EVENT_DISCONNECT:
-        ESP_LOGE(TAG, "BLE_GAP_EVENT_DISCONNECT");
-        MODLOG_DFLT(INFO, "disconnect; reason=%d \n", event->disconnect.reason);
-
-        remove_client(event->disconnect.conn.conn_handle);
-        if (esp_timer_is_active(Mac_sending_timer)) {
-            esp_timer_stop(Mac_sending_timer);
+        uint8_t rx_buffer[64] = {0};
+        uint16_t data_len = OS_MBUF_PKTLEN(event->notify_rx.om);
+        struct ble_gap_conn_desc desc;
+        uint16_t conn_handle = event->notify_rx.conn_handle;
+        const uint8_t *mac = NULL;
+        // 1. conn_handle로 상대방 기기 정보(MAC 주소 포함) 조회
+        if (ble_gap_conn_find(conn_handle, &desc) == 0) {
+            // desc.peer_ota_addr.val 에 6바이트 MAC 주소가 담겨있습니다. (Little Endian)
+            mac = desc.peer_ota_addr.val;
+            if (data_len > 0 && ble_rx_queue != NULL) {
+                
+                // 1. 구조체 변수를 스택에 임시 선언
+                ble_data_msg_t msg;
+                os_mbuf_copydata(event->notify_rx.om, 0, data_len, rx_buffer);
+                // 2. 실제 복사할 데이터 길이 계산 및 구조체 입력
+                msg.conn_handle = event->notify_rx.conn_handle;
+                msg.len = data_len; 
+                memcpy(msg.mac,mac,sizeof(msg.mac));
+                // 3. ★ 매우 중요: 힙(Heap) 영역에 실제 데이터를 담을 공간 할당!
+                msg.data = (uint8_t *)malloc(msg.len);
+                if (msg.data == NULL) {
+                    ESP_LOGE("BLE_RX", "Failed to allocate memory for RX data!");
+                    return 0; // 메모리가 부족할 때 NimBLE에 에러 반환
+                }
+                memcpy(msg.data, rx_buffer, msg.len);
+                // 5. 큐로 구조체 메시지 송신 (구조체 내부의 '포인터 주소값'만 복사되어 전달됩니다)
+                if (xQueueSend(ble_rx_queue, &msg, 0) != pdPASS) {
+                    ESP_LOGW("BLE_RX", "Queue full! Dropping packet and freeing memory.");
+                    // 큐가 꽉 차서 전송에 실패했다면, 메모리가 공중에 붕 뜨지 않게 여기서 즉시 해제해 주어야 합니다!
+                    free(msg.data); 
+                }
+            }
+            ESP_LOGI("BLE_RX", "[MAC: %02X:%02X:%02X:%02X:%02X:%02X] Notify 수신 (Handle: %d, Len: %d)",
+                    mac[5], mac[4], mac[3], mac[2], mac[1], mac[0],
+                    conn_handle, data_len);
+        } else {
+            ESP_LOGI("BLE_RX", "[Conn Handle: %d] Notify 수신 (Len: %d)", conn_handle, data_len);
         }
-        current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
 
-  
-        delay_adv_timer_cb(NULL);
+        /* Attribute data is contained in event->notify_rx.om. Use
+         * `os_mbuf_copydata` to copy the data received in notification mbuf */
+        return 0;
+    case BLE_GAP_EVENT_DISCONNECT:
+        
+        MODLOG_DFLT(INFO, "disconnect; reason=%d \n", event->disconnect.reason);
+        if(current_conn_handle == event->disconnect.conn.conn_handle)
+        {
+            ESP_LOGE(TAG, "Peri BLE_GAP_EVENT_DISCONNECT");
+            led_bit_disable(PAIRING_BIT);
+            current_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+        }
+        else
+        {
+                remove_client(event->disconnect.conn.conn_handle);
+                if (esp_timer_is_active(Mac_sending_timer)) {
+                    esp_timer_stop(Mac_sending_timer);
+                }
+
+                peer_delete(event->disconnect.conn.conn_handle);
+
+
+        }
+
+        delay_scan_timer_cb(NULL);
+
+        //delay_adv_timer_cb(NULL);
         return 0;
 
     case BLE_GAP_EVENT_SUBSCRIBE:
@@ -495,7 +681,10 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
            ESP_LOGE(TAG, "BLE_GAP_EVENT_ADV_COMPLETE");
-        //delay_adv_timer_cb(NULL);
+        return 0;
+    case BLE_GAP_EVENT_DISC_COMPLETE:
+
+        ESP_LOGI(TAG, "Scan stopped");
         return 0;
     case BLE_GAP_EVENT_CONN_UPDATE:
             MODLOG_DFLT(INFO, "Connection updated; status=%d\n", event->conn_update.status);
@@ -517,56 +706,43 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         uint8_t ev_type = event->disc.event_type;
         bool is_connectable = false;
 
-        // 1. 연결 가능 여부 판별
-        if (ev_type == BLE_HCI_ADV_RPT_EVTYPE_ADV_IND || 
-            ev_type == BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
-            is_connectable = true;
-        }
-
-        // 2. 판별 결과 출력 및 분기 처리
-        if (is_connectable) {
-            /*ESP_LOGI(TAG, "[Connectable] %02x:%02x:%02x:%02x:%02x:%02x (RSSI: %d)",
-                     event->disc.addr.val[5], event->disc.addr.val[4],
-                     event->disc.addr.val[3], event->disc.addr.val[2],
-                     event->disc.addr.val[1], event->disc.addr.val[0],
-                     event->disc.rssi);*/
-
-            // 연결을 시도하고 싶은 대상 목록에 추가하거나 직접 connect 시도
-            // connect_to_target(&event->disc.addr);
-
-        } else {
-            /*ESP_LOGW(TAG, "[Non-Connectable / Beacon] %02x:%02x:%02x:%02x:%02x:%02x (RSSI: %d)",
-                     event->disc.addr.val[5], event->disc.addr.val[4],
-                     event->disc.addr.val[3], event->disc.addr.val[2],
-                     event->disc.addr.val[1], event->disc.addr.val[0],
-                     event->disc.rssi);*/
-
-            // 데이터 수신/파싱만 수행하고 연결 시도는 하지 않음
-        }
-
-        // 주변 기기 정보를 통합 저장할 저장소 (최대 20개)
-        app_config_t* app_config = get_app_config();
-        dev_info_t dev_list;
-
-
 
         rc = ble_hs_adv_parse_fields(&fields, event->disc.data, event->disc.length_data);
         if (rc != 0) {
             return 0;
+        }
+        int name_len = 0;
+        if (fields.name != NULL && fields.name_len > 0) {
+            if (strncmp((const char*)fields.name, "Pallo", 5) != 0) {
+                return 0; // 이름이 없거나 "T100"으로 시작하지 않으면 차단
+            }          
+            name_len = fields.name_len;
+        }     
+        else 
+            return 0;    
+
+        // 1. 연결 가능 여부 판별
+        if (ev_type == BLE_HCI_ADV_RPT_EVTYPE_ADV_IND || 
+            ev_type == BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
+            if(name_len == 5)
+                is_connectable = true;
+            
         }
 
         Tracker_Device_t* Tracker_Device = Get_Tracker_Device(event->disc.addr.val);
         
         // 현재 패킷에서 이름을 추출해 봅니다.
         char current_packet_name[32] = "";
-        if (fields.name != NULL && fields.name_len > 0) {
-            int len = (fields.name_len > 31) ? 31 : fields.name_len;
-            memcpy(current_packet_name, fields.name, len);
-            current_packet_name[len] = '\0';
-        } else if (Tracker_Device != NULL) {
+        if (Tracker_Device != NULL) {
             // 이번 패킷에 이름은 없지만 기존 캐시 리스트에 저장된 이름이 있다면 가져옵니다.
             strcpy(current_packet_name, Tracker_Device->dev_info.name);
         }
+        else
+        {
+            memcpy(current_packet_name, fields.name, name_len);
+            current_packet_name[name_len] = '\0';
+        }
+
 
         // -----------------------------------------------------------------
         // 3. ⚡️ Service UUID 16-bit 검사 (0x1234 인지 확인)
@@ -576,7 +752,34 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         }
 
 
+        // 주변 기기 정보를 통합 저장할 저장소 (최대 20개)
+        app_config_t* app_config = get_app_config();
         uint16_t svc_uuid = (fields.svc_data_uuid16[1] << 8) | fields.svc_data_uuid16[0];
+
+        if(is_connectable 
+           // &&  aws_connected_state()
+        )
+        {
+
+
+            // [패킷 수신 처리 블록]
+            if (!g_is_connecting && count_client() < (CONFIG_BT_NIMBLE_MAX_CONNECTIONS - 1)) {
+                
+                // 1. 즉시 플래그를 세워 뒤따라오는 큐 잔여 패킷 차단
+                g_is_connecting = true;
+
+                // 2. 스캔 취소
+                ble_gap_disc_cancel();
+
+                // 3. 연결 시도
+                rc = ble_gap_connect(own_addr_type, &event->disc.addr, 10000, NULL, ble_spp_server_gap_event, NULL);
+                if (rc != 0) {
+                    ESP_LOGE(TAG, "연결 시도 실패 (rc=%d), 스캔 재개", rc);
+                    g_is_connecting = false; // 실패했으므로 플래그 복구
+                    ble_spp_client_scan();
+                }
+            }
+        }
         if (svc_uuid == 0x1234)
         {
             if (event->disc.rssi < app_config->gate_way_rssi_th)
@@ -595,6 +798,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         {
             return 0; // 다른 서비스 UUID는 차단
         }
+        dev_info_t dev_list;
         memset(&dev_list, 0,sizeof(dev_info_t));
         for (int i = 0; i < 6; i++)
         {
@@ -662,8 +866,10 @@ static void ble_spp_server_on_sync(void)
     }
 
     // 내 신호 전송 시작
-    delay_adv_timer_cb(NULL);
 
+    //app_wifi_config_t* wifi_config = get_wifi_config();
+    if(read_nvs_registration_flag() == false)
+        ble_advertising_reset(true);
     // 🔴 [추가] 동기화 완료 후 비콘 스캔 엔진 가동
     ble_spp_client_scan();
 }
@@ -675,21 +881,44 @@ void ble_spp_server_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 struct ble_npl_event adv_update_event;
-
-void ble_advertising_reset(void)
+static bool advertising_flag = false;
+void ble_advertising_reset(bool state)
 {
+
+    advertising_flag = state;
+    ESP_LOGI(TAG, "ble_advertising_reset %d", state?1:0); 
     ble_npl_eventq_put(
     nimble_port_get_dflt_eventq(),
     &adv_update_event
     );
 }
+static void registation_timer_set(bool state, uint64_t discon_timeout)
+{
+    if(state)
+    {
+        esp_timer_start_once(Registation_timer, SEC_TO_US(discon_timeout));
+        ESP_LOGI(TAG, "Registation_timer set"); 
+    }
+}
 static void adv_update_event_fn(struct ble_npl_event *ev)
 {
     // 여기서는 NimBLE host context
 
+    if (esp_timer_is_active(Registation_timer)) {
+        ESP_LOGI(TAG, "Registation_timer reset"); 
+        esp_timer_stop(Registation_timer);
+    } 
+    led_bit_disable(PAIRING_BIT);
     ble_gap_adv_stop();
-
-    delay_adv_timer_cb(NULL);
+    bool *p_flag = (bool *)ble_npl_event_get_arg(ev);
+    bool is_enabled = (p_flag != NULL) ? *p_flag : false;
+    if (is_enabled) {
+        led_bit_enable(PAIRING_BIT);
+        // true일 때 로직
+        registation_timer_set(true,300);
+        ESP_LOGI(TAG, "adv_update_event_fn %d", is_enabled? 1:0); 
+        delay_adv_timer_cb(NULL);
+    }
 }
 /**
  * GATT 캐릭터리스틱 처리 (중괄호 블록을 넣어 컴파일 에러 완전 수정)
@@ -859,7 +1088,7 @@ void ble_server_send_notify(uint16_t conn_handle, uint8_t *data, uint16_t len)
  * @param len  보낼 데이터의 길이 (바이트 단위)
  * @return true 큐에 성공적으로 진입함, false 큐가 가득 찼거나 비활성화 상태
  */
-bool ble_send_data_to_queue(uint16_t* conn_handle, const uint8_t *data, uint16_t len)
+bool ble_send_data_to_queue(uint16_t* conn_handle, uint16_t* attribute_handle,const uint8_t *data, uint16_t len)
 {
     // 1. 안전 장치: 데이터가 없거나 길이가 0인 경우 차단
     if (data == NULL || len == 0) {
@@ -873,14 +1102,15 @@ bool ble_send_data_to_queue(uint16_t* conn_handle, const uint8_t *data, uint16_t
     }
 
     ble_data_msg_t msg;
-
+    memset(&msg,0,sizeof(ble_data_msg_t));
     // 3. 방어 코드: 구조체 배열 크기(512바이트)를 넘지 않도록 길이 제한
     msg.len = len;
     if(conn_handle == NULL)
         msg.conn_handle = current_conn_handle;
     else
         msg.conn_handle = *conn_handle;
-
+    if(attribute_handle != NULL)
+        msg.attribute_handle = *attribute_handle;
     if(msg.conn_handle == BLE_HS_CONN_HANDLE_NONE)
         return false;
     // 3. ★ 매우 중요: 힙(Heap) 영역에 실제 데이터를 담을 공간 할당!
@@ -916,8 +1146,9 @@ static void ble_rx_processing_task(void *pvParameters)
 static void ble_tx_processing_task(void *pvParameters)
 {
     ble_data_msg_t msg;
-    MODLOG_DFLT(INFO, "BLE 송신 전송 전담 태스크 시작\n");
 
+    MODLOG_DFLT(INFO, "BLE 송신 전송 전담 태스크 시작\n");
+    int rc;
     while (1) {
         // 내가 폰으로 보낼 데이터가 큐에 들어올 때까지 대기
         if (xQueueReceive(ble_tx_queue, &msg, portMAX_DELAY) == pdTRUE) {
@@ -928,7 +1159,20 @@ static void ble_tx_processing_task(void *pvParameters)
                     uint16_t send_len = (msg.len - offset > g_ble_max_payload) ? g_ble_max_payload : (msg.len - offset);
                     
                     // msg.data의 offset 위치부터 send_len 만큼 잘라서 쏘기
-                    ble_server_send_notify(msg.conn_handle, &msg.data[offset], send_len);
+                    if(msg.attribute_handle != 0)
+                    {
+                        rc = ble_gattc_write_flat(msg.conn_handle, msg.attribute_handle,  &msg.data[offset], send_len, NULL, NULL);
+                        if (rc == 0) {
+                            ESP_LOGI(TAG, "Write in uart task success!");
+                        } else {
+                            ESP_LOGI(TAG, "Error in writing characteristic rc=%d", rc);
+                        }
+                    }
+                    else
+                    {
+                        ble_server_send_notify(msg.conn_handle, &msg.data[offset], send_len);
+                        ESP_LOGI(TAG,"[TX 태스크] 스마트폰으로 %d 바이트 Notify 전송 완료", msg.len);
+                    }
                     ESP_LOGI(TAG,"[TX 태스크] %d 바이트 중 %d 바이트 쪼개서 전송 완료 (offset: %d)", msg.len, send_len, offset);
                     ESP_LOG_BUFFER_HEXDUMP(TAG, msg.data, msg.len, ESP_LOG_INFO);
 
@@ -937,7 +1181,7 @@ static void ble_tx_processing_task(void *pvParameters)
                     // 연속 전송 시 BLE 컨트롤러 큐 오버플로우 방지 (필수)
                     vTaskDelay(pdMS_TO_TICKS(15));
                 }
-                ESP_LOGI(TAG,"[TX 태스크] 스마트폰으로 %d 바이트 Notify 전송 완료", msg.len);
+  
             } else {
                 ESP_LOGI(TAG,"[TX 태스크] 경고: 스마트폰이 연결되어 있지 않아 전송 취소");
             }
@@ -945,7 +1189,10 @@ static void ble_tx_processing_task(void *pvParameters)
         }
     }
 }
-
+static void Registation_timer_callback(void* arg)
+{
+    ble_advertising_reset(false);
+}
 static void mac_send_timer_callback(void* arg)
 {
     esp_timer_stop(Mac_sending_timer);
@@ -954,7 +1201,8 @@ static void mac_send_timer_callback(void* arg)
     esp_read_mac(mac,ESP_MAC_WIFI_STA);
     // sprintf((char*)Str, "Wifi MAC %02X%02X%02X%02X%02X%02X", 
     // mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-
+    char buffer[20];
+    sprintf(buffer,"v%d.%d.%d",WATER_MAJOR,WATER_MINOR,WATER_PATCH);
     // [by.jeon] ble 연결 직후 meta 데이터를 보내야 한다.
     snprintf(Str, sizeof(Str), 
              "{\"event_type\":\"meta\",\"data\":{\"serial\":\"%s-%02X%02X%02X%02X%02X%02X\",\"model\":\"%s\",\"hw_rev\":\"%s\",\"fw\":\"%s\"}}", 
@@ -962,15 +1210,15 @@ static void mac_send_timer_callback(void* arg)
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],     // MAC Address
              CONFIG_DEVICE_TYPE,                                 //
              CONFIG_HW_REV,                                      // r1.0
-             CONFIG_FW_VERSION);                                 // v1.0.0
+             buffer);                                 // v1.0.0
     ESP_LOGI(TAG,"send %s ", Str);
-    ble_send_data_to_queue(NULL, (const uint8_t*)Str, strlen((const char*)Str));
+    ble_send_data_to_queue(NULL,NULL, (const uint8_t*)Str, strlen((const char*)Str));
 }
 
 #include <sys/time.h> // gettimeofday(), settimeofday() 함수 선언
 #include <time.h>     // time_t, struct tm, gmtime() 등
 
-void motion_msg_send(uint16_t conn_handle, uint8_t cmd,uint8_t sub_cmd)
+void motion_msg_send(uint16_t conn_handle, uint16_t attribute_handle , uint8_t cmd,uint8_t sub_cmd)
 {
     Motion_Packet_t Motion_Packet;
     memset(&Motion_Packet,0,sizeof(Motion_Packet));
@@ -1004,7 +1252,7 @@ void motion_msg_send(uint16_t conn_handle, uint8_t cmd,uint8_t sub_cmd)
 
 
 
-    ble_send_data_to_queue(&conn_handle, (uint8_t*)&Motion_Packet,sizeof(Motion_Packet));
+    ble_send_data_to_queue(&conn_handle,&attribute_handle, (uint8_t*)&Motion_Packet,sizeof(Motion_Packet));
     // 설정값이 0보다 클 때만 타이머 실행 (안전성 강화)
 }
 #include "esp_bt.h" // 필요한 헤더 포함
@@ -1022,6 +1270,7 @@ void ble_task_init(bool qc)
     ble_hs_cfg.sync_cb = ble_spp_server_on_sync;
     ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
     ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+
     esp_err_t err = esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P9);
     
     if (err == ESP_OK) {
@@ -1029,13 +1278,16 @@ void ble_task_init(bool qc)
     } else {
         ESP_LOGI(TAG,"Failed to set BLE TX Power: %d", err);
     }
+    int rc;
+    rc = peer_init(MYNEWT_VAL(BLE_MAX_CONNECTIONS), 64, 64, 64);
+    assert(rc == 0);
     #ifndef CONFIG_EXAMPLE_IO_TYPE
     #define CONFIG_EXAMPLE_IO_TYPE 3 
     #endif
     ble_hs_cfg.sm_io_cap = CONFIG_EXAMPLE_IO_TYPE;
 
     ESP_LOGI("motion", "Motion_Packet_t = %d", sizeof(Motion_Packet_t));
-    
+
     assert(gatt_svr_init() == 0);
 
     char device_name[30] = {0};
@@ -1048,9 +1300,7 @@ void ble_task_init(bool qc)
     {
         if (read_nvs_registration_flag() == false) {
             snprintf(device_name, sizeof(device_name), "%s-R-water", DEVICE_NAME);
-        } else {
-            snprintf(device_name, sizeof(device_name), "%s-water", DEVICE_NAME);
-        }
+        } 
     }
 
 
@@ -1064,13 +1314,23 @@ void ble_task_init(bool qc)
     };
     ESP_ERROR_CHECK(esp_timer_create(&mac_sending_timer_args, &Mac_sending_timer));
 
+
+    
+    const esp_timer_create_args_t Registation_timer_args = {
+        .callback = &Registation_timer_callback,
+        .name = "Registation_timer"
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&Registation_timer_args, &Registation_timer));
+
     ble_rx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
     ble_tx_queue = xQueueCreate(10, sizeof(ble_data_msg_t));
+
+
 
     ble_npl_event_init(
         &adv_update_event,
         adv_update_event_fn,
-        NULL
+        &advertising_flag
     );
     if (xTaskCreate(
             ble_rx_processing_task,                  // 태스크 함수

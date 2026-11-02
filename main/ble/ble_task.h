@@ -15,6 +15,7 @@
 typedef struct {
     uint16_t len;
     uint16_t conn_handle;
+    uint16_t attribute_handle;    
     uint8_t mac[6];
     uint8_t *data; 
 } ble_data_msg_t;
@@ -37,18 +38,20 @@ typedef struct {
     /* [Group 3] 소형 타입 조합으로 4바이트 묶기 (총 12 바이트) */
     uint8_t mac_addr[6];            // 6B (Offset 68)
     uint16_t conn_handle;           // 2B (Offset 74) -> 6 + 2 = 8B
+    uint16_t attribute_handle;
     uint32_t start_res_seq;              // 4B (Offset 80)    
     bool is_connected;              // 1B (Offset 81)
     uint8_t* data;
 } client_info_t;
 /* Attributes State Machine */
+void ble_advertising_reset(bool state);
 void client_terminate(void);
 uint16_t GetHandle(uint8_t index);
 void print_connected_clients(void);
-bool ble_send_data_to_queue(uint16_t* conn_handle, const uint8_t *data, uint16_t len);
+bool ble_send_data_to_queue(uint16_t* conn_handle, uint16_t* attribute_handle,const uint8_t *data, uint16_t len);
 void Motion_Timer_Set(const uint8_t *mac, bool state);
 void ble_task_init(bool qc);
-void motion_msg_send(uint16_t conn_handle, uint8_t cmd,uint8_t sub_cmd);
+void motion_msg_send(uint16_t conn_handle, uint16_t attribute_handle , uint8_t cmd,uint8_t sub_cmd);
 void Tracker_All_Send(uint8_t cmd, uint8_t sub_cmd);
 uint16_t get_conn_handle_by_mac(const uint8_t *mac);
 client_info_t* get_conn_client_by_mac(const uint8_t *mac);

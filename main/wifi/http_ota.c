@@ -31,6 +31,9 @@
 #include "http_ota.h"
 #include "app_led.h"
 #include "wifi_task.h"
+#include "stdio.h"
+#include "string.h"
+#include "jobs_mqtt.h"
 TaskHandle_t xOTA_Handle = NULL;
 static uint8_t OTA_Enable = 0;
 #define HASH_LEN 32
@@ -89,6 +92,72 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
     }
     return ESP_OK;
 }
+
+
+
+
+esp_err_t esp_https_ota_app(const esp_https_ota_config_t *ota_config)
+{
+    if (ota_config == NULL || ota_config->http_config == NULL) {
+        ESP_LOGE(TAG, "esp_https_ota: Invalid argument");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (ota_config->ota_resumption) {
+        ESP_LOGE(TAG, "OTA resumption is not supported in esp_https_ota API");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    esp_https_ota_handle_t https_ota_handle = NULL;
+    esp_err_t err = esp_https_ota_begin(ota_config, &https_ota_handle);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    if (https_ota_handle == NULL) {
+        return ESP_FAIL;
+    }
+    int last_percent = -1;
+
+    while (1) {
+    err = esp_https_ota_perform(https_ota_handle);
+
+        if (err == ESP_ERR_HTTPS_OTA_IN_PROGRESS) {
+
+            int image_len = esp_https_ota_get_image_len_read(https_ota_handle);
+            int image_size = esp_https_ota_get_image_size(https_ota_handle);
+
+            if (image_size > 0) {
+                int percent = (image_len * 100) / image_size;
+
+                if (percent != last_percent) {
+                    ESP_LOGI(TAG, "OTA Progress: %d%% (%d/%d)",
+                            percent, image_len, image_size);
+                    last_percent = percent;
+                }
+            }
+        } else {
+            break;
+        }
+    }
+
+    if (err != ESP_OK) {
+        esp_https_ota_abort(https_ota_handle);
+        return err;
+    }
+
+    ESP_LOGI(TAG, "다운로드 완료 -> 설치 및 검증 단계 진입");
+    Jobs_mqtt_send(IN_PROGRESS_INSTALLING);
+
+    // 2. 바이너리 서명/체크섬 검증 및 다음 부팅 파티션(otadata) 갱신 작업 수행
+    esp_err_t ota_finish_err = esp_https_ota_finish(https_ota_handle);
+    if (ota_finish_err != ESP_OK) {
+        return ota_finish_err; // 검증/설치 실패 리턴 (FAILED_CHECKSUM_MISMATCH 등)
+    }
+    return ESP_OK;
+}
+
+void set_reset_flag(void);
 void simple_ota_example_task(void *pvParameter)
 {
     ESP_LOGI(TAG, "Starting OTA example task");
@@ -103,9 +172,10 @@ void simple_ota_example_task(void *pvParameter)
     esp_netif_get_netif_impl_name(netif, ifr.ifr_name);
     ESP_LOGI(TAG, "Bind interface name is %s", ifr.ifr_name);
 #endif
+        char* URL = (char*)pvParameter;
 #if 1
     esp_http_client_config_t config = {
-        .url = pvParameter,
+        .url = URL,
 #ifdef CONFIG_EXAMPLE_USE_CERT_BUNDLE
         .crt_bundle_attach = esp_crt_bundle_attach,
 #else
@@ -159,18 +229,37 @@ void simple_ota_example_task(void *pvParameter)
     };
     led_bit_enable(OTA_START_BIT);
     ESP_LOGI(TAG, "Attempting to download update from %s", config.url);
-    esp_err_t ret = esp_https_ota(&ota_config);
+    esp_err_t ret = esp_https_ota_app(&ota_config);
     if (ret == ESP_OK) {
+        Jobs_mqtt_send(SUCCESSED_COMPLETED);    
         ESP_LOGI(TAG, "OTA Succeed, Rebooting...");
     } else {
+        switch (ret) {
+        case ESP_ERR_OTA_VALIDATE_FAILED:
+            Jobs_mqtt_send(FAILED_CHECKSUM_MISMATCH);
+            break;
+
+        case ESP_ERR_OTA_SELECT_INFO_INVALID:
+            Jobs_mqtt_send(FAILED_FLASH_WRITE);
+            break;
+
+        case ESP_FAIL:
+        case ESP_ERR_INVALID_SIZE:
+        case ESP_ERR_NO_MEM:
+        default:
+            Jobs_mqtt_send(FAILED_DOWNLOAD_FAILED);
+            break;
+        }
+        
+        free(URL);
         ESP_LOGE(TAG, "Firmware upgrade failed");
         OTA_Enable = 0;
         led_bit_disable(OTA_START_BIT);
         vTaskDelete(xOTA_Handle);
     }
     while (1) {
+        set_reset_flag();
         vTaskDelay(5000 / portTICK_PERIOD_MS);
-        esp_restart();
     }
 }
 
@@ -220,9 +309,19 @@ void ota_main(const char* URL)
     }
     wifi_list_clear();
     esp_log_level_set("esp_https_ota", ESP_LOG_DEBUG);
-    static char URL_Buffer[200];
-    memset(URL_Buffer, 0, sizeof(URL_Buffer));
-    strncpy(URL_Buffer, URL, sizeof(URL_Buffer) - 1);
+    uint32_t URL_Len = strlen(URL);
+    ESP_LOGI(TAG, "URL [%" PRIu32 " bytes]: %s", URL_Len, URL);
+    static char *URL_Buffer = NULL;
+
+
+    URL_Buffer = calloc(1, URL_Len+1);
+    if (URL_Buffer == NULL) {
+        Jobs_mqtt_send(FAILED_DOWNLOAD_FAILED);    
+        return;
+    }
+
+    memcpy(URL_Buffer, URL, URL_Len); // 크기는 sizeof 대신 URL_Len 사용
+    URL_Buffer[URL_Len] = 0;
     get_sha256_of_partitions();
 #if CONFIG_EXAMPLE_CONNECT_WIFI
     /* Ensure to disable any WiFi power save mode, this allows best throughput

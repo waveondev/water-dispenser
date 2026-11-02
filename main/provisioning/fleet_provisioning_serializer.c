@@ -276,7 +276,9 @@ bool generateRegisterThingRequest( uint8_t * pBuffer,
     if( cborRet == CborNoError )
     {
         /* 통일성을 위해 보통 v를 붙이는 패턴을 사용합니다 */
-        cborRet = cbor_encode_text_stringz( &parametersEncoder, "v1.0.0" ); 
+        char buffer[20];
+        sprintf(buffer,"v%d.%d.%d",WATER_MAJOR,WATER_MINOR,WATER_PATCH);
+        cborRet = cbor_encode_text_stringz( &parametersEncoder, buffer ); 
     }
 
     /* ---------------- 4. model 파라미터 추가 (스펙 반영) ---------------- */

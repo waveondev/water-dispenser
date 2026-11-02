@@ -767,6 +767,9 @@ static BaseType_t prvQueryHeapCommand( char *pcWriteBuffer, size_t xWriteBufferL
 	( void ) xWriteBufferLen;
 	configASSERT( pcWriteBuffer );
 
+
+	// 전역 변수
+
 	sprintf( pcWriteBuffer, "Current free heap %d bytes, minimum ever free heap %d bytes\r\n", ( int ) xPortGetFreeHeapSize(), ( int ) xPortGetMinimumEverFreeHeapSize() );
 
 	/* There is no more data to return after this single string, so return

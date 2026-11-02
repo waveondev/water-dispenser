@@ -153,7 +153,7 @@ void dump_all_configurations(void)
     ESP_LOGI(TAG, "  - Gateway RSSI Thr     : %ld dBm", app_config.gate_way_rssi_th);
     ESP_LOGI(TAG, "  - HX1 Scale Factor     : %.2f", app_config.hx1_scale);
     ESP_LOGI(TAG, "  - HX1 Tare Offset      : %ld", app_config.hx1_offset);
-    ESP_LOGI(TAG, "  - case_raw_data        : %ld", app_config.case_raw_data);
+    ESP_LOGI(TAG, "  - case_raw_data        : %d", app_config.case_raw_data);
     
     ESP_LOGI(TAG, "  - tof_sense_threshold_l: %ld", app_config.tof_sense_threshold_l);
     ESP_LOGI(TAG, "  - tof_sense_threshold_r: %ld", app_config.tof_sense_threshold_r);
@@ -182,8 +182,9 @@ void dump_all_configurations(void)
 
     ESP_LOGI(TAG, "[FACTO CONFIG]");
     // SSID나 PASSWORD가 비어있으면 [EMPTY]로 센스있게 표기
-    ESP_LOGI(TAG, "  - facto case           : %ld", facto_config.case_raw_data);
+
     ESP_LOGI(TAG, "  - facto scale          : %.2f", facto_config.hx1_scale);
+    ESP_LOGI(TAG, "  - facto case_raw_data  : %d", app_config.case_raw_data);
     ESP_LOGI(TAG, "  - facto serial         : %s", (facto_config.Device_Serial[0] == '\0') ? "[EMPTY]" : (char*)facto_config.Device_Serial);
     ESP_LOGI(TAG, "--------------------------------------------------");
 
@@ -236,7 +237,6 @@ void load_app_configuration(void)
     } else {
         if(facto_config.hx1_scale == 1000.f && app_config.hx1_scale != 1000.0f)
         {
-            facto_config.case_raw_data = app_config.case_raw_data;
             facto_config.hx1_scale = app_config.hx1_scale;
             save_facto_configuration();
         }

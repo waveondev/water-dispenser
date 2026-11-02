@@ -5,16 +5,15 @@
 #define PAIRING_BIT         (1<<15)
 #define OTA_START_BIT       (1<<14)
 #define HARDWARE_ERR_BIT    (1<<13)
-#define TOF_DETECT_BIT      (1<<12)
-#define WATER_LOW_BIT       (1<<11)
-#define WATER_EMPTY_BIT     (1<<10)
-#define LOADCELL_ERR_BIT    (1<<9)
-#define FILTER_WATER_BIT    (1<<8)
-#define FILTER_DEBRIS_BIT   (1<<7)
-#define PUMP_ERR_BIT        (1<<6)
+#define WATER_LOW_BIT       (1<<12)
+#define WATER_EMPTY_BIT     (1<<11)
+#define LOADCELL_ERR_BIT    (1<<10)
+#define FILTER_WATER_BIT    (1<<9)
+#define FILTER_DEBRIS_BIT   (1<<8)
+#define PUMP_ERR_BIT        (1<<7)
 
 void LED_Bright_Set(uint8_t value);
-bool TOF_enable(void);
+
 bool led_bit_status(uint16_t status);
 void led_bit_disable(uint16_t disable);
 void led_bit_enable(uint16_t enable);
@@ -48,4 +47,16 @@ bool Filter_debris_enable(void);
 bool Pump_error_enable(void);
 void wifi_connect_success(void);
 void set_rgb_led_for_number(uint32_t index, uint8_t R, uint8_t G, uint8_t B, uint8_t W);
+
+/* ==========================================================================
+ * W-100 (RGBW Color Definitions)
+ * ========================================================================== */
+#define COLOR_W100_RED          160,  0,   0,   5
+#define COLOR_W100_GREEN          0, 80,   0,  24
+#define COLOR_W100_BLUE          54, 75, 170,  20
+#define COLOR_W100_WHITE          0,  0,   0, 150
+#define COLOR_W100_ORANGE       160, 37,   0,   5
+#define COLOR_W100_LIGHT_YELLOW 150, 80,   0,  20
+#define COLOR_W100_OFF            0,  0,   0,   0
+
 #endif

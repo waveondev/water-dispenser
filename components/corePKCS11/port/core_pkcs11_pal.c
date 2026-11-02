@@ -438,6 +438,7 @@ void PKCS11_PAL_GetObjectValueCleanup( CK_BYTE_PTR pucData,
 
     if( pucData != NULL )
     {
+        //ESP_LOGW("PKCS11_PAL", "메모리 해제 완료: %p", pucData); // 로그 추가
         vPortFree( pucData );
     }
 }

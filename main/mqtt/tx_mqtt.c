@@ -10,13 +10,12 @@
 #include "ble_tracker_id.h"
 #include "ble_parse.h"
 #include "ble_task.h"
+#include "jobs_mqtt.h"
 static const char *TAG = __FILE__;
 
 static uint16_t water_fault_code = 0;
 static uint16_t water_fault_code_buf = 0;
-#define WATER_MAJOR 1
-#define WATER_MINOR 1
-#define WATER_PATCH 3
+
 void water_fault_enable(uint16_t status)
 {
     water_fault_code |= status;
@@ -64,6 +63,7 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd,  tracker_mqtt_packet_t
     {
         sprintf(buffer,"123e4567-e89b-12d3-5431-%012u", (unsigned int)esp_log_timestamp());
         cJSON_AddStringToObject(root, "id", buffer); /* 실제로는 uuid 생성 함수 사용 */
+        //cJSON_AddStringToObject(root, "id", "123e4567-e89b-12d3-a456-426614174000"); /* 실제로는 uuid 생성 함수 사용 */
         cJSON_AddStringToObject(root, "env", "alpha");
         cJSON_AddStringToObject(root, "device_type", CONFIG_DEVICE_TYPE); 
     }
@@ -88,9 +88,7 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd,  tracker_mqtt_packet_t
         case MESSEGE_HEALTH:
             cJSON_AddStringToObject(root, "event_type", "health");
         break;
-        case MESSEGE_TEST:
-            cJSON_AddStringToObject(root, "event_type", "test");
-        break;
+
         case TRACKER_MESSEGE_ACTIVITY:
             cJSON_AddStringToObject(root, "event_type", "activity");
         break;
@@ -157,7 +155,7 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
     double weight = 0;
     int detect_type = 0;
     uint16_t water_fault_code_send = 0;
-
+    JOBS_Update_Packet_t* JOBS_Update_Packet = NULL;
     // 2. state 객체 생성 ({})
     cJSON *state = NULL;
     // 3. reported 객체 생성 ({})
@@ -487,53 +485,52 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
 
         break;
         case AWS_MESSEGE_SHADOW_UPDATE:
-            // 2. state 객체 생성 ({})
-                state = cJSON_CreateObject();
-                if (state == NULL) {
-                    cJSON_Delete(data_obj);
-                    return NULL;
-                }
-
-                // 3. reported 객체 생성 ({})
-                reported = cJSON_CreateObject();
-                if (reported == NULL) {
-                    cJSON_Delete(data_obj);
-                    cJSON_Delete(state);
-                    return NULL;
-                }
-                char str[20];
-                snprintf(str, sizeof(str), "v%d.%d.%d",WATER_MAJOR,
-                                                WATER_MINOR,
-                                                WATER_PATCH
-                            );
-                // 4. reported 내부에 실제 값(필드) 추가
-                cJSON_AddStringToObject(reported, "firmware", str);
-                cJSON_AddNumberToObject(reported, "sleep_mode", 0);
-                cJSON_AddBoolToObject(reported, "sleeping", false);
-
-                // 5. 계층 구조 결합: reported -> state -> root
-                cJSON_AddItemToObject(state, "reported", reported);
-                cJSON_AddItemToObject(data_obj, "state", state);
-
-                // 6. JSON 문자열 변환 (사용 후 반드시 free 필요)
- 
-        break;
-        case MESSEGE_TEST:
-            int tof_get = 0;
-            if(mqtt_packet->data != NULL)
-                memcpy(&tof_get,mqtt_packet->data,sizeof(int));
-            switch(tof_get)
-            {
-                case 1 :
-                    cJSON_AddStringToObject(data_obj, "tof", "ir");
-                break;
-                case 2 :
-                    cJSON_AddStringToObject(data_obj, "tof", "tracker");
-                break; 
-                default:
-                    cJSON_AddStringToObject(data_obj, "tof", "none");
-                break;
+            cJSON_Delete(data_obj);
+            if (mqtt_packet->data == NULL) {
+                return NULL;
             }
+
+            // 2. 문자열을 파싱해서 새로 할당
+            data_obj = cJSON_Parse((const char *)mqtt_packet->data);
+            if (data_obj == NULL) {
+                ESP_LOGE(TAG, "JSON 파싱 실패");
+                return NULL;
+            }
+        break;
+        case AWS_MESSEGE_JOBS_UPDATE:
+            // 1. 최상위 status 필드 추가 ("IN_PROGRESS", "SUCCEEDED", "FAILED" 등)
+            if(mqtt_packet->data == NULL)
+            {
+                cJSON_Delete(data_obj);
+                return NULL;
+            }
+                
+            JOBS_Update_Packet = (JOBS_Update_Packet_t*)mqtt_packet->data;            
+            cJSON_AddStringToObject(data_obj, "status", JOBS_Update_Packet->status);
+
+            // 2. statusDetails 객체 생성 ({})
+            cJSON *status_details = cJSON_CreateObject();
+            if (status_details == NULL) {
+                cJSON_Delete(data_obj);
+                return NULL;
+            }
+
+            // 3. statusDetails 내부 필드 추가 (step, error)
+            // step: "downloading", "verifying", "installing", "validating", "completed"
+            if(JOBS_Update_Packet->step[0] != 0)
+                cJSON_AddStringToObject(status_details, "step",JOBS_Update_Packet->step);
+
+            // error: "LOW_RSSI", "DOWNLOAD_FAILED", "CHECKSUM_MISMATCH" 등 (실패 시에만 전달)
+            if(JOBS_Update_Packet->error[0] != 0)
+                cJSON_AddStringToObject(status_details, "error", JOBS_Update_Packet->error);
+
+            // 4. 계층 구조 결합: statusDetails -> root(data_obj)
+            cJSON_AddItemToObject(data_obj, "statusDetails", status_details);        
+        break;
+
+        case AWS_MESSEGE_SHADOW_GET:
+
+ 
         break;
         case AWS_MESSEGE_JOBS_GET:
 
@@ -690,6 +687,7 @@ static cJSON* Get_cJSON_Data_for_Tracker(messege_tx_mqtt_cmd_e cmd, tracker_mqtt
     return data_obj;
 }
 
+#include "jobs_mqtt.h"
 
 void Send_cJSON_Messege(mqtt_packet_t* mqtt_packet)
 {
@@ -697,7 +695,7 @@ void Send_cJSON_Messege(mqtt_packet_t* mqtt_packet)
 
     uint8_t mac_byte[6];
     char dynamicMacStr[13]; // 12자리 MAC 문자열 + 널 종료 문자(\0)
-    
+    JOBS_Update_Packet_t* JOBS_Update_Packet = NULL;
     // ESP32의 기본 Wi-Fi MAC 주소를 읽어옵니다.
     esp_read_mac(mac_byte, ESP_MAC_WIFI_STA);
 
@@ -706,7 +704,19 @@ void Send_cJSON_Messege(mqtt_packet_t* mqtt_packet)
             mac_byte[0], mac_byte[1], mac_byte[2], mac_byte[3], mac_byte[4], mac_byte[5]);
 
 // 1. AWS 예약 기능용 메시지 처리 (Header 감싸지 않음)
-    if (mqtt_packet->cmd >= AWS_MESSEGE_SHADOW_UPDATE) 
+    if (mqtt_packet->cmd == AWS_MESSEGE_JOBS_UPDATE)
+    {
+        if(mqtt_packet->data == NULL)
+            return;
+        JOBS_Update_Packet = (JOBS_Update_Packet_t*)mqtt_packet->data;
+        root = Get_cJSON_Data(mqtt_packet);
+        if (root == NULL) 
+        {
+             ESP_LOGI(TAG,"Header = %d" , mqtt_packet->cmd);
+             return;
+        }
+    }
+    else if (mqtt_packet->cmd >= AWS_MESSEGE_SHADOW_UPDATE) 
     {
         // Get_cJSON_Data()가 반환하는 JSON 객체를 그대로 root로 사용!
         root = Get_cJSON_Data(mqtt_packet);
@@ -741,7 +751,7 @@ void Send_cJSON_Messege(mqtt_packet_t* mqtt_packet)
     if (payloadBuf != NULL) 
     {
                         // 💡 토픽도 registration에 맞게 수정하실 수 있도록 남겨두었습니다.
-        char pub_topic[100];
+        char pub_topic[160];
         const char * pubTopic = pub_topic; 
         switch(mqtt_packet->cmd)
         {
@@ -763,15 +773,19 @@ void Send_cJSON_Messege(mqtt_packet_t* mqtt_packet)
             case MESSEGE_HEALTH:
                 snprintf(pub_topic,sizeof(pub_topic),SERVER_TX_TOPIC_HEALTH,dynamicMacStr);
             break;
-            case MESSEGE_TEST:
-                snprintf(pub_topic,sizeof(pub_topic),SERVER_TX_TOPIC_TEST,dynamicMacStr);
-            break;
+
             case AWS_MESSEGE_SHADOW_UPDATE:
                 snprintf(pub_topic,sizeof(pub_topic),AWS_TX_TOPIC_SHADOW_UPDATE,dynamicMacStr);
             break;
+            case AWS_MESSEGE_SHADOW_GET:
+                snprintf(pub_topic,sizeof(pub_topic),AWS_TX_TOPIC_SHADOW_GET,dynamicMacStr);
+            break;            
             case AWS_MESSEGE_JOBS_GET:
                 snprintf(pub_topic,sizeof(pub_topic),AWS_TX_TOPIC_JOBS_GET,dynamicMacStr);
             break;
+            case AWS_MESSEGE_JOBS_UPDATE:
+                snprintf(pub_topic,sizeof(pub_topic),AWS_TX_TOPIC_JOBS_UPDATE,dynamicMacStr, JOBS_Update_Packet->jobId);
+            break;            
             
             default:
                 pubTopic = NULL;
@@ -780,6 +794,7 @@ void Send_cJSON_Messege(mqtt_packet_t* mqtt_packet)
         }                          
         if(pubTopic != NULL)
         {
+            ESP_LOGI(TAG, "send topic %s", pubTopic);
             /* 데이터 송신 (Publish) */
             bool pubStatus = PublishToTopic( pubTopic, strlen( pubTopic ), payloadBuf, strlen( payloadBuf ) );
             
@@ -840,7 +855,6 @@ void Send_cJSON_Messege_for_tracker(tracker_mqtt_packet_t* tracker_mqtt_packet)
             case TRACKER_MESSEGE_DIAGNOSTICS:
                 snprintf(pub_topic,sizeof(pub_topic),TRACKER_TX_TOPIC_DIAGNOSTICS,dynamicMacStr);
             break;            
-            break;
             case TRACKER_MESSEGE_HEALTH:
                 snprintf(pub_topic,sizeof(pub_topic),TRACKER_TX_TOPIC_HEALTH,dynamicMacStr);
             break;

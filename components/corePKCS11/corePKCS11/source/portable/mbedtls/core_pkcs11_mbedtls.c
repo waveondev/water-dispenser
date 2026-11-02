@@ -477,9 +477,9 @@ static CK_RV prvMbedTLS_Initialize( void )
 
     /* Initialise the global mutexes for the PSA API's */
     #if defined( MBEDTLS_PSA_CRYPTO_C ) && ( MBEDTLS_VERSION_NUMBER >= 0x03060300 )
-        mbedtls_mutex_init( &mbedtls_threading_key_slot_mutex );
-        mbedtls_mutex_init( &mbedtls_threading_psa_globaldata_mutex );
-        mbedtls_mutex_init( &mbedtls_threading_psa_rngdata_mutex );
+       // mbedtls_mutex_init( &mbedtls_threading_key_slot_mutex );
+      //  mbedtls_mutex_init( &mbedtls_threading_psa_globaldata_mutex );
+       // mbedtls_mutex_init( &mbedtls_threading_psa_rngdata_mutex );
     #endif
 
     lMbedTLSResult = mbedtls_ctr_drbg_seed( &xP11Context.xMbedDrbgCtx,

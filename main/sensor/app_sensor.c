@@ -34,15 +34,11 @@ void Sensor_task(void *pvParameter)
     if(ret == false)
     {
         ESP_LOGE(TAG, "TOF Error\r\n");
-       // return ret;
-       //led_bit_enable(SENSE_ERR_BIT);
     }
     #endif
     while (1) {
         VL53L0X_Sensing();
 
-        //ESP_LOGI(TAG, "gpio_set_level(IR_OUT0) = %d\r\n",gpio_get_level(IR_OUT0));
-        //ESP_LOGI(TAG, "gpio_set_level(IR_OUT1) = %d\r\n",gpio_get_level(IR_OUT1));
         vTaskDelay(20 / portTICK_PERIOD_MS);
     }
     

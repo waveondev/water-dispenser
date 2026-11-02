@@ -11,6 +11,8 @@
 
 #include "tx_mqtt.h"
 #include "esp_timer.h"  // 👈 이 줄을 추가해 주세요!
+#include "ble_task.h"
+#include "shadow_mqtt.h"
 // #include "core_mqtt.h"
 // #include "fleet_provisioning_with_csr_demo.h" 
 
@@ -22,6 +24,8 @@ static QueueHandle_t tracker_mqtt_queue = NULL;
 
 
 static esp_timer_handle_t Health_timer;
+static esp_timer_handle_t Get_Jobs_timer;
+
 #define AWS_IOT_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 4)
 extern int aws_iot_provisioning_main( int argc, char ** argv );
 // 15분 = 15분 * 60초 * 1,000,000us
@@ -33,6 +37,18 @@ extern int aws_iot_provisioning_main( int argc, char ** argv );
 
 
 
+static void Get_Jobs_timer_callback(void* arg)
+{
+    #define TIMER_1_DAY_IN_US    (24ULL * 60ULL * 60ULL * 1000000ULL) // 86,400,000,000 µs    
+    mqtt_queue_send(AWS_MESSEGE_JOBS_GET,NULL,0);
+    
+    if (esp_timer_is_active(Get_Jobs_timer)) {
+        esp_timer_stop(Get_Jobs_timer);
+    } 
+
+    esp_timer_start_once(Get_Jobs_timer, TIMER_1_DAY_IN_US);
+
+}
 static void Health_timer_callback(void* arg)
 {
     mqtt_queue_send(MESSEGE_HEALTH,NULL,0);
@@ -54,7 +70,7 @@ bool mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, void* data, uint32_t data_len)
         ESP_LOGW("mqtt_tx", "mqtt_tx_queue NULL.");
         return false;        
     }
-    
+
     if(data != NULL)
     {
         mqtt_packet.data = calloc(1,data_len);
@@ -63,7 +79,21 @@ bool mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, void* data, uint32_t data_len)
             memcpy(mqtt_packet.data,data,data_len);
         }   
     }
-    
+
+    if(Get_Accepted_Init_state() == false)
+    {
+        switch (cmd) {
+            case MESSEGE_REGISTRATION:
+            case MESSEGE_BOOT:
+            case AWS_MESSEGE_SHADOW_GET: // 3번째 타겟 커맨드
+                break; // 허용된 커맨드이므로 통과
+
+            default:
+                return false; // 그 외의 모든 커맨드는 차단/리턴
+        }
+
+    }
+
 
     mqtt_packet.cmd = cmd;
 
@@ -75,7 +105,7 @@ bool mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, void* data, uint32_t data_len)
     }
     return true;
 }
-void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Packet_t* packet,uint32_t data_len,  uint8_t* data,
+uint8_t* tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Packet_t* packet,uint32_t data_len,  uint8_t* data,
     uint32_t total_points,
     uint32_t send_points,
     uint32_t non_save_points
@@ -86,9 +116,7 @@ void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Pac
     if(tracker_mqtt_queue == NULL)
     {
         ESP_LOGW("mqtt_tx", "tracker_mqtt_queue NULL.");
-        if(data != NULL)
-            free(data);
-        return;        
+        return NULL;        
     }
 
 
@@ -106,7 +134,7 @@ void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Pac
         else
         {
             ESP_LOGW("mqtt_tx", "freeing memory.");
-            return;
+            return NULL;  
         }
     }
     tracker_mqtt_packet.total_points = total_points;
@@ -117,10 +145,12 @@ void tracker_mqtt_queue_send(messege_tx_mqtt_cmd_e cmd, uint8_t* mac, Motion_Pac
     ESP_LOGW("mqtt_tx", "tracker_mqtt_queue send.");
     
     if (xQueueSend(tracker_mqtt_queue, &tracker_mqtt_packet, 0) != pdPASS) {
-        if(data != NULL)
-            free(data);
-        ESP_LOGW("mqtt_tx", "Queue full! Dropping packet and freeing memory.");
+
+        free(tracker_mqtt_packet.data);
+        return NULL;   
+
     }
+    return data;       
 }
 
 static esp_timer_handle_t aws_success_timer = NULL;
@@ -130,24 +160,24 @@ bool aws_connect_flag = false;
 #define MIN_TO_US(min) ((uint64_t)(min) * 60ULL * 1000000ULL)
 #define SEC_TO_US(sec) ((uint64_t)(sec) * 1000000ULL)
 #include "ble_task.h"
+#include "app_led.h"
 bool aws_connected_state(void)
 {
     return aws_connect_flag;
 }
-void ble_advertising_reset(void);
+
 static void aws_success_callback(void* arg)
 {
     if (esp_timer_is_active(aws_disconnect_timer)) {
         esp_timer_stop(aws_disconnect_timer);
     } 
+    
     aws_connect_flag = true;
-    ble_advertising_reset();
     ESP_LOGI(TAG, "aws_flag"); 
 }
 static void aws_discon_callback(void* arg)
 {
     client_terminate();
-    ble_advertising_reset();
     ESP_LOGI(TAG, "aws_discon"); 
 }
 
@@ -184,9 +214,28 @@ static void ble_discon_timer_set(bool state, uint64_t discon_timeout)
     else
         ESP_LOGI(TAG, "ble_discon_timer reset"); 
 }
+
+#include "esp_heap_caps.h"
+#include "rom/ets_sys.h" // ets_printf 사용을 위해 필요
+#include "esp_heap_caps_init.h" // 일부 버전에서는 이 헤더에 훅 관련 기능이 포함됨
+void esp_heap_trace_alloc_hook(void *ptr,
+                               size_t size,
+                               uint32_t caps)
+{
+    if(size == 92 || size == 128) {
+        ets_printf("🎯 [ALLOC] Size: %d, Ptr: %p\n", size, ptr);
+    }
+}
+
+void esp_heap_trace_free_hook(void *ptr)
+{
+    //ets_printf("[FREE] ptr=%p\n", ptr);
+}
 bool time_sync_get(void);
+
 static void aws_iot_main_entry(void *pvParameters)
 {
+
     ESP_LOGI(TAG, "AWS IoT 전담 태스크 시작");
     // Wi-Fi 연결 대기 (IP 할당 확인)
     xEventGroupWaitBits(
@@ -230,6 +279,12 @@ static void aws_iot_main_entry(void *pvParameters)
     };
     ESP_ERROR_CHECK(esp_timer_create(&Health_timer_args, &Health_timer));
 
+    const esp_timer_create_args_t Get_Jobs_timer_args = {
+        .callback = &Get_Jobs_timer_callback,
+        .name = "Get_Jobs_timer"
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&Get_Jobs_timer_args, &Get_Jobs_timer));
+
     int provisioning_count = 0;
     mqtt_packet_t mqtt_packet;
     tracker_mqtt_packet_t tracker_mqtt_packet;
@@ -252,21 +307,43 @@ static void aws_iot_main_entry(void *pvParameters)
         xQueueReset(mqtt_tx_queue);
         xQueueReset(tracker_mqtt_queue);
 
+      
+	// ... 문제가 되는 코드 (프로비저닝 로직) 실행 ...
+                	//#include "esp_heap_trace.h"
+    	//#define NUM_RECORDS 100
+	//static heap_trace_record_t trace_record[NUM_RECORDS];
 
+	// 루프 시작 전 (초기화 및 추적 시작)
+	//heap_trace_init_standalone(trace_record, NUM_RECORDS);
+	//heap_trace_start(HEAP_TRACE_LEAKS);
+
+            ESP_LOGE("HEAP_CHECK", " 끝: %d", esp_get_free_heap_size());
+        //aws_iot_provisioning_main(0, NULL);
         // AWS IoT 프로비저닝 및 MQTT 연결
         while(aws_iot_provisioning_main(0, NULL) != EXIT_SUCCESS)
         {
-            vTaskDelay(pdMS_TO_TICKS(3000)); /* 3초 대기 */
+            ESP_LOGE("HEAP_CHECK", " 실패 직후 (정리 전) 힙: %d", esp_get_free_heap_size());
+                
+            // 🔄 1. 백그라운드 리소스 정리를 위해 3초 대기 (매우 중요)
+            vTaskDelay(pdMS_TO_TICKS(3000)); 
+            ESP_LOGE("HEAP_CHECK", " 실패 후 (정리 전) 힙: %d", esp_get_free_heap_size());
+                
+            // 🛑 2. 충분히 기다린 후 추적 정지 및 덤프 출력
+            //heap_trace_stop();
+            //heap_trace_dump();
             provisioning_count++;
             ESP_LOGI(TAG, "provisioning retry count = %d", provisioning_count);
             //if(provisioning_count > 10)
                 //esp_restart();
+            // 루프 시작 전 (초기화 및 추적 시작)
+           // heap_trace_init_standalone(trace_record, NUM_RECORDS);
+           // heap_trace_start(HEAP_TRACE_LEAKS);                
         }
 
-        
+
         // 2) MQTT 연결이 붙었으니 헬스 타이머 동작 시작!
         esp_timer_start_once(Health_timer, TIMER_1_MIN_IN_US);
-
+        esp_timer_start_once(Get_Jobs_timer, TIMER_1_MIN_IN_US * 2);
         ESP_LOGI(TAG, "=== MQTT 송수신 메인 루프 진입 ===");
 
         flag_success_set(true);
@@ -303,7 +380,7 @@ static void aws_iot_main_entry(void *pvParameters)
         // =========================================================
         // 1) 네트워크가 끊겼으므로 헬스 타이머 즉시 정지!
         esp_timer_stop(Health_timer);
-
+        esp_timer_stop(Get_Jobs_timer);
         // 2) 죽은 TLS/소켓 세션 정리
         DisconnectMqttSession();
         vTaskDelay(10000);

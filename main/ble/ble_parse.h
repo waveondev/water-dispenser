@@ -188,10 +188,11 @@ typedef struct {
 
           struct
           {
-            uint8_t value;
-            uint8_t padding[17];
+            uint8_t slid_value;
+            uint8_t feeder_value;            
+            uint8_t acc_value;            
+            uint8_t padding[15];
           } motor_set_value;   
-
           struct
           {
             uint8_t IR_Left;

@@ -17,21 +17,7 @@ static const char *TAG = __FILE__;
 
 static float filtered_weight = 0.0f; // 현재 필터링된 최종 무게값
 #include "math.h"
-#if 0 
-[SENSOR] Weight: 239.6 g (raw: 251934) 없을때
-[SENSOR] Weight: 302.02 g (raw: 314222) 물통만 
-[SENSOR] Weight: 347.7 g (raw: 346721) 모터+물통
-[SENSOR] Weight: 379.8 g (raw: 366308) 전체
 
-I (795771) ./main/app_config_flash.c:   - HX1 Scale Factor     : 126.67
-I (795771) ./main/app_config_flash.c:   - HX1 Tare Offset      : 385928
-I (795781) ./main/app_config_flash.c:   - case_raw_data        : 386878
-
-I (1743541) ./main/app_config_flash.c:   - HX1 Scale Factor     : 182.23
-I (1743541) ./main/app_config_flash.c:   - HX1 Tare Offset      : 260188
-I (1743551) ./main/app_config_flash.c:   - case_raw_data        : 261253
-
-#endif
 
 #include "hx711_lib.h"
 static int32_t hx711_data;
@@ -68,7 +54,7 @@ static void HX711_case_raw_process(void)
     facto_config->case_raw_data = (cal_data);
     app_nvs_save_set();
     facto_nvs_save_set();
-    ESP_LOGI(TAG, "Tare case set to %d(%.2f)\r\n", app_config->case_raw_data);
+    ESP_LOGI(TAG, "Tare case set to %d\r\n", app_config->case_raw_data);
     Setting_Enable(HX711_Case_cal);
 }
 void HX711_cal_init(uint16_t cal)

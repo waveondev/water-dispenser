@@ -15,7 +15,7 @@ typedef struct{
     int32_t gate_way_rssi_th;
     float hx1_scale;                 // counts per gram
     int32_t hx1_offset;              // tare offset
-    uint32_t case_raw_data;
+    int32_t case_raw_data;
     uint32_t tof_sense_threshold_l;
     uint32_t tof_sense_threshold_r;
     uint32_t motion_data_time;
@@ -37,7 +37,7 @@ typedef struct{
 
 typedef struct{
     float hx1_scale;
-    uint32_t case_raw_data;
+    int case_raw_data;
     uint8_t Device_Serial[64];
 }app_facto_config_t;
 void reset_all_nvs_facto(void);

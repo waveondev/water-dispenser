@@ -1,4 +1,6 @@
 dependencies:
+  nimble_central_utils:
+    path: ${IDF_PATH}/examples/bluetooth/nimble/common/nimble_central_utils
   protocol_examples_common:
     path: ${IDF_PATH}/examples/common_components/protocol_examples_common
   esp_stubs:

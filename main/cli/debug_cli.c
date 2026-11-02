@@ -3,6 +3,8 @@
 #include "ble_tracker_id.h"
 #include "ble_task.h"
 #include "app_led.h"
+#include "esp_mac.h"
+
 DBG_Resister_t DBG_Resister;
 
 
@@ -11,6 +13,28 @@ DBG_Resister_t* Debug_Get(void)
 	return &DBG_Resister;
 }
 
+void print_mac_address(void)
+{
+    uint8_t mac[6] = {0};
+
+    // Wi-Fi Station 기준 기본 MAC 주소 읽기 (eFuse)
+    esp_err_t ret = esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    if (ret != ESP_OK) {
+        ESP_LOGE("MAC", "Failed to read MAC address: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    // 1. 일반적인 콜론(:) 형태 출력
+    ESP_LOGI("MAC", "Wi-Fi STA MAC: %02X:%02X:%02X:%02X:%02X:%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+
+    char mac_str[13];
+    snprintf(mac_str, sizeof(mac_str), "%02X%02X%02X%02X%02X%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    ESP_LOGI("MAC", "String Format: %s", mac_str);
+}
 
 BaseType_t prvDebugformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen, const char *pcCommandString )
 {
@@ -131,6 +155,8 @@ BaseType_t prvDebugformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
 				led_status_print();
 			}	
+			else if (!strncmp(ag[1], "mac", 3))
+				print_mac_address();
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;
