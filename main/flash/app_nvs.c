@@ -9,6 +9,8 @@
 #include "app_config_flash.h"
 #include "opmode_task.h"
 #include "app_moter.h"
+
+#include "app_button.h"
 static const char *TAG = __FILE__;
 
 
@@ -16,17 +18,28 @@ static const char *TAG = __FILE__;
 // len 매개변수는 nvs_set_str 내부에서 자동으로 길이를 계산하므로 사실상 안 써도 무방합니다.
 
 
-void facto_set(bool status)
+void facto_set(int status)
 {
-        write_nvs_registration_flag(false);
-        if(status == false)
-        {
+    if(status == 0)
+        return;
+    write_nvs_registration_flag(false);
+    switch(status)
+    {
+        case FACTORY_APP:
             reset_all_nvs_data();
-            return;
-        }
-        else 
+        break;
+        case FACTORY_MENUFACT:
+            write_nvs_motor_en_flag(false);
+            reset_all_nvs_data();
+            reset_all_nvs_menu();
+        break;
+        case FACTORY_ALL:
             reset_all_nvs_facto();
+        break;
+    }
 }
+
+
 void write_nvs_memory(const char* name, const char* key, const char* data)
 {
     nvs_handle_t my_handle;
@@ -202,6 +215,51 @@ void write_nvs_registration_flag(bool done)
 }
 
 
+bool read_nvs_motor_en_flag(void)
+{
+    nvs_handle_t my_handle;
+    esp_err_t err;
+    uint8_t is_provisioned = 0; // 0 = 미등록, 1 = 등록완료
+
+    err = nvs_open(MENUFACT_NAMESPACE, NVS_READONLY, &my_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "NVS namespace not found. Treating as NOT provisioned.");
+        return false; 
+    }
+
+    err = nvs_get_u8(my_handle, MENUFACT_MOTOR_EN, &is_provisioned);
+    nvs_close(my_handle);
+
+    if (err == ESP_OK && is_provisioned == 1) {
+        return true;
+    }
+    return false;
+}
+
+/*-----------------------------------------------------------*/
+/* [NVS 추가] 헬퍼 함수: 플래시 메모리에 등록 완료 상태 쓰기 */
+/*-----------------------------------------------------------*/
+
+void write_nvs_motor_en_flag(bool done)
+{
+    nvs_handle_t my_handle;
+    esp_err_t err;
+    uint8_t is_provisioned = done ? 1 : 0;
+
+    err = nvs_open(MENUFACT_NAMESPACE, NVS_READWRITE, &my_handle);
+    if (err != ESP_OK) {
+        
+        ESP_LOGE(TAG,"Failed to open NVS for writing.");
+        return;
+    }
+
+    err = nvs_set_u8(my_handle, MENUFACT_MOTOR_EN, is_provisioned);
+    if (err == ESP_OK) {
+        nvs_commit(my_handle);
+        ESP_LOGI(TAG,"Successfully saved mtotor Flag to NVS.");
+    }
+    nvs_close(my_handle);
+}
 
 // [구조체/바이너리 쓰기 함수]
 void write_nvs_blob(const char* name, const char* key, const void* blob_data, size_t length)

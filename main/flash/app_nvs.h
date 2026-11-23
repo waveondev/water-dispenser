@@ -2,6 +2,11 @@
 #define __APP_NVS_H__
 #include "esp_log.h"
 #include "esp_err.h"
+#define MENUFACT_NAMESPACE      "MENUFACT"
+#define MENUFACT_ONTIME            "ontime"
+#define MENUFACT_MOTOR_ON            "motor_on"
+#define MENUFACT_MOTOR_EN            "motor_en"
+#define MENUFACT_ACTIVE            "active"
 #define FACTORY_NAMESPACE       "FACTO"
 #define FACTORY_KEY             "factory"
 #define APP_NAMESPACE           "WAVEON"
@@ -11,6 +16,15 @@
 #define APP_KEY_MOTOR_TIME      "MOTOR_TIME"
 #define APP_KEY_FILTER_TIME     "FILTER_TIME"
 #define APP_REG_KEY             "is_prov_done"
+
+enum {
+    FACTORY_NONE = 0,
+    FACTORY_APP,
+    FACTORY_MENUFACT,
+    FACTORY_ALL
+};  
+
+
 void erase_app_configuration(void);
 void erase_wifi_configuration(void);
 void erase_ble_configuration(void);
@@ -27,5 +41,8 @@ void delete_nvs_key(const char* name, const char* key);
 void print_all_nvs_keys(void);
 bool read_nvs_registration_flag(void);
 void write_nvs_registration_flag(bool done);
-void facto_set(bool status);
+void write_nvs_motor_en_flag(bool done);
+bool read_nvs_motor_en_flag(void);
+
+void facto_set(int status);
 #endif

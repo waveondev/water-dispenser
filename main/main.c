@@ -37,6 +37,59 @@ static esp_vfs_spiffs_conf_t spiffs_conf = {
   .format_if_mount_failed = true
 };
 
+#include "esp_efuse.h"
+#include "esp_efuse_table.h"
+#include "esp_log.h"
+#include "soc/rtc_cntl_reg.h"
+void enter_download_mode(void)
+{
+
+    // USB Serial/JTAG ROM 출력 영구 비활성화
+    if (!esp_efuse_read_field_bit(
+            ESP_EFUSE_DIS_USB_SERIAL_JTAG_ROM_PRINT)) {
+
+        esp_err_t ret = esp_efuse_write_field_bit(
+            ESP_EFUSE_DIS_USB_SERIAL_JTAG_ROM_PRINT
+        );
+
+        if (ret != ESP_OK) {
+            ESP_LOGE("EFUSE", "Failed: %s",
+                     esp_err_to_name(ret));
+            return;
+        }
+    }
+
+#if 0
+
+
+
+        // USB Serial/JTAG ROM 출력 영구 비활성화
+    if (!esp_efuse_read_field_bit(
+            ESP_EFUSE_DIS_USB_SERIAL_JTAG_DOWNLOAD_MODE)) {
+
+        esp_err_t ret = esp_efuse_write_field_bit(
+            ESP_EFUSE_DIS_USB_SERIAL_JTAG_DOWNLOAD_MODE
+        );
+
+        if (ret != ESP_OK) {
+            ESP_LOGE("EFUSE", "Failed: %s",
+                     esp_err_to_name(ret));
+            return;
+        }
+    }
+#endif
+
+    // 다운로드 모드 부트 플래그
+    REG_WRITE(RTC_CNTL_OPTION1_REG,
+              RTC_CNTL_FORCE_DOWNLOAD_BOOT);
+    // Task WDT 발생
+    esp_restart();
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 static void filesystem_init(void)
 {
     ESP_LOGI("SPIFFS", "Initializing SPIFFS");
@@ -63,17 +116,23 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    #if JIGMODE
+    void ble_jig_main(void);
+    ble_jig_main();
+    #else
     NVS_Flash_init();
 
     filesystem_init();
 
-    console_task_init();
-    init_motor_ledc();
-    LED_task_init();
+    qc_mode = button_task_init();
+    init_motor_ledc(qc_mode);
+
     sensor_init();
 
     
-    qc_mode = button_task_init();
+  
+    LED_task_init(qc_mode);
+    console_task_init(qc_mode);
     ble_task_init(qc_mode);
     if(qc_mode == false)
     {
@@ -86,7 +145,7 @@ void app_main(void)
         aws_iot_task_init();
     #endif
     }
-
+    #endif
 
 
 

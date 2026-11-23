@@ -165,7 +165,7 @@ bool aws_connected_state(void)
 {
     return aws_connect_flag;
 }
-
+static uint16_t retry_count = 0;
 static void aws_success_callback(void* arg)
 {
     if (esp_timer_is_active(aws_disconnect_timer)) {
@@ -174,6 +174,7 @@ static void aws_success_callback(void* arg)
     
     aws_connect_flag = true;
     ESP_LOGI(TAG, "aws_flag"); 
+    retry_count = 0;
 }
 static void aws_discon_callback(void* arg)
 {
@@ -339,8 +340,9 @@ static void aws_iot_main_entry(void *pvParameters)
            // heap_trace_init_standalone(trace_record, NUM_RECORDS);
            // heap_trace_start(HEAP_TRACE_LEAKS);                
         }
-
-
+        retry_count++;
+        if(retry_count >= 20)
+            esp_restart();
         // 2) MQTT 연결이 붙었으니 헬스 타이머 동작 시작!
         esp_timer_start_once(Health_timer, TIMER_1_MIN_IN_US);
         esp_timer_start_once(Get_Jobs_timer, TIMER_1_MIN_IN_US * 2);
@@ -370,6 +372,7 @@ static void aws_iot_main_entry(void *pvParameters)
             if (ProcessLoopWithTimeout(10) == false) {
                 ESP_LOGE(TAG, "MQTT 연결 끊김 감지!");
                 aws_connect_flag = false;
+                flag_success_set(false);
                 ble_discon_timer_set(true,discon_timeout);
                 break; // for 루프 탈출
             }

@@ -132,7 +132,7 @@ static void ble_spp_server_advertise(void)
     if (qc_mode == true) {
         snprintf(device_name, sizeof(device_name), "%s-QC", DEVICE_NAME);
     } else {
-        snprintf(device_name, sizeof(device_name), "%s-R-water", DEVICE_NAME);
+        snprintf(device_name, sizeof(device_name), "%s-R", DEVICE_NAME);
     }
 
     ESP_LOGI(TAG, "DEVICE_NAME = '%s'", DEVICE_NAME);
@@ -712,8 +712,10 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             return 0;
         }
         int name_len = 0;
+        //#define DEVICE_STR "Pallo_T"
+        #define DEVICE_STR "Pallo"
         if (fields.name != NULL && fields.name_len > 0) {
-            if (strncmp((const char*)fields.name, "Pallo", 5) != 0) {
+            if (strncmp((const char*)fields.name, DEVICE_STR, strlen(DEVICE_STR)) != 0) {
                 return 0; // 이름이 없거나 "T100"으로 시작하지 않으면 차단
             }          
             name_len = fields.name_len;
@@ -724,7 +726,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         // 1. 연결 가능 여부 판별
         if (ev_type == BLE_HCI_ADV_RPT_EVTYPE_ADV_IND || 
             ev_type == BLE_HCI_ADV_RPT_EVTYPE_DIR_IND) {
-            if(name_len == 5)
+            if(name_len == strlen(DEVICE_STR))
                 is_connectable = true;
             
         }
@@ -754,10 +756,31 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
 
         // 주변 기기 정보를 통합 저장할 저장소 (최대 20개)
         app_config_t* app_config = get_app_config();
+// 1. UUID 2바이트 추출 (Little Endian 기준)
         uint16_t svc_uuid = (fields.svc_data_uuid16[1] << 8) | fields.svc_data_uuid16[0];
+        char env_data[20] = {0};
 
+        // 2. 실제 데이터 추출
+        // 전체 길이에서 UUID(2바이트)를 제외한 나머지가 실제 데이터입니다.
+        if (fields.svc_data_uuid16_len > 2) {
+            uint8_t data_len = fields.svc_data_uuid16_len - 2;
+            const uint8_t* p_data = fields.svc_data_uuid16 + 2;
+
+            if(data_len < sizeof(env_data))
+            {
+                memcpy(env_data, (char*)p_data, data_len);
+                ESP_LOGI(TAG,"UUID: 0x%04X, Data Len: %d, Data: %s ", svc_uuid, data_len,env_data);
+            }
+            else 
+            {
+                return 0;
+            }
+
+        } else {
+            return 0;
+        }
         if(is_connectable 
-           // &&  aws_connected_state()
+            &&  aws_connected_state() && strcmp(env_data, app_config->env_mode) == 0
         )
         {
 
@@ -1191,7 +1214,8 @@ static void ble_tx_processing_task(void *pvParameters)
 }
 static void Registation_timer_callback(void* arg)
 {
-    ble_advertising_reset(false);
+    if(qc_mode == false)
+        ble_advertising_reset(false);
 }
 static void mac_send_timer_callback(void* arg)
 {
@@ -1217,6 +1241,7 @@ static void mac_send_timer_callback(void* arg)
 
 #include <sys/time.h> // gettimeofday(), settimeofday() 함수 선언
 #include <time.h>     // time_t, struct tm, gmtime() 등
+bool time_sync_get(void);
 
 void motion_msg_send(uint16_t conn_handle, uint16_t attribute_handle , uint8_t cmd,uint8_t sub_cmd)
 {
@@ -1242,10 +1267,13 @@ void motion_msg_send(uint16_t conn_handle, uint16_t attribute_handle , uint8_t c
             Motion_Packet.ota_req.cmd_type = sub_cmd;
         break;   
         case TIME_RESPONSE:
+            if(time_sync_get() == false)
+                return;
             gettimeofday(&tv, NULL);
             Motion_Packet.event_code = cmd;
             Motion_Packet.time_res.epoch_sec = tv.tv_sec;
         break;   
+     
         default : 
         return;            
     }

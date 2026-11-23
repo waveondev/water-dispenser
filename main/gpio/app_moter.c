@@ -16,7 +16,6 @@
 
 #include "driver/i2c.h"
 #include "esp_log.h"
-#include "driver/rmt_tx.h"
 #include "app_adc.h"
 
 
@@ -26,68 +25,20 @@ void TPL0401_init(void);
 esp_err_t TPL0401_SetValue(int value);
 
 
-rmt_channel_handle_t pwm_chan = NULL;
-rmt_encoder_handle_t copy_encoder = NULL;
-
 #if !MOTOR_I2C_MODE
 #define MOTOR_IN1_GPIO       (PIN_PUMP_PWM)
 #endif
-#define LEDC_FREQUENCY      ( 20 * 1000 * 1000)            // 20kHz 설정
+
 static const char *TAG = __FILE__;
+
+#if MOTOR_I2C_MODE
+    static int current_target_percentage = 100; 
+#else
 static int current_target_percentage = 0; 
+#endif
+
 static uint32_t* Motor_Used_Time;
 static esp_timer_handle_t Motor_used_timer;
-
-// 모터 제어 함수 (percentage: 0 ~ 100)
-void set_motor_speed_percent(int percentage) {
-// DMA가 없을 때는 internal RAM을 채우기 위해 4개 심볼 배열 구성
-    static rmt_symbol_word_t pwm_symbols[4]; 
-    
-    if (percentage < 0) percentage = 0;
-    if (percentage > 100) percentage = 100;
-
-    uint32_t total_ticks = 1000; // 1000틱 = 50us (20kHz)
-    uint32_t high_ticks = (total_ticks * percentage) / 100;
-    uint32_t low_ticks = total_ticks - high_ticks;
-
-    // 타이머 제어
-    if (esp_timer_is_active(Motor_used_timer)) {
-        esp_timer_stop(Motor_used_timer);
-    }
-    if (percentage > 0) {
-        ESP_ERROR_CHECK(esp_timer_start_periodic(Motor_used_timer, 1000000));
-    }
-
-    // 듀티에 따른 심볼 패턴 작성
-    rmt_symbol_word_t sym;
-    if (percentage == 100) {
-        sym.level0 = 1; sym.duration0 = total_ticks / 2;
-        sym.level1 = 1; sym.duration1 = total_ticks / 2;
-    } else if (percentage == 0) {
-        sym.level0 = 0; sym.duration0 = total_ticks / 2;
-        sym.level1 = 0; sym.duration1 = total_ticks / 2;
-    } else {
-        sym.level0 = 1; sym.duration0 = high_ticks;
-        sym.level1 = 0; sym.duration1 = low_ticks;
-    }
-
-    // 4개 심볼 공간에 동일 파형 복사 (Internal RAM 순환 안정화)
-    for (int i = 0; i < 4; i++) {
-        pwm_symbols[i] = sym;
-    }
-
-    // 3. 무한 루프 송출 설정 (-1)
-    rmt_transmit_config_t tx_config = {
-        .loop_count = -1, 
-    };
-
-    rmt_disable(pwm_chan); 
-    rmt_enable(pwm_chan);
-
-    // 4. DMA를 통해 심볼 전송 시작 (기존 송출을 덮어씀)
-    ESP_ERROR_CHECK(rmt_transmit(pwm_chan, copy_encoder, pwm_symbols, sizeof(pwm_symbols), &tx_config));
-
-}
 
 
 // 백그라운드 태스크 및 진행 상태 감시용 전역 변수
@@ -100,6 +51,18 @@ static uint32_t* Filter_Used_Time;
 #define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)
 static volatile bool filter_send_flag = false; // volatile 추가
 static volatile bool moter_send_flag = false; // volatile 추가
+static int start_count = 5;
+static int start_off_time = 90;
+static int start_on_time = 3000;
+static uint32_t empty_count = 0;
+void motor_start_set(int count,int off_time, int on_time)
+{
+    start_count = count ;
+    start_off_time = off_time;
+    start_on_time = on_time;
+    printf("count = %d, off time = %d, on time = %d",count, off_time, on_time);
+}
+
 void set_filter_alert_enabled(bool state)
 {
     filter_alert_enabled = state;
@@ -122,7 +85,7 @@ void filter_change(void)
 }
 static void motor_used_timer_callback(void* arg)
 {
-    if(hardware_error_enable())
+    if(Water_empty_enable())
         return;
     app_config_t* app_config = get_app_config();
     (*Motor_Used_Time)++;
@@ -154,13 +117,22 @@ static void motor_used_timer_callback(void* arg)
             }
         }
     }
+
+
+    static uint32_t Minute_15 = 900;
+    Minute_15--;
+    if(Minute_15 == 0)
+    {
+        Minute_15 = 900;
+        motor_ontime_nvs_save_set();
+    } 
 }
 
 static void motor_boost_task(void *pvParameters)
 {
-    static uint32_t empty_count = 0;
+
     int current_value = 0;
-    int min_value = 0;
+    bool motor_en = read_nvs_motor_en_flag();
     while(1)
     {
         if (xSemaphoreTake(motor_semaphore, pdMS_TO_TICKS(1000)) == pdTRUE) 
@@ -169,100 +141,44 @@ static void motor_boost_task(void *pvParameters)
             
             #if MOTOR_I2C_MODE
                 TPL0401_SetValue(0);
-                current_value = current_target_percentage;
-                if(min_value == 0)
-                {
-                    vTaskDelay(pdMS_TO_TICKS(1000)); // 정확히 1초(1000ms)만 대기   
-                    for(;current_value<100;current_value++)
+
+                #if 1
+  
+                    vTaskDelay(pdMS_TO_TICKS(2000)); // 정확히 1초(1000ms)만 대기   
+                    for(current_value = 40;current_value<90;current_value++)
                     {
                         TPL0401_SetValue(current_value);
-                        vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
+                        vTaskDelay(pdMS_TO_TICKS(200)); // 정확히 1초(1000ms)만 대기   
                         // ESP_LOGI(TAG,"100 = %d",i);
-                        if(GetMotor_adc() < 30)
-                        {
-                            min_value = current_value - 4;
-                            break;;
-                        }
-                        if(current_target_percentage == 100)
-                        {
-                            TPL0401_SetValue(current_target_percentage);
-                            break;
-                        }
                     }
-                }
-                ESP_LOGW("min_value", " %d",min_value);
+
+
                 TPL0401_SetValue(0);   
-                vTaskDelay(pdMS_TO_TICKS(100));
-                TPL0401_SetValue(min_value);
 
-                #if 0
-                TPL0401_SetValue(0);  
-                for(int i = 0; i <30;i++)
-                {
-
-                    vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
-                    if(current_target_percentage == 100)
-                    {
-                        TPL0401_SetValue(current_target_percentage);
-                        break;
-                    }
-                }
-                { 
-                    for(int i = 30 ;i<min_value;i++)
-                    {
-
-                        TPL0401_SetValue(i);
-                         ESP_LOGI(TAG,"i = %d",i);
-                        if(current_target_percentage == 100)
-                        {
-                            TPL0401_SetValue(current_target_percentage);
-                            break;
-                        }
-                        vTaskDelay(pdMS_TO_TICKS(50)); // 정확히 1초(1000ms)만 대기   
-                    }
-                    for(int i = min_value;i>30;i--)
-                    {
-                        TPL0401_SetValue(i);
-                         ESP_LOGI(TAG,"i = %d",i);
-                        if(current_target_percentage == 100)
-                        {
-                            TPL0401_SetValue(current_target_percentage);
-                            break;
-                        }
-                        vTaskDelay(pdMS_TO_TICKS(50)); // 정확히 1초(1000ms)만 대기   
-                    }
-                    for(int i = 30 ;i<=min_value;i++)
-                    {
-                        TPL0401_SetValue(i);
-                         ESP_LOGI(TAG,"i = %d",i);
-                        if(current_target_percentage == 100)
-                        {
-                            TPL0401_SetValue(current_target_percentage);
-                            break;
-                        }
-                        vTaskDelay(pdMS_TO_TICKS(50)); // 정확히 1초(1000ms)만 대기   
-                    }
-                }
-                    #endif
-                //TPL0401_SetValue(min_value);
-
-
+                
+                #endif
+                //TPL0401_SetValue(current_target_percentage);
             #else
-   
-                    set_motor_speed_percent(100);
 
-                for(int i = 0;i<5;i++)
-                {
-                    vTaskDelay(pdMS_TO_TICKS(100)); // 정확히 1초(1000ms)만 대기   
-                    // ESP_LOGI(TAG,"100 = %d",i);
-                    if(current_target_percentage == 0)
-                    break;
-                }
+            if(current_target_percentage)
+            {
+                    gpio_set_level(MOTOR_IN1_GPIO, 1);   
+                    vTaskDelay(pdMS_TO_TICKS(4000)); // 정확히 1초(1000ms)만 대기      
+                    for(int z = 0; z < start_count;z++)
+                    {   
 
-            
-  
-                set_motor_speed_percent(current_target_percentage);
-            #endif                
+                        gpio_set_level(MOTOR_IN1_GPIO, 0);   
+                        vTaskDelay(pdMS_TO_TICKS(start_off_time)); // 정확히 1초(1000ms)만 대기     
+                        gpio_set_level(MOTOR_IN1_GPIO, 1);   
+                        vTaskDelay(pdMS_TO_TICKS(start_on_time)); // 정확히 1초(1000ms)만 대기                            
+                        ESP_LOGI(TAG,"z = %d", z);
+                    }            
+            }
+
+
+            #endif   
+            if(current_target_percentage)
+                ESP_ERROR_CHECK(esp_timer_start_periodic(Motor_used_timer, 1000000));       
         }
         #if MOTOR_I2C_MODE        
         if(current_target_percentage != 100)
@@ -270,39 +186,33 @@ static void motor_boost_task(void *pvParameters)
         if(current_target_percentage != 0)
         #endif
         {
-
+            if(GetMotor_adc() < 250)
             {
-                if(GetMotor_adc() < 100)
+                if(empty_count < 10)
                 {
-                    if(empty_count < 10)
-                    {
-                        empty_count++;
-                    }
-
+                    empty_count++;
                 }
-                else
-                {
-                    if(empty_count)
-                    empty_count--;
-
-                }                
             }
-
-
+            else
             {
-                if(empty_count >= 5)
+                if(motor_en == false)
                 {
-                    //물없음
-                    led_bit_enable(WATER_EMPTY_BIT);
-                    water_fault_enable(WATER_EMPTY_FAULT);      
+                    motor_en = true;
+                    write_nvs_motor_en_flag(motor_en);
                 }
-                else
-                {
-                    led_bit_disable(WATER_EMPTY_BIT);
-                    water_fault_disable(WATER_EMPTY_FAULT); 
-                }
-                //if(empty_count)
-                   // ESP_LOGI(TAG,"empty_count = %d", empty_count);
+                if(empty_count)
+                empty_count--;
+            }                
+            if(empty_count >= 5)
+            {
+                //물없음
+                led_bit_enable(WATER_EMPTY_BIT);
+                water_fault_enable(WATER_EMPTY_FAULT);      
+            }
+            else
+            {
+                led_bit_disable(WATER_EMPTY_BIT);
+                water_fault_disable(WATER_EMPTY_FAULT); 
             }
         }
     }
@@ -322,7 +232,7 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
 #else
     if (target_percentage <= 0) {
        // ESP_LOGI(TAG, "[PUMP] 🛑 모터 즉시 정지 (0%%)");
-        set_motor_speed_percent(0);
+        gpio_set_level(MOTOR_IN1_GPIO, 0);   
         current_target_percentage = 0;
         return; 
     }
@@ -339,7 +249,7 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
     }
 }
 
-void init_motor_ledc(void) {
+void init_motor_ledc(bool qc_mode) {
     #if MOTOR_I2C_MODE
     
     gpio_config_t io_conf = {                   
@@ -352,24 +262,19 @@ void init_motor_ledc(void) {
     gpio_config(&io_conf);    
     gpio_set_level(PUMP_EN, 1); 
     #else
-    // 1. RMT TX 채널 설정 (DMA 활성화)
-    rmt_tx_channel_config_t tx_config = {
-        .clk_src = RMT_CLK_SRC_DEFAULT,
-        .gpio_num = MOTOR_IN1_GPIO,             // 👈 출력할 GPIO 15번 핀
-        .mem_block_symbols = 48,    // DMA 내부 블록 사이즈
-        .resolution_hz = LEDC_FREQUENCY,  // 🌟 20MHz 해상도 (1틱 = 50ns)
-        .trans_queue_depth = 4,
-        .flags.with_dma = false,     // 🌟 핵심: DMA 통신 켜기
+    gpio_config_t io_conf = {                   
+        .pin_bit_mask =(1ULL << MOTOR_IN1_GPIO),             // 설정할 GPIO 핀 15, 16, 2 지정
+        .mode = GPIO_MODE_OUTPUT,             // 출력 모드로 설정
+        .pull_up_en = GPIO_PULLUP_DISABLE,    // 내부 풀업 비활성화
+        .pull_down_en = GPIO_PULLDOWN_DISABLE, // 내부 풀다운 활성화 (기본 LOW 상태 유지)
+        .intr_type = GPIO_INTR_DISABLE,       // 인터럽트 사용 안 함
     };
-    ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_config, &pwm_chan));
+    gpio_config(&io_conf);    
+    gpio_set_level(MOTOR_IN1_GPIO, 0);     
 
-    // 2. 심볼(Symbol) 데이터를 그대로 복사해주는 기본 인코더 사용
-    rmt_copy_encoder_config_t encoder_config = {};
-    ESP_ERROR_CHECK(rmt_new_copy_encoder(&encoder_config, &copy_encoder));
-
-    // 3. RMT 채널 하드웨어 켜기
-    ESP_ERROR_CHECK(rmt_enable(pwm_chan));
     #endif
+
+
     Motor_Used_Time = get_motor_time();
     Filter_Used_Time = get_filter_time();
     
@@ -380,7 +285,9 @@ void init_motor_ledc(void) {
 
     // 타이머 생성
     ESP_ERROR_CHECK(esp_timer_create(&Motor_Used_timer_args, &Motor_used_timer));
-
+    #if MOTOR_I2C_MODE
+    TPL0401_init();
+    #endif
 // 2. 이진 세마포어 생성 (초기 상태: 0 - 비어있음)
     motor_semaphore = xSemaphoreCreateBinary();
     
@@ -399,9 +306,10 @@ void init_motor_ledc(void) {
         
         ESP_LOGE(TAG, "Error creating motor_boost_task on Core 1");
     }
-    #if MOTOR_I2C_MODE
-    TPL0401_init();
-    #endif
+
+    if(qc_mode == true)
+        start_motor_with_boost(100,0);
+
 }
 
 
@@ -628,9 +536,7 @@ void TPL0401_init(void)
         ESP_LOGE(TAG, "Failed to install I2C Port 0");
     }
     i2c_scan();
-    current_target_percentage = 100;
-    TPL0401_SetValue(current_target_percentage);    
-
+    TPL0401_SetValue(100);
 }
 
 

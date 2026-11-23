@@ -140,6 +140,6 @@ void vRegisterStackCLICommands( void );
 
 void APP_String_printf(const char *format, ...);
 void APP_Printf(char c);
-void console_task_init(void);
+void console_task_init(bool qc);
 
 #endif /* COMMAND_INTERPRETER_H */

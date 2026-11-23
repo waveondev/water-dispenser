@@ -194,11 +194,12 @@ static const char *TAG = "ADC_MIXED";
 
 // 1. DMA용 채널 설정: 이제 CH0(모터)만 남김 (필요시 채널 수 조정)
 #define ADC_LEN 1
-#if MOTOR_I2C_MODE
+#if PIN_PUMP_ADC == 1
 #define MOTOR_ADC_CHAN ADC_CHANNEL_1
 #else
-#define MOTOR_ADC_CHAN ADC_CHANNEL_1
+#define MOTOR_ADC_CHAN ADC_CHANNEL_0
 #endif
+
 static adc_channel_t adc1_dma_channels[ADC_LEN] = {MOTOR_ADC_CHAN};
 
 // 2. ADC Oneshot용 핸들 선언 (CH3: GPIO3, CH4: GPIO4)
@@ -218,8 +219,6 @@ int GetIR_RIGHT(void) { return ir_right_mv; }
 
 // 필터링 버퍼
 
-static uint8_t adc_index = 0;
-static uint8_t adc_count = 0;
 
 #define IR_ADC_SAMPLES 32
 
@@ -244,34 +243,43 @@ void IR_SenSing(void)
 
 void ADC_Sensing(void)
 {
-    if (adc_handle == NULL || adc1_oneshot_handle == NULL) {
+    if (adc_handle == NULL) {
         ESP_LOGE(TAG, "ADC handles are not initialized!");
         return;
     }
 
 
-    // ==========================================
-    // 2. CH0 채널 기존 DMA 연속 모드로 읽기
-    // ==========================================
-    static uint8_t dma_result[ADC_SAMPLE_NUM * SOC_ADC_DIGI_DATA_BYTES_PER_CONV];
+        // 1. DMA 4바이트 정렬(WORD_ALIGNED_ATTR) 적용 및 정적 버퍼 선언
+    // static으로 유지하되 반드시 WORD_ALIGNED_ATTR을 붙여야 DMA HW가 안전하게 접근합니다.
+    WORD_ALIGNED_ATTR static uint8_t dma_result[ADC_SAMPLE_NUM * SOC_ADC_DIGI_DATA_BYTES_PER_CONV];
+
     uint32_t ret_num = 0;
     DBG_Resister_t *DBG_Resister = Debug_Get();
 
+    // 2. start를 하기 전에 버퍼를 한 번 비워줍니다. (이전 찌꺼기 데이터 제거)
+    adc_continuous_flush_pool(adc_handle);
+
+    // 3. ADC DMA 시작
     esp_err_t start_err = adc_continuous_start(adc_handle);
     if (start_err != ESP_OK) {
         ESP_LOGE(TAG, "ADC continuous start failed: %s", esp_err_to_name(start_err));
         return;
     }
-    vTaskDelay(5);
+
+    // ※ [중요] start() 후 vTaskDelay를 절대 넣지 마세요! 바로 read를 호출해야 버퍼 오버플로우를 막습니다.
     esp_err_t ret = adc_continuous_read(adc_handle, dma_result, sizeof(dma_result), &ret_num, pdMS_TO_TICKS(100));
+
+    // 4. 읽기 완료 후 정지
     adc_continuous_stop(adc_handle);
-    adc_continuous_flush_pool(adc_handle);
+
     uint32_t raw_val_ch0 = 0;
     uint32_t cnt_ch0 = 0;
 
     if (ret == ESP_OK && ret_num > 0) {
         for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_DATA_BYTES_PER_CONV) {
             adc_digi_output_data_t *p = (adc_digi_output_data_t *)&dma_result[i];
+            
+            // SOC 타입에 따라 type1 / type2 선택 (ESP32-S3/C3/H2 등은 SOC 구조체 확인 필요)
             uint32_t chan = p->type2.channel;
             uint32_t data = p->type2.data;
 
@@ -280,7 +288,9 @@ void ADC_Sensing(void)
                 cnt_ch0++;
             }
         }
-        if (cnt_ch0) raw_val_ch0 /= cnt_ch0; 
+        if (cnt_ch0 > 0) {
+            raw_val_ch0 /= cnt_ch0; 
+        }
     }
 
     // ==========================================
@@ -289,13 +299,10 @@ void ADC_Sensing(void)
 
     motor_adc = raw_val_ch0;
 
-    adc_index = (adc_index + 1) % FILTER_WINDOW_SIZE;
-    if (adc_count < FILTER_WINDOW_SIZE) {
-        adc_count++;
-    }
+   
 
     if (DBG_Resister && DBG_Resister->adc) {
-        ESP_LOGI(TAG, "[Mixed Filtered] CH3(Oneshot): %lu | CH4(Oneshot): %lu| CH0(DMA): %lu", 
+        APP_String_printf("[Mixed Filtered] CH3(Oneshot): %lu | CH4(Oneshot): %lu| CH0(DMA): %lu\r\n", 
                  ir_left_mv,  
                  ir_right_mv,  
                  motor_adc);
@@ -314,7 +321,7 @@ void adc_init(void) {
     // CH3 (GPIO3) 감쇠(Atten) 설정
     adc_oneshot_chan_cfg_t config = {
         .bitwidth = ADC_BITWIDTH_DEFAULT,
-        .atten = ADC_ATTEN_DB_12, // 기존 코드와 동일한 12dB (약 0~3.3V)
+        .atten = ADC_ATTEN_DB_0, // 기존 코드와 동일한 12dB (약 0~3.3V)
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_oneshot_handle, ADC_CHANNEL_3, &config));
     // CH4 (GPIO4) 감쇠(Atten) 설정

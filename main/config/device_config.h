@@ -14,16 +14,5 @@
 #define CONFIG_TRACKER_PREFIX        "PALLO"               // 시리얼 넘버 접두사
 #define CONFIG_TRACKER_DEVICE_TYPE   "pallo"               // 디바이스 타입
 
-// ==========================================
-// [2] MQTT 토픽(Topic) 포맷 설정
-// ==========================================
-// 공통 패턴: things/<device_type>/<thing_code>_<MAC>/<event_type>[cite: 11]
-
-#define TOPIC_FORMAT_REGISTRATION   "things/%s/%s_%02X%02X%02X%02X%02X%02X/registration"
-#define TOPIC_FORMAT_BOOT           "things/%s/%s_%02X%02X%02X%02X%02X%02X/boot"
-#define TOPIC_FORMAT_ACCESS         "things/%s/%s_%02X%02X%02X%02X%02X%02X/access"
-#define TOPIC_FORMAT_DRINK          "things/%s/%s_%02X%02X%02X%02X%02X%02X/drink"
-#define TOPIC_FORMAT_DIAGNOSTICS    "things/%s/%s_%02X%02X%02X%02X%02X%02X/diagnostics"
-#define TOPIC_FORMAT_HEALTH         "things/%s/%s_%02X%02X%02X%02X%02X%02X/health"
 
 #endif /* __DEVICE_CONFIG_H__ */

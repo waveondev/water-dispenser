@@ -20,8 +20,11 @@
 
 #define TAG __FUNCTION__
 
-
+void factory_erase_enable(Motion_Packet_t *Motion_Packet);
+void ManuFact1_reqeust(Motion_Packet_t *Motion_Packet);
+void ManuFact2_reqeust(Motion_Packet_t *Motion_Packet);
 uint8_t* get_ble_session_key(void);
+void ping_request_input(Motion_Packet_t *Motion_Packet);
 extern uint16_t g_ble_max_payload; // ble로 보낼 수 있는 MTU 사이즈 저장 변수
 
 /**
@@ -153,7 +156,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
     char buf[256];
     if(len >= sizeof(buf))
         len = sizeof(buf) - 1;
-    ESP_LOGI(TAG,"Code = %s \r",data);
+   // ESP_LOGI(TAG,"Code = %s \r",data);
     memcpy(buf, data, len);
     buf[len] = '\0';
 
@@ -183,7 +186,7 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                 if (data_obj) {
                     cJSON *app_pub_key = cJSON_GetObjectItem(data_obj, "pub_key");
                     if (app_pub_key && cJSON_IsString(app_pub_key)) {
-                        ESP_LOGI(TAG,"[BLE_SEC] Received App PubKey: %s", app_pub_key->valuestring);
+                        //ESP_LOGI(TAG,"[BLE_SEC] Received App PubKey: %s", app_pub_key->valuestring);
 
                         char dev_pub_key_b64[64] = {0};
                         
@@ -224,15 +227,26 @@ void BLE_APP_Command(uint8_t* data, uint16_t len)
                         
                         if (env_val && cJSON_IsString(env_val)) {
                             app_config_t* app_config = get_app_config();
-                            
+                            bool save_flag = false;
                             if (strcmp(env_val->valuestring, "dev") == 0) {
+                                save_flag = true;
                                 ESP_LOGI(TAG,"[BLE_SEC] 환경 설정: 개발(dev) 모드\n");
                                 strncpy(app_config->env_mode, "dev", sizeof(app_config->env_mode)-1);
                             } else if (strcmp(env_val->valuestring, "prod") == 0) {
+                                save_flag = true;
                                 ESP_LOGI(TAG,"[BLE_SEC] 환경 설정: 운영(prod) 모드\n");
                                 strncpy(app_config->env_mode, "prod", sizeof(app_config->env_mode)-1);
                             }
-                            ble_send_encrypted_event("env_ack", "{\"result\":\"ok\"}");
+                            else if (strcmp(env_val->valuestring, "alpha") == 0) {
+                                save_flag = true;
+                                ESP_LOGI(TAG,"[BLE_SEC] 환경 설정: 운영(alpha) 모드\n");
+                                strncpy(app_config->env_mode, "alpha", sizeof(app_config->env_mode)-1);
+                            }
+                            if(save_flag == true)
+                            {
+                                app_nvs_save_set();
+                                ble_send_encrypted_event("env_ack", "{\"result\":\"ok\"}");
+                            }
                         }
                         cJSON_Delete(decrypted_json);
                     }
@@ -427,6 +441,7 @@ typedef struct
   uint8_t mlc[4];
 }Sensor_RawData_t;
 
+
 void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
 
 {
@@ -588,9 +603,23 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
         case TIME_REQUEST:
             motion_msg_send(client->conn_handle,client->attribute_handle,TIME_RESPONSE,0); 
         break;
+        case PING_REQUEST:
+            ping_request_input(Motion_Packet);
+        break;
+
         case SETTING_REQUEST:
             Setting_callback(Motion_Packet);
         break;
+        case MANUFACT1_REQUEST:
+            ManuFact1_reqeust(Motion_Packet);
+        break;
+        case MANUFACT2_REQUEST:
+            ManuFact2_reqeust(Motion_Packet);
+        break;
+
+        case FACTORY_REQUEST:
+            factory_erase_enable(Motion_Packet);
+        break;   
         default:
             BLE_APP_Command(data,len);
         break;
@@ -599,5 +628,15 @@ void BLE_Receive_data(uint8_t* mac, uint8_t* data, uint16_t len)
     
 
 
+}
+
+
+void ping_request_input(Motion_Packet_t *Motion_Packet)
+{
+    Motion_Packet_t ping_Packet;
+    memset(&ping_Packet,0,sizeof(ping_Packet));
+    memcpy(&ping_Packet,Motion_Packet,sizeof(Motion_Packet_t));
+    ping_Packet.event_code = PING_RESPONSE;
+    ble_send_data_to_queue(NULL,NULL,(uint8_t*)&ping_Packet,sizeof(ping_Packet));
 }
   //esp_read_mac(MyMac,ESP_MAC_WIFI_STA);

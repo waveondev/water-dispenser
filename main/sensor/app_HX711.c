@@ -29,17 +29,21 @@ hx711_t dev = {
     .gain = HX711_GAIN_A_64
 };
 static uint16_t hx711_cal_enable = 0;
-
+// 파일 상단 static 변수에 추가
+static int32_t min_raw_after_case = 0;   // 케이스 일부 제거 후 최저 안정화 Raw 값(80,000) 자동 저장용
+static bool track_min_raw = false;       // 케이스 캘리브레이션 직후부터 추적 활성화 플래그
 
 static void HX711_scale_process(float weight)
 {
     app_config_t* app_config = get_app_config();
     app_facto_config_t* facto_config = get_facto_config();
-    hx711_calibrate_scale(&dev,10,weight,&app_config->hx1_scale,(int32_t)app_config->case_raw_data);
+
+
+    hx711_calibrate_scale(&dev,100,weight,&app_config->hx1_scale,(int32_t)app_config->case_raw_data);
     facto_config->hx1_scale = app_config->hx1_scale;
     app_nvs_save_set();
     facto_nvs_save_set();
-    ESP_LOGI(TAG, "Tare case set to %d(%.2f)\r\n", app_config->case_raw_data,(int32_t)app_config->hx1_scale);
+    APP_String_printf("Tare case set to %d(%.2f)\r\n", app_config->case_raw_data,(int32_t)app_config->hx1_scale);
     Setting_Enable(HX711_Scale_cal);
 }
 
@@ -51,10 +55,13 @@ static void HX711_case_raw_process(void)
 
     while(hx711_read_average(&dev, 100, &cal_data) != ESP_OK){}
     app_config->case_raw_data = (cal_data);
-    facto_config->case_raw_data = (cal_data);
+    facto_config->case_raw_data = app_config->case_raw_data;    
+    min_raw_after_case = cal_data;
+    track_min_raw = true;
     app_nvs_save_set();
     facto_nvs_save_set();
-    ESP_LOGI(TAG, "Tare case set to %d\r\n", app_config->case_raw_data);
+    APP_String_printf("Tare case set to %d\r\n", app_config->case_raw_data);
+
     Setting_Enable(HX711_Case_cal);
 }
 void HX711_cal_init(uint16_t cal)
@@ -68,6 +75,7 @@ float loadcell_data_get(void)
 
 void HX711_Sensing(void)
 {
+    static bool first_init  = false;
     static float before_weight = 0;
     static uint32_t bowl_count = 0;
     static uint32_t water_low_count = 0;
@@ -89,13 +97,13 @@ void HX711_Sensing(void)
 
     // 2. float 변수에 대입하여 명확하게 float으로 변환 후 나눗셈
     float net_raw_float = (float)net_raw;
-    hx711_data_buf = net_raw_float / app_config->hx1_scale;
+    hx711_data_buf = (net_raw_float / app_config->hx1_scale);
     if(water_increase_data == 0)
         water_increase_data = hx711_data_buf;
     if(DBG_Resister->HX711)
     {
-        ESP_LOGI(TAG, "hx711_data: (%d)",hx711_data);
-        ESP_LOGI(TAG, " Raw: %.2f g", hx711_data_buf);            
+        APP_String_printf( "hx711_data: (%d)\r\n",hx711_data);
+        APP_String_printf(" Raw: %.2f g\r\n", hx711_data_buf);    
     }
 
     if(hx711_data_buf > water_increase_data + 2.0f)
@@ -124,6 +132,11 @@ void HX711_Sensing(void)
         //before_weight = loadcell_data_get();
     
     float currunt_weight = loadcell_data_get();
+    if(first_init == false)
+    {
+        first_init = true;
+        before_weight = currunt_weight;
+    }
     float safe_release_threshold = safe_min_threshold + 10.0f; 
     // 3. 이전 무게보다 50 이상 갑자기 줄었는지 검사
     if (currunt_weight < 0 && currunt_weight < (before_weight - 50.0f))
@@ -135,9 +148,11 @@ void HX711_Sensing(void)
     {
         // 정상 범위(무게가 유지되거나 늘어나거나, 50 미만으로 살짝 줄었을 때)는
         // 현재 무게를 다음 비교를 위한 before_weight로 갱신
+        
         before_weight = currunt_weight;
         bowl_count = 0;
     }
+
     if(bowl_count >= 10)
     {
         if(!led_bit_status(HARDWARE_ERR_BIT))
@@ -197,16 +212,6 @@ static void HX711_task(void *pvParameter)
 {
     ESP_LOGI(TAG, "Starting sensor task");
     
-    //ESP_LOGE(TAG, "HX711 Error %d \r\n", hx711_init(&dev));
-    #if 1
-    if(hx711_init(&dev) != ESP_OK)
-    {
-        ESP_LOGE(TAG, "HX711 Error\r\n");
-        led_bit_enable(LOADCELL_ERR_BIT);
-        water_fault_disable(WATER_LOADCELL_ERR);
-    }
-    #endif
-
     while (1) {
         if(hx711_cal_enable)
         {
@@ -218,6 +223,28 @@ static void HX711_task(void *pvParameter)
 
         }    
         else{
+            static int32_t prev_raw = 0;
+            static uint8_t stable_cnt = 0;
+
+            // ... (기존 hx711_read_average(&dev, 10, &hx711_data) 및 에러 체크 코드) ...
+
+            // [추가] 케이스 일부를 빼서 무게가 줄어들었을 때의 안정화 값(80,000)을 자동으로 잡는 로직
+            if (track_min_raw) {
+                if (abs(hx711_data - prev_raw) < 300) { // 흔들림 없이 안정된 상태일 때만 체크
+                    if (stable_cnt < 10) {
+                        stable_cnt++;
+                    } else {
+                        // 기존에 기록된 값보다 더 가벼워진 안정화 값이 나오면 갱신 (100,000 -> 80,000)
+                        // 나중에 2kg 추를 올려 값이 커지면(280,000) 이 조건을 안 타므로 80,000이 안전하게 보존됨!
+                        if (hx711_data < min_raw_after_case) {
+                            min_raw_after_case = hx711_data;
+                        }
+                    }
+                } else {
+                    stable_cnt = 0; // 손으로 케이스를 빼거나 추를 올리는 도중에는 갱신 보류
+                }
+                prev_raw = hx711_data;
+            }            
             HX711_Sensing();
         }
         vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -228,6 +255,14 @@ static void HX711_task(void *pvParameter)
 bool HX711_task_init(void)
 {
 #if 1
+
+    if(hx711_init(&dev) != ESP_OK)
+    {
+        ESP_LOGE(TAG, "HX711 Error\r\n");
+        led_bit_enable(LOADCELL_ERR_BIT);
+        water_fault_disable(WATER_LOADCELL_ERR);
+    }
+    HX711_Sensing();
     if (xTaskCreate(
             HX711_task,                  // 태스크 함수
             "HX711_task",                // 태스크 이름
@@ -240,28 +275,6 @@ bool HX711_task_init(void)
     }
 #endif
 
-
-
-#ifndef PIN_HX711_DOUT
-  #define PIN_HX711_DOUT 19
-#endif
-#ifndef PIN_HX711_SCK
-  #define PIN_HX711_SCK 18
-#endif
-
-
-#if 0
-    gpio_config_t io_conf = {                   
-        .pin_bit_mask =(1ULL << PIN_HX711_SCK) | (1 << PIN_HX711_DOUT),             // 설정할 GPIO 핀 15, 16, 2 지정
-        .mode = GPIO_MODE_OUTPUT,             // 출력 모드로 설정
-        .pull_up_en = GPIO_PULLUP_DISABLE,    // 내부 풀업 비활성화
-        .pull_down_en = GPIO_PULLDOWN_DISABLE, // 내부 풀다운 활성화 (기본 LOW 상태 유지)
-        .intr_type = GPIO_INTR_DISABLE,       // 인터럽트 사용 안 함
-    };
-    gpio_config(&io_conf);
-    gpio_set_level(PIN_HX711_SCK, 0); 
-    gpio_set_level(PIN_HX711_DOUT, 0);     
-    #endif
     return true;
 }
 

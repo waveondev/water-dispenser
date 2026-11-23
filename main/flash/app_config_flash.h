@@ -37,15 +37,20 @@ typedef struct{
 
 typedef struct{
     float hx1_scale;
-    int case_raw_data;
+    int32_t case_raw_data;
+    uint32_t tof_sense_cal_l;
+    uint32_t tof_sense_cal_r;
     uint8_t Device_Serial[64];
 }app_facto_config_t;
 void reset_all_nvs_facto(void);
 void reset_all_nvs_data(void);
+void reset_all_nvs_menu(void);
 void app_nvs_save_set(void);
 void wifi_nvs_save_set(void);
 void motor_nvs_save_set(void);
 void filter_nvs_save_set(void);
+void ontime_nvs_save_set(void);
+void motor_ontime_nvs_save_set(void);
 app_config_t* get_app_config(void);
 app_wifi_config_t* get_wifi_config(void);
 uint32_t* get_motor_time(void);

@@ -8,6 +8,9 @@
 #include "freertos/queue.h"
 #include "app_button.h"
 #include "esp_timer.h"  // 👈 이 줄을 추가해 주세요!
+#include "ble_parse.h"
+#include "ble_task.h"
+#include "esp_mac.h"
 static const char *TAG = __FILE__;
 static esp_timer_handle_t minute10_timer;
 
@@ -30,7 +33,7 @@ app_config_t app_config =
     .tof_sense_threshold_r = 50,
     .motion_data_time = 60,
     .EFFECTIVE_DWELL_TIME = 5,
-    .env_mode = "dev"
+    .env_mode = "prod"
 };
 
 app_wifi_config_t wifi_config = 
@@ -43,6 +46,8 @@ app_facto_config_t facto_config =
 {
     .hx1_scale = 1000.0f,
     .case_raw_data = 0,
+    .tof_sense_cal_l = 0,
+    .tof_sense_cal_r = 0,
     .Device_Serial = ""
 };
 
@@ -51,10 +56,18 @@ static bool wifi_save_flag = false;
 static bool facto_save_flag = false;
 static bool motor_save_flag = false;
 static bool filter_save_flag = false;
+static bool ontime_save_flag = false;
+static bool motor_ontime_save_flag = false;
+static bool rtc_init_save_flag = false;
 static uint32_t motor_save_time = 0;
 static uint32_t filter_save_time = 0;
 static uint32_t motor_save_time_buf = 0;
 static uint32_t filter_save_time_buf = 0;
+static uint32_t ontime_save = 0;
+static uint32_t motor_on_time_save = 0;
+static uint32_t active_time = 0;
+static uint32_t factory_days = 0;
+static uint32_t date_buf = 0;
 void app_nvs_save_set(void)
 {
     app_save_flag = true;
@@ -75,15 +88,132 @@ void filter_nvs_save_set(void)
 {
     filter_save_flag = true;
 }
+void ontime_nvs_save_set(void)
+{
+    ontime_save_flag = true;
+}
+void motor_ontime_nvs_save_set(void)
+{
+    motor_ontime_save_flag = true;
+}
+
+void rtc_init_nvs_save_set(uint32_t date)
+{
+    date_buf = date;
+    rtc_init_save_flag = true;
+}
+
+
+
+void ManuFact1_reqeust(Motion_Packet_t *Motion_Packet)
+{
+    memset(Motion_Packet,0,sizeof(Motion_Packet_t));
+    Motion_Packet->event_code = MANUFACT1_RESPONSE;
+    Motion_Packet->manufact_res.Manufacture_date = __builtin_bswap32(factory_days);
+
+
+    uint8_t mac[6] = {0};
+
+    // BLE 광고 MAC 주소와 일치시키려면 ESP_MAC_BT 사용 (Wi-Fi MAC과 마지막 바이트가 +2 다름)
+    esp_err_t ret = esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    if (ret != ESP_OK) {
+        ESP_LOGE("MAC", "Failed to read MAC address: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    // ESP32는 이미 Big-Endian(MSB first)이므로 [5 - i]가 아니라 [i] 그대로 대입
+    for (int i = 0; i < 6; i++)
+    {
+        Motion_Packet->manufact_res.mac[i] = mac[i];
+    }
+    Motion_Packet->manufact_res.major = WATER_MAJOR;
+    Motion_Packet->manufact_res.minor = WATER_MINOR;
+    Motion_Packet->manufact_res.patch = WATER_PATCH;
+
+
+    Motion_Packet->manufact_res.battery_time = (uint16_t)motor_on_time_save;
+    Motion_Packet->manufact_res.active_time = (ontime_save);
+
+    ble_send_data_to_queue(NULL,NULL,(uint8_t*)Motion_Packet,sizeof(Motion_Packet_t));  
+}
+
+
+void ManuFact2_reqeust(Motion_Packet_t *Motion_Packet)
+{
+    memset(Motion_Packet,0,sizeof(Motion_Packet_t));
+    Motion_Packet->event_code = MANUFACT2_RESPONSE;
+    Motion_Packet->manufact_res.Manufacture_date = __builtin_bswap32(factory_days);
+
+
+    uint8_t mac[6] = {0};
+
+    // BLE 광고 MAC 주소와 일치시키려면 ESP_MAC_BT 사용 (Wi-Fi MAC과 마지막 바이트가 +2 다름)
+    esp_err_t ret = esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    if (ret != ESP_OK) {
+        ESP_LOGE("MAC", "Failed to read MAC address: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    // ESP32는 이미 Big-Endian(MSB first)이므로 [5 - i]가 아니라 [i] 그대로 대입
+    for (int i = 0; i < 6; i++)
+    {
+        Motion_Packet->manufact_res.mac[i] = mac[i];
+    }
+    Motion_Packet->manufact_res.major = WATER_MAJOR;
+    Motion_Packet->manufact_res.minor = WATER_MINOR;
+    Motion_Packet->manufact_res.patch = WATER_PATCH;
+
+
+    Motion_Packet->manufact_res.battery_time = read_nvs_motor_en_flag() ? 1:0;
+    Motion_Packet->manufact_res.active_time = __builtin_bswap32(active_time);
+
+    ble_send_data_to_queue(NULL,NULL,(uint8_t*)Motion_Packet,sizeof(Motion_Packet_t));  
+}
+
+
+void factory_erase_enable(Motion_Packet_t *Motion_Packet)
+{
+  uint8_t ret = 0;
+  if(Motion_Packet->factory_req.Manufacture_date != __builtin_bswap32(factory_days))  
+  {
+    ret |= 1<<0;
+  }
+  if(Motion_Packet->factory_req.major != WATER_MAJOR)
+  {
+    ret |= 1<<1;
+  }
+  if(Motion_Packet->factory_req.minor != WATER_MINOR)
+  {
+    ret |= 1<<2;
+  }
+  if(Motion_Packet->factory_req.patch != WATER_PATCH)
+  {
+    ret |= 1<<3;
+  }
+  if(ret == 0)
+  {
+    set_factory_flag(FACTORY_MENUFACT);
+  }
+  else
+  {
+    memset(Motion_Packet,0,sizeof(Motion_Packet_t));
+    Motion_Packet->event_code = FACTORY_RESPONSE;
+    Motion_Packet->factory_res.ret = ret;
+    ble_send_data_to_queue(NULL,NULL,(uint8_t*)Motion_Packet,sizeof(Motion_Packet_t));  
+
+  }
+}
+
+
 
 void reset_all_nvs_data(void)
 {
-    ESP_LOGW("NVS", "WAVEON NVS 데이터 영역을 초기화합니다...");
+    ESP_LOGW("NVS", APP_NAMESPACE " NVS 데이터 영역을 초기화합니다...");
     
     nvs_handle_t handle;
     
     // 1. WAVEON 네임스페이스를 쓰기 모드로 엽니다.
-    esp_err_t err = nvs_open("WAVEON", NVS_READWRITE, &handle);
+    esp_err_t err = nvs_open(APP_NAMESPACE, NVS_READWRITE, &handle);
     
     if (err == ESP_OK) {
         // 2. WAVEON 네임스페이스 내부의 모든 Key를 지웁니다.
@@ -100,10 +230,40 @@ void reset_all_nvs_data(void)
 
     // 결과 처리 및 재부팅
     if (err == ESP_OK) {
-        ESP_LOGI("NVS", "WAVEON 초기화 완료! 변경사항을 적용하기 위해 재부팅합니다.");
+        ESP_LOGI("NVS", APP_NAMESPACE"초기화 완료! 변경사항을 적용하기 위해 재부팅합니다.");
 
     } else {
-        ESP_LOGE("NVS", "WAVEON NVS 초기화 실패: %s", esp_err_to_name(err));
+        ESP_LOGE("NVS", APP_NAMESPACE"NVS 초기화 실패: %s", esp_err_to_name(err));
+    }
+}
+void reset_all_nvs_menu(void)
+{
+    ESP_LOGW("NVS", MENUFACT_NAMESPACE" NVS 데이터 영역을 초기화합니다...");
+    
+    nvs_handle_t handle;
+    
+    // 1. WAVEON 네임스페이스를 쓰기 모드로 엽니다.
+    esp_err_t err = nvs_open(MENUFACT_NAMESPACE, NVS_READWRITE, &handle);
+    
+    if (err == ESP_OK) {
+        // 2. WAVEON 네임스페이스 내부의 모든 Key를 지웁니다.
+        err = nvs_erase_all(handle);
+        
+        if (err == ESP_OK) {
+            // 3. 변경 사항을 플래시에 반영(커밋)합니다.
+            err = nvs_commit(handle);
+        }
+        
+        // 4. 핸들을 닫아 메모리를 해제합니다.
+        nvs_close(handle);
+    }
+
+    // 결과 처리 및 재부팅
+    if (err == ESP_OK) {
+        ESP_LOGI("NVS", MENUFACT_NAMESPACE "초기화 완료! 변경사항을 적용하기 위해 재부팅합니다.");
+
+    } else {
+        ESP_LOGE("NVS", MENUFACT_NAMESPACE " NVS 초기화 실패: %s", esp_err_to_name(err));
     }
 }
 void reset_all_nvs_facto(void)
@@ -134,7 +294,34 @@ void reset_all_nvs_facto(void)
     // 4. 소프트웨어 재부팅 (ESP Restart)
     esp_restart();    
 }
+#include "esp_flash.h"
+#include "esp_log.h"
+#include <stdint.h>
 
+#define PRODUCTION_FLASH_ADDR    0x20FFF0
+
+
+uint32_t readProductionDate(void)
+{
+    esp_err_t ret = esp_flash_read(
+        NULL,
+        &factory_days,
+        PRODUCTION_FLASH_ADDR,
+        sizeof(factory_days)
+    );
+
+    if(ret != ESP_OK)
+    {
+        ESP_LOGE("MENUFACT", "Flash read failed: %s",
+                 esp_err_to_name(ret));
+        return 0;
+    }
+
+    ESP_LOGI("MENUFACT", "Production Date: %08lX",
+             (unsigned long)factory_days);
+        
+    return factory_days;
+}
 void dump_all_configurations(void)
 {
     ESP_LOGI(TAG, "==================================================");
@@ -160,6 +347,9 @@ void dump_all_configurations(void)
 
     ESP_LOGI(TAG, "  - motion_data_time     : %ld", app_config.motion_data_time);
     ESP_LOGI(TAG, "  - EFFECTIVE_DWELL_TIME : %ld", app_config.EFFECTIVE_DWELL_TIME);
+    ESP_LOGI(TAG, "  - env_mode             : %s", app_config.env_mode);
+
+    
     ESP_LOGI(TAG, "--------------------------------------------------");
 
     // 2. Wi-Fi 설정 출력
@@ -180,17 +370,32 @@ void dump_all_configurations(void)
     ESP_LOGI(TAG, "  - FILTER      : %d", filter_save_time);
     ESP_LOGI(TAG, "==================================================");    
 
+    ESP_LOGI(TAG, "[MENUFACT]");
+    // SSID나 PASSWORD가 비어있으면 [EMPTY]로 센스있게 표기
+
+    ESP_LOGI(TAG, "  - ontime_save  : %d", ontime_save);
+    ESP_LOGI(TAG, "  - motor_on_time_save : %d", motor_on_time_save);
+    ESP_LOGI(TAG, "  - active_time : %08x", active_time);
+
+    ESP_LOGI(TAG, "--------------------------------------------------");
+
+    ESP_LOGI(TAG, "[motor_en] = %s",read_nvs_motor_en_flag()?"true":"false" );
+    
+    
+    
     ESP_LOGI(TAG, "[FACTO CONFIG]");
     // SSID나 PASSWORD가 비어있으면 [EMPTY]로 센스있게 표기
 
     ESP_LOGI(TAG, "  - facto scale          : %.2f", facto_config.hx1_scale);
-    ESP_LOGI(TAG, "  - facto case_raw_data  : %d", app_config.case_raw_data);
+    ESP_LOGI(TAG, "  - case_raw_data        : %d", facto_config.case_raw_data);
+    ESP_LOGI(TAG, "  - tof_sense_cal_l      : %d", facto_config.tof_sense_cal_l);
+    ESP_LOGI(TAG, "  - tof_sense_cal_r      : %d", facto_config.tof_sense_cal_r);
     ESP_LOGI(TAG, "  - facto serial         : %s", (facto_config.Device_Serial[0] == '\0') ? "[EMPTY]" : (char*)facto_config.Device_Serial);
     ESP_LOGI(TAG, "--------------------------------------------------");
 
     ESP_LOGI(TAG, "[Registation] = %s",read_nvs_registration_flag()?"true":"false" );
     
-
+    readProductionDate();
 }
 
 app_config_t* get_app_config(void)
@@ -235,11 +440,6 @@ void load_app_configuration(void)
         // 기본값 세팅 후 NVS에 최초로 구워두기
         write_nvs_blob(APP_NAMESPACE, APP_KEY_CONFIGURATION, &app_config, sizeof(app_config_t));
     } else {
-        if(facto_config.hx1_scale == 1000.f && app_config.hx1_scale != 1000.0f)
-        {
-            facto_config.hx1_scale = app_config.hx1_scale;
-            save_facto_configuration();
-        }
         ESP_LOGI(TAG,"[CONFIG] NVS에서 시스템 설정 로드 성공! (opmode = %d 저울 Offset: %d)\r\n", 
                           app_config.op_mode, app_config.hx1_offset);
     }
@@ -372,6 +572,139 @@ static void save_facto_configuration(void)
     }
 }
 
+void load_rtc_init_time(void)
+{
+    // 3. NVS에서 데이터를 다시 역으로 로드(Load)
+    esp_err_t err = read_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_ACTIVE, &active_time);
+
+    if (err != ESP_OK) {
+        // 2. 만약 최초 부팅이라 데이터가 없다면 기본값(Default) 세팅
+        ESP_LOGI(TAG,"[MOTOR] 저장된 설정이 없어 기본값을 생성합니다.\r\n");
+                
+        // 기본값 세팅 후 NVS에 최초로 구워두기
+        write_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_ACTIVE, active_time);   
+    } else {
+        ESP_LOGI(TAG,"[active_time] NVS에서 시스템 설정 로드 성공! (active_time = %d)\r\n", 
+                          active_time);
+    }
+}
+
+static void save_rtc_init_time(void)
+{
+    if(active_time != 0)
+        return;
+
+    active_time = date_buf;
+    write_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_ACTIVE, active_time);
+// 2. 검증을 위해 NVS에서 방금 저장한 값을 다시 읽어올 임시 그릇 생성
+    uint32_t temp_cfg = 0xffffffff;
+
+    // 3. NVS에서 데이터를 다시 역으로 로드(Load)
+    esp_err_t err = read_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_ACTIVE, &temp_cfg);
+
+    if (err == ESP_OK) {
+        // 4. 🔥 memcmp로 원본(ble_config)과 읽어온 것(temp_cfg)을 크기만큼 비교
+        // memcmp는 두 메모리가 완전히 일치하면 '0'을 반환합니다.
+        if (temp_cfg == active_time) {
+            ESP_LOGI(TAG, "[BLE] NVS 데이터 검증 성공! 읽어온 값이 원본과 100%% 일치합니다.");
+            ESP_LOGI(TAG, "[BLE] 로드된 이름: %d", active_time);
+            
+        } else {
+            // 메모리가 일치하지 않는 경우 (대개 이런 일은 거의 없지만, 플래시 불량 등의 이슈 체크용)
+            ESP_LOGE(TAG, "[BLE]  NVS 데이터 검증 실패! 저장된 값이 원본과 다릅니다!");
+        }
+    } else {
+        ESP_LOGE(TAG, "[BLE] 검증을 위해 다시 읽어오는 과정에서 에러 발생 (%s)", esp_err_to_name(err));
+    }
+}
+
+
+void load_motor_ontime_time(void)
+{
+    // 3. NVS에서 데이터를 다시 역으로 로드(Load)
+    esp_err_t err = read_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_MOTOR_ON, &motor_on_time_save);
+
+    if (err != ESP_OK) {
+        // 2. 만약 최초 부팅이라 데이터가 없다면 기본값(Default) 세팅
+        ESP_LOGI(TAG,"[MOTOR] 저장된 설정이 없어 기본값을 생성합니다.\r\n");
+                
+        // 기본값 세팅 후 NVS에 최초로 구워두기
+        write_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_MOTOR_ON, motor_on_time_save);   
+    } else {
+        ESP_LOGI(TAG,"[motor_on_time_save] NVS에서 시스템 설정 로드 성공! (motor_on_time_save = %d)\r\n", 
+                          motor_on_time_save);
+    }
+}
+
+static void save_motor_on_time(void)
+{
+    if(motor_on_time_save >= 35000)
+        return;
+    motor_on_time_save++;
+    write_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_MOTOR_ON, motor_on_time_save);
+// 2. 검증을 위해 NVS에서 방금 저장한 값을 다시 읽어올 임시 그릇 생성
+    uint32_t temp_cfg = 0xffffffff;
+
+    // 3. NVS에서 데이터를 다시 역으로 로드(Load)
+    esp_err_t err = read_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_MOTOR_ON, &temp_cfg);
+
+    if (err == ESP_OK) {
+        // 4. 🔥 memcmp로 원본(ble_config)과 읽어온 것(temp_cfg)을 크기만큼 비교
+        // memcmp는 두 메모리가 완전히 일치하면 '0'을 반환합니다.
+        if (temp_cfg == motor_on_time_save) {
+            ESP_LOGI(TAG, "[BLE] NVS 데이터 검증 성공! 읽어온 값이 원본과 100%% 일치합니다.");
+            ESP_LOGI(TAG, "[BLE] 로드된 이름: %d", motor_on_time_save);
+            
+        } else {
+            // 메모리가 일치하지 않는 경우 (대개 이런 일은 거의 없지만, 플래시 불량 등의 이슈 체크용)
+            ESP_LOGE(TAG, "[BLE]  NVS 데이터 검증 실패! 저장된 값이 원본과 다릅니다!");
+        }
+    } else {
+        ESP_LOGE(TAG, "[BLE] 검증을 위해 다시 읽어오는 과정에서 에러 발생 (%s)", esp_err_to_name(err));
+    }
+}
+
+void load_ontime_time(void)
+{
+    // 3. NVS에서 데이터를 다시 역으로 로드(Load)
+    esp_err_t err = read_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_ONTIME, &ontime_save);
+
+    if (err != ESP_OK) {
+        // 2. 만약 최초 부팅이라 데이터가 없다면 기본값(Default) 세팅
+        ESP_LOGI(TAG,"[MOTOR] 저장된 설정이 없어 기본값을 생성합니다.\r\n");
+                
+        // 기본값 세팅 후 NVS에 최초로 구워두기
+        write_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_ONTIME, ontime_save);   
+    } else {
+        ESP_LOGI(TAG,"[ontime] NVS에서 시스템 설정 로드 성공! (ontime_save = %d)\r\n", 
+                          ontime_save);
+    }
+}
+static void save_on_time(void)
+{
+    ontime_save++;
+    write_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_ONTIME, ontime_save);
+// 2. 검증을 위해 NVS에서 방금 저장한 값을 다시 읽어올 임시 그릇 생성
+    uint32_t temp_cfg = 0xffffffff;
+
+    // 3. NVS에서 데이터를 다시 역으로 로드(Load)
+    esp_err_t err = read_nvs_uint(MENUFACT_NAMESPACE, MENUFACT_ONTIME, &temp_cfg);
+
+    if (err == ESP_OK) {
+        // 4. 🔥 memcmp로 원본(ble_config)과 읽어온 것(temp_cfg)을 크기만큼 비교
+        // memcmp는 두 메모리가 완전히 일치하면 '0'을 반환합니다.
+        if (temp_cfg == ontime_save) {
+            ESP_LOGI(TAG, "[BLE] NVS 데이터 검증 성공! 읽어온 값이 원본과 100%% 일치합니다.");
+            ESP_LOGI(TAG, "[BLE] 로드된 이름: %d", ontime_save);
+            
+        } else {
+            // 메모리가 일치하지 않는 경우 (대개 이런 일은 거의 없지만, 플래시 불량 등의 이슈 체크용)
+            ESP_LOGE(TAG, "[BLE]  NVS 데이터 검증 실패! 저장된 값이 원본과 다릅니다!");
+        }
+    } else {
+        ESP_LOGE(TAG, "[BLE] 검증을 위해 다시 읽어오는 과정에서 에러 발생 (%s)", esp_err_to_name(err));
+    }
+}
 
 void load_motor_time(void)
 {
@@ -457,34 +790,10 @@ static void save_filter_time(void)
 }
 #define FLASH_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 2)
 
-static void minute10_timer_callback(void* arg)
-{
-    if(motor_save_time_buf != motor_save_time)
-    {
-        motor_save_time_buf = motor_save_time;
-        motor_nvs_save_set();
-    }
-
-    if(filter_save_time_buf != filter_save_time)
-    {
-        filter_save_time_buf = filter_save_time;
-        filter_nvs_save_set();
-    }
-}
-
-
 static void flash_task(void *pvParameter)
 {
     ESP_LOGI(TAG, "Starting flash_task ");
-    const esp_timer_create_args_t minute10_timer_args = {
-        .callback = &minute10_timer_callback,
-        .name = "minute10_timer"
-    };
 
-    // 타이머 생성
-    ESP_ERROR_CHECK(esp_timer_create(&minute10_timer_args, &minute10_timer));
-
-    ESP_ERROR_CHECK(esp_timer_start_periodic(minute10_timer, TIMER_10_MIN_IN_US));
     while (1) {
 
         if(app_save_flag)
@@ -512,7 +821,23 @@ static void flash_task(void *pvParameter)
             filter_save_flag = false;
             save_filter_time();
         }
+        if(ontime_save_flag)
+        {
+            ontime_save_flag = false;
+            save_on_time();
+        }        
+        if(motor_ontime_save_flag)
+        {
+            motor_ontime_save_flag = false;
+            save_motor_on_time();
+        }        
+        if(rtc_init_save_flag)
+        {
+            rtc_init_save_flag = false;
+            save_rtc_init_time();
+        }    
 
+        
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
@@ -540,6 +865,9 @@ void NVS_Flash_init(void)
 
     load_motor_time();
     load_filter_time();    
+    load_ontime_time();
+    load_motor_ontime_time();
+    load_rtc_init_time();
     dump_all_configurations();
     //app_config.gate_way_rssi_th = -100;
 }

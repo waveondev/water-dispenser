@@ -37,11 +37,11 @@ typedef enum {
 static int click_count = 0;
 static int64_t pressed_time = 0;
 static bool is_pressed = false;
-
+static bool qc_mode = false;
 static QueueHandle_t gpio_evt_queue = NULL;
 static TimerHandle_t double_click_timer = NULL;
 // ⚠️ long_press_timer 및 long_press_stage 변수는 더 이상 필요 없으므로 삭제됨
-static bool factory_flag = false;
+static int factory_flag = 0;
 // 함수 선언
 static void Button_task(void* arg);
 static void double_click_timer_callback(TimerHandle_t xTimer);
@@ -49,33 +49,57 @@ static void double_click_timer_callback(TimerHandle_t xTimer);
 // [ISR] 인터럽트 서비스 루틴
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
+    if(qc_mode == true)
+    return;
     uint32_t gpio_num = (uint32_t) arg;
     xQueueSendFromISR(gpio_evt_queue, &gpio_num, NULL);
 }
 
-bool get_factory_flag(void)
+int get_factory_flag(void)
 {
     return factory_flag;
+}
+void set_factory_flag(int status)
+{
+    factory_flag = status;
 }
 
 
 void bf_SingleClickAction(void) {
+    if(qc_mode == true)
+    return;
     Opmode_Set(NULL);
     ESP_LOGI(TAG,"Single Click Action executed \r\n");
 }
 
 void bf_DoubleClickAction(void) {
     app_config_t* app_config = get_app_config();
+    if(qc_mode == true)
+    return;    
     ble_advertising_reset(true);
     ESP_LOGI(TAG,"Double Click Action executed\r\n");
 }
 
 void bf_LongPress3SecAction(void) {
-   
+    if(qc_mode == true)
+    {
+        set_rgb_len_no_Breathing(0,0,0,255);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        set_rgb_len_no_Breathing(0,0,0,0);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        set_rgb_len_no_Breathing(0,0,0,255);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        set_rgb_len_no_Breathing(0,0,0,0);
+        vTaskDelay(pdMS_TO_TICKS(500));    
+        return;
+    }
+    
     ESP_LOGI(TAG,"Long Press 3 Sec Action executed\r\n");
 }
 
 void bf_LongPress5SecAction(void) {
+    if(qc_mode == true)
+    return;
     ESP_LOGI(TAG,"Long Press 5 Sec Action executed \r\n");
     write_nvs_registration_flag(false);
     Wifi_Disconnect();
@@ -84,12 +108,13 @@ void bf_LongPress5SecAction(void) {
 }
 
 void bf_LongPress10SecAction(void) {
+    if(qc_mode == true)
+    return;    
     ESP_LOGI(TAG,"Long Press 10 Sec Action executed \r\n");
-    //delay(1000); 
-    //ESP.restart();
-    factory_flag = true;
-    //facto_set(false);
+
+    set_factory_flag(FACTORY_APP);
 }
+
 int button_press_state(void)
 {
     if(is_pressed == true)
@@ -141,7 +166,7 @@ static void Button_task(void* arg)
                 is_pressed = false;
 
                 int64_t press_duration = now - pressed_time; // 누르고 있던 총 시간 계산
-
+                button_press();
                 // 가장 긴 시간부터 체크해서 걸러냅니다.
                 if (press_duration >= LONG_PRESS_10S_MS) {
                     ESP_LOGI(TAG, "👉 [EVENT] 10초 롱클릭 (뗌)!");
@@ -192,7 +217,9 @@ bool button_task_init(void)
     gpio_config(&io_conf);
     int  current_level= gpio_get_level(PIN_PKEY_STAT);
     if(current_level == 0)
-        return true;
+    {
+        qc_mode = true;
+    }
     gpio_install_isr_service(0);
     gpio_isr_handler_add(PIN_PKEY_STAT, gpio_isr_handler, (void*) PIN_PKEY_STAT);
 
@@ -201,7 +228,6 @@ bool button_task_init(void)
     double_click_timer = xTimerCreate("double_click_timer", pdMS_TO_TICKS(DOUBLE_CLICK_DELAY_MS), 
                                       pdFALSE, (void*)0, double_click_timer_callback);
                                       
-    // ⚠️ long_press_timer 생성 코드도 삭제되었습니다.
 
     if (xTaskCreate(
             Button_task,
@@ -213,5 +239,5 @@ bool button_task_init(void)
         ) != pdPASS) {
         ESP_LOGE(TAG, "Error creating Button_task on Core 1");
     }
-    return false;
+    return qc_mode;
 }

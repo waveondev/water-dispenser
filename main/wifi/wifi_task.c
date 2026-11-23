@@ -299,6 +299,7 @@ uint16_t wifi_scan_start(void)
 
 
 bool time_sync_flag = false;
+void rtc_init_nvs_save_set(uint32_t date);
 bool time_sync_get(void)
 {
     return time_sync_flag;
@@ -306,9 +307,11 @@ bool time_sync_get(void)
 // [단계 2] NTP 서버로부터 시간이 실제로 동기화되었을 때 호출되는 콜백 함수
 void time_sync_notification_cb(struct timeval *tv) {
     ESP_LOGI(TAG, "NTP 시간 동기화 완료!");
+    if (s_ntp_retry_timer != NULL) {
         esp_timer_stop(s_ntp_retry_timer);
-    esp_timer_delete(s_ntp_retry_timer);
-    s_ntp_retry_timer = NULL;
+        esp_timer_delete(s_ntp_retry_timer);
+        s_ntp_retry_timer = NULL;
+    }
     // 한국 표준시(KST) 세팅 (UTC + 9시간)
     setenv("TZ", "KST-9", 1);
     tzset();
@@ -322,7 +325,26 @@ void time_sync_notification_cb(struct timeval *tv) {
     char strftime_buf[64];
     strftime(strftime_buf, sizeof(strftime_buf), "%Y-%m-%d %H:%M:%S", &timeinfo);
     ESP_LOGI(TAG, "현재 한국 시간: %s", strftime_buf);
+
+// 연, 월, 일을 10진수 숫자로 변환
+    uint32_t year  = timeinfo.tm_year + 1900; // 예: 2026
+    uint32_t month = timeinfo.tm_mon + 1;     // 예: 11
+    uint32_t day   = timeinfo.tm_mday;        // 예: 17
+
+    // 각 자릿수를 16진수(BCD) 형태로 변환하여 0x20261117 만들기
+    uint32_t bcd_date = (((year / 1000) % 10) << 28) |
+                        (((year / 100)  % 10) << 24) |
+                        (((year / 10)   % 10) << 20) |
+                        ((year          % 10) << 16) |
+                        (((month / 10)  % 10) << 12) |
+                        ((month         % 10) << 8)  |
+                        (((day / 10)    % 10) << 4)  |
+                        (day            % 10);
+
+    ESP_LOGI(TAG, "저장된 BCD 날짜: 0x%08lX", bcd_date); // 출력: 0x20261117
+    rtc_init_nvs_save_set(bcd_date);
     time_sync_flag = true;
+
 }
 
 // [단계 1] 와이파이 연결 성공 시 호출할 SNTP 초기화 함수

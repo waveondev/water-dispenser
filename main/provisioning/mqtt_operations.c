@@ -386,94 +386,123 @@ static uint32_t generateRandomNumber()
     return( ( uint32_t ) rand() );
 }
 /*-----------------------------------------------------------*/
-
-static bool connectToBrokerWithBackoffRetries( NetworkContext_t * pNetworkContext,
-                                               CK_SESSION_HANDLE p11Session,
-                                               char * pClientCertLabel,
-                                               char * pPrivateKeyLabel )
+static bool connectToBrokerWithBackoffRetries(
+    NetworkContext_t *pNetworkContext,
+    CK_SESSION_HANDLE p11Session,
+    char *pClientCertLabel,
+    char *pPrivateKeyLabel)
 {
     bool returnStatus = false;
-    BackoffAlgorithmStatus_t backoffAlgStatus = BackoffAlgorithmSuccess;
-    MbedtlsPkcs11Status_t tlsStatus = MBEDTLS_PKCS11_SUCCESS;
+
+    BackoffAlgorithmStatus_t backoffAlgStatus =
+        BackoffAlgorithmSuccess;
+
+    MbedtlsPkcs11Status_t tlsStatus =
+        MBEDTLS_PKCS11_SUCCESS;
+
     BackoffAlgorithmContext_t reconnectParams;
-    MbedtlsPkcs11Credentials_t tlsCredentials = { 0 };
+
+    MbedtlsPkcs11Credentials_t tlsCredentials = {0};
+
     uint16_t nextRetryBackOff = 0U;
 
-    /* Set the pParams member of the network context with desired transport. */
-    pNetworkContext->pParams = &tlsContext;
+    if(pNetworkContext == NULL)
+    {
+        return false;
+    }
 
-    /* Initialize credentials for establishing TLS session. */
+    /*
+     * TLS Credentials
+     */
     tlsCredentials.pRootCaPath = ROOT_CA_CERT_PATH;
     tlsCredentials.pClientCertLabel = pClientCertLabel;
     tlsCredentials.pPrivateKeyLabel = pPrivateKeyLabel;
     tlsCredentials.p11Session = p11Session;
-
-    /* AWS IoT requires devices to send the Server Name Indication (SNI)
-     * extension to the Transport Layer Security (TLS) protocol and provide
-     * the complete endpoint address in the host_name field. Details about
-     * SNI for AWS IoT can be found in the link below.
-     * https://docs.aws.amazon.com/iot/latest/developerguide/transport-security.html
-     */
     tlsCredentials.disableSni = false;
 
-    if( AWS_MQTT_PORT == 443 )
+    if(AWS_MQTT_PORT == 443)
     {
-        static const char * alpnProtoArray[] = { NULL, NULL };
-        alpnProtoArray[0] = ALPN_PROTOCOL_NAME;
+        static const char *alpnProtoArray[] =
+        {
+            ALPN_PROTOCOL_NAME,
+            NULL
+        };
 
-        /* Pass the ALPN protocol name depending on the port being used.
-         * Please see more details about the ALPN protocol for AWS IoT MQTT endpoint
-         * in the link below.
-         * https://aws.amazon.com/blogs/iot/mqtt-with-tls-client-authentication-on-port-443-why-it-is-useful-and-how-it-works/
-         */
         tlsCredentials.pAlpnProtos = alpnProtoArray;
     }
 
-    /* Initialize reconnect attempts and interval */
-    BackoffAlgorithm_InitializeParams( &reconnectParams,
-                                       CONNECTION_RETRY_BACKOFF_BASE_MS,
-                                       CONNECTION_RETRY_MAX_BACKOFF_DELAY_MS,
-                                       CONNECTION_RETRY_MAX_ATTEMPTS );
+    /*
+     * Retry 초기화
+     */
+    BackoffAlgorithm_InitializeParams(
+        &reconnectParams,
+        CONNECTION_RETRY_BACKOFF_BASE_MS,
+        CONNECTION_RETRY_MAX_BACKOFF_DELAY_MS,
+        CONNECTION_RETRY_MAX_ATTEMPTS
+    );
 
     do
     {
-        /* Establish a TLS session with the MQTT broker. This example connects
-         * to the MQTT broker as specified in AWS_IOT_ENDPOINT and AWS_MQTT_PORT
-         * at the demo config header. */
-        LogDebug( ( "Establishing a TLS session to %.*s:%d.",
-                    AWS_IOT_ENDPOINT_LENGTH,
-                    AWS_IOT_ENDPOINT,
-                    AWS_MQTT_PORT ) );
+        /*
+         * TLS Context 지정
+         */
+        pNetworkContext->pParams = &tlsContext;
 
-        tlsStatus = Mbedtls_Pkcs11_Connect( pNetworkContext,
-                                            AWS_IOT_ENDPOINT,
-                                            AWS_MQTT_PORT,
-                                            &tlsCredentials,
-                                            TRANSPORT_SEND_RECV_TIMEOUT_MS );
+        LogInfo(("Starting TLS connection attempt"));
 
-        if( tlsStatus == MBEDTLS_PKCS11_SUCCESS )
+        /*
+         * TLS Connect
+         */
+        tlsStatus = Mbedtls_Pkcs11_Connect(
+            pNetworkContext,
+            AWS_IOT_ENDPOINT,
+            AWS_MQTT_PORT,
+            &tlsCredentials,
+            TRANSPORT_SEND_RECV_TIMEOUT_MS
+        );
+
+        if(tlsStatus == MBEDTLS_PKCS11_SUCCESS)
         {
-            /* Connection successful. */
+            LogInfo(("TLS connection successful"));
+
             returnStatus = true;
+            break;
         }
-        else
-        {
-            /* Generate a random number and get back-off value (in milliseconds) for the next connection retry. */
-            backoffAlgStatus = BackoffAlgorithm_GetNextBackoff( &reconnectParams, generateRandomNumber(), &nextRetryBackOff );
 
-            if( backoffAlgStatus == BackoffAlgorithmRetriesExhausted )
-            {
-                LogError( ( "Connection to the broker failed, all attempts exhausted." ) );
-            }
-            else if( backoffAlgStatus == BackoffAlgorithmSuccess )
-            {
-                LogWarn( ( "Connection to the broker failed. Retrying connection "
-                           "after %hu ms backoff.",
-                           ( unsigned short ) nextRetryBackOff ) );
-                Clock_SleepMs( nextRetryBackOff );
-            }
+        /*
+         * 실패 시 Mbedtls_Pkcs11_Connect 내부에서
+         * contextFree()가 이미 실행됨.
+         *
+         * 여기서는 Disconnect 호출하지 않음.
+         */
+        LogError(("TLS connection failed: %d", tlsStatus));
+
+        /*
+         * 다음 재시도 Backoff
+         */
+        backoffAlgStatus = BackoffAlgorithm_GetNextBackoff(
+            &reconnectParams,
+            generateRandomNumber(),
+            &nextRetryBackOff
+        );
+
+        if(backoffAlgStatus == BackoffAlgorithmRetriesExhausted)
+        {
+            LogError(("TLS retry attempts exhausted"));
+            break;
         }
-    } while( ( tlsStatus != MBEDTLS_PKCS11_SUCCESS ) && ( backoffAlgStatus == BackoffAlgorithmSuccess ) );
+
+        if(backoffAlgStatus == BackoffAlgorithmSuccess)
+        {
+            LogWarn((
+                "Retrying TLS connection after %hu ms",
+                (unsigned short)nextRetryBackOff
+            ));
+
+            Clock_SleepMs(nextRetryBackOff);
+        }
+
+    } while(backoffAlgStatus == BackoffAlgorithmSuccess);
 
     return returnStatus;
 }
@@ -733,93 +762,77 @@ static bool waitForPacketAck( MQTTContext_t * pMqttContext,
 }
 /*-----------------------------------------------------------*/
 #include "esp_mac.h"
-bool EstablishMqttSession( MQTTPublishCallback_t publishCallback,
-                           CK_SESSION_HANDLE p11Session,
-                           char * pClientCertLabel,
-                           char * pPrivateKeyLabel )
+
+bool EstablishMqttSession(
+    MQTTPublishCallback_t publishCallback,
+    CK_SESSION_HANDLE p11Session,
+    char *pClientCertLabel,
+    char *pPrivateKeyLabel)
 {
     bool returnStatus = false;
     bool networkConnected = false;
 
     MQTTStatus_t mqttStatus;
-    MQTTConnectInfo_t connectInfo = { 0 };
+    MQTTConnectInfo_t connectInfo = {0};
     MQTTFixedBuffer_t networkBuffer;
-    TransportInterface_t transport = { NULL };
+    TransportInterface_t transport = {NULL};
 
     bool createCleanSession = false;
     bool sessionPresent = false;
 
-    MQTTContext_t * pMqttContext = &mqttContext;
-    NetworkContext_t * pNetworkContext = &networkContext;
+    MQTTContext_t *pMqttContext = &mqttContext;
+    NetworkContext_t *pNetworkContext = &networkContext;
 
     uint8_t mac_byte[6];
     char dynamicMacStr[13];
     char con_info_str[100];
 
-    assert( pMqttContext != NULL );
-    assert( pNetworkContext != NULL );
-
-    /*
-     * 1. 이전 연결 상태 확인
-     *
-     * 이전 연결이 살아 있는 상태에서 memset하면 안 됩니다.
-     * 호출 측에서 이전 세션을 정리했다는 전제가 필요합니다.
-     */
-
-    if( mqttSessionEstablished == true )
+    if(mqttSessionEstablished == true)
     {
-        LogError( ( "Previous MQTT session is still established." ) );
+        LogError(("Previous MQTT session is still established"));
         return false;
     }
 
     /*
-     * 2. Context 초기화
+     * 중요:
+     * 이전 호출에서 TLS 부분 초기화 리소스가 남아 있지 않아야 함.
+     *
+     * connectToBrokerWithBackoffRetries()가 실패 시
+     * 내부 리소스를 모두 정리한다는 전제가 필요함.
      */
 
-    memset( pMqttContext, 0, sizeof( MQTTContext_t ) );
-    memset( pNetworkContext, 0, sizeof( NetworkContext_t ) );
+    memset(pMqttContext, 0, sizeof(MQTTContext_t));
+    memset(pNetworkContext, 0, sizeof(NetworkContext_t));
 
     mqttSessionEstablished = false;
 
-    /*
-     * 3. MAC 주소 읽기
-     */
+    esp_read_mac(mac_byte, ESP_MAC_WIFI_STA);
 
-    esp_read_mac( mac_byte, ESP_MAC_WIFI_STA );
-
-    snprintf( dynamicMacStr,
-              sizeof( dynamicMacStr ),
-              "%02X%02X%02X%02X%02X%02X",
-              mac_byte[0],
-              mac_byte[1],
-              mac_byte[2],
-              mac_byte[3],
-              mac_byte[4],
-              mac_byte[5] );
+    snprintf(
+        dynamicMacStr,
+        sizeof(dynamicMacStr),
+        "%02X%02X%02X%02X%02X%02X",
+        mac_byte[0], mac_byte[1], mac_byte[2],
+        mac_byte[3], mac_byte[4], mac_byte[5]
+    );
 
     /*
-     * 4. TLS 연결
+     * 1. TLS 연결
      */
-
     returnStatus = connectToBrokerWithBackoffRetries(
-                       pNetworkContext,
-                       p11Session,
-                       pClientCertLabel,
-                       pPrivateKeyLabel );
+        pNetworkContext,
+        p11Session,
+        pClientCertLabel,
+        pPrivateKeyLabel
+    );
 
-    if( returnStatus != true )
+    if(returnStatus != true)
     {
-        LogError( ( "Failed to connect to MQTT broker %.*s.",
-                    AWS_IOT_ENDPOINT_LENGTH,
-                    AWS_IOT_ENDPOINT ) );
+        LogError(("TLS connection failed"));
 
         /*
-         * 중요:
-         * TLS 연결 함수가 실패했더라도 부분 초기화된
-         * 리소스가 남아 있을 수 있습니다.
-         *
-         * Disconnect가 부분 초기화 상태에서도 안전한지
-         * 반드시 구현을 확인해야 합니다.
+         * 여기서 부분 초기화 리소스가 남아 있으면 안 됨.
+         * TLS 연결 함수 내부에서 실패 정리해야 함.
          */
         goto cleanup;
     }
@@ -827,17 +840,12 @@ bool EstablishMqttSession( MQTTPublishCallback_t publishCallback,
     networkConnected = true;
 
     /*
-     * 5. Transport 초기화
+     * 2. MQTT Transport
      */
-
     transport.pNetworkContext = pNetworkContext;
     transport.send = Mbedtls_Pkcs11_Send;
     transport.recv = Mbedtls_Pkcs11_Recv;
     transport.writev = NULL;
-
-    /*
-     * 6. MQTT Network Buffer
-     */
 
     networkBuffer.pBuffer = buffer;
     networkBuffer.size = CONFIG_MQTT_NETWORK_BUFFER_SIZE;
@@ -845,154 +853,121 @@ bool EstablishMqttSession( MQTTPublishCallback_t publishCallback,
     appPublishCallback = publishCallback;
 
     /*
-     * 7. MQTT 초기화
+     * 3. MQTT 초기화
      */
-
     mqttStatus = MQTT_Init(
-                     pMqttContext,
-                     &transport,
-                     Clock_GetTimeMs,
-                     mqttCallback,
-                     &networkBuffer );
+        pMqttContext,
+        &transport,
+        Clock_GetTimeMs,
+        mqttCallback,
+        &networkBuffer
+    );
 
-    if( mqttStatus != MQTTSuccess )
+    if(mqttStatus != MQTTSuccess)
     {
-        LogError( ( "MQTT_Init failed: %s",
-                    MQTT_Status_strerror( mqttStatus ) ) );
-
+        LogError(("MQTT_Init failed"));
         goto cleanup;
     }
 
     /*
-     * 8. MQTT Stateful QoS 초기화
+     * 4. QoS 초기화
      */
-
     mqttStatus = MQTT_InitStatefulQoS(
-                     pMqttContext,
-                     pOutgoingPublishRecords,
-                     OUTGOING_PUBLISH_RECORD_LEN,
-                     pIncomingPublishRecords,
-                     INCOMING_PUBLISH_RECORD_LEN );
+        pMqttContext,
+        pOutgoingPublishRecords,
+        OUTGOING_PUBLISH_RECORD_LEN,
+        pIncomingPublishRecords,
+        INCOMING_PUBLISH_RECORD_LEN
+    );
 
-    if( mqttStatus != MQTTSuccess )
+    if(mqttStatus != MQTTSuccess)
     {
-        LogError( ( "MQTT_InitStatefulQoS failed: %s",
-                    MQTT_Status_strerror( mqttStatus ) ) );
-
+        LogError(("MQTT_InitStatefulQoS failed"));
         goto cleanup;
     }
 
     /*
-     * 9. MQTT Connect 정보 설정
+     * 5. Connect 정보
      */
-
     connectInfo.cleanSession = createCleanSession;
 
-    snprintf( con_info_str,
-              sizeof( con_info_str ),
-              "%s_%s",
-              CONFIG_DEVICE_PREFIX,
-              dynamicMacStr );
+    snprintf(
+        con_info_str,
+        sizeof(con_info_str),
+        "%s_%s",
+        CONFIG_DEVICE_PREFIX,
+        dynamicMacStr
+    );
 
     connectInfo.pClientIdentifier = con_info_str;
-    connectInfo.clientIdentifierLength = strlen( con_info_str );
+    connectInfo.clientIdentifierLength = strlen(con_info_str);
 
     connectInfo.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_SECONDS;
-
     connectInfo.pUserName = METRICS_STRING;
     connectInfo.userNameLength = METRICS_STRING_LENGTH;
 
-    connectInfo.pPassword = NULL;
-    connectInfo.passwordLength = 0U;
-
     /*
-     * 10. MQTT Connect
+     * 6. MQTT Connect
      */
-
     mqttStatus = MQTT_Connect(
-                     pMqttContext,
-                     &connectInfo,
-                     NULL,
-                     CONNACK_RECV_TIMEOUT_MS,
-                     &sessionPresent );
+        pMqttContext,
+        &connectInfo,
+        NULL,
+        CONNACK_RECV_TIMEOUT_MS,
+        &sessionPresent
+    );
 
-    if( mqttStatus != MQTTSuccess )
+    if(mqttStatus != MQTTSuccess)
     {
-        LogError( ( "MQTT_Connect failed: %s",
-                    MQTT_Status_strerror( mqttStatus ) ) );
-
+        LogError(("MQTT_Connect failed"));
         goto cleanup;
     }
 
-    /*
-     * 11. MQTT 연결 성공
-     */
-
     mqttSessionEstablished = true;
 
-    LogDebug( ( "MQTT connection successfully established." ) );
-
     /*
-     * 12. 기존 Publish 복구 처리
+     * 7. 기존 세션 복구
      */
-
-    if( sessionPresent == true )
+    if(sessionPresent == true)
     {
-        LogDebug( ( "Restoring previous MQTT session." ) );
+        returnStatus = handlePublishResend(pMqttContext);
 
-        returnStatus = handlePublishResend( pMqttContext );
-
-        if( returnStatus != true )
+        if(returnStatus != true)
         {
-            LogError( ( "handlePublishResend failed." ) );
-
+            LogError(("handlePublishResend failed"));
             goto cleanup;
         }
     }
     else
     {
-        LogDebug( ( "New MQTT session established." ) );
-
         cleanupOutgoingPublishes();
     }
 
-    returnStatus = true;
+    /*
+     * 8. 연결 성공
+     */
+    LogInfo(("MQTT connection successfully established"));
 
-    return returnStatus;
+    return true;
 
-
-/*
- * ============================================================
- * 공통 실패 정리
- * ============================================================
- */
 
 cleanup:
 
-    LogError( ( "MQTT connection cleanup started." ) );
+    LogError(("MQTT cleanup started"));
 
-    /*
-     * MQTT 연결이 실제로 성공한 경우에만
-     * MQTT DISCONNECT를 시도하도록 합니다.
-     */
-
-    if( mqttSessionEstablished == true )
+    if(mqttSessionEstablished == true)
     {
-        MQTT_Disconnect( pMqttContext );
+        MQTT_Disconnect(pMqttContext);
         mqttSessionEstablished = false;
     }
 
-    /*
-     * TLS / TCP 연결 정리
-     */
-
-    if( networkConnected == true )
+    if(networkConnected == true)
     {
-        Mbedtls_Pkcs11_Disconnect( pNetworkContext );
+        Mbedtls_Pkcs11_Disconnect(pNetworkContext);
         networkConnected = false;
     }
 
-    LogError( ( "MQTT connection cleanup completed." ) );
+    LogError(("MQTT cleanup completed"));
 
     return false;
 }

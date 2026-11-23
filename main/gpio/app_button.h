@@ -2,6 +2,7 @@
 #define __APP_BUTTON_H__
 
 bool get_factory_flag(void);
+void set_factory_flag(int status);
 bool button_task_init(void);
 
 

@@ -23,12 +23,17 @@
 #define LSM6_DATA_RESPONSE    0x31
 
 
-#define FACTORY_REQUEST       0xF0
-#define FACTORY_RESPONSE      0xF1
-#define SETTING_REQUEST       0xF2
-#define SETTING_RESPONSE      0xF3
+#define MANUFACT1_REQUEST       0xF2
+#define MANUFACT1_RESPONSE      0xF3
+#define MANUFACT2_REQUEST       0xF4
+#define MANUFACT2_RESPONSE      0xF5
 
-
+#define PING_REQUEST          0xFA
+#define PING_RESPONSE         0xFB
+#define SETTING_REQUEST       0xFC
+#define SETTING_RESPONSE      0xFD
+#define FACTORY_REQUEST       0xFE
+#define FACTORY_RESPONSE      0xFF
 typedef union {
       struct {
         uint8_t Bat_Status : 2;  
@@ -158,7 +163,11 @@ typedef struct {
         uint32_t epoch_sec;
         uint8_t padding[14];
       } time_res;
-
+      struct
+      {
+        uint8_t seq;
+        uint8_t padding[18];
+      } ping_res;
       struct
       {
         uint8_t cmd_type;
@@ -236,6 +245,29 @@ typedef struct {
           } beacon_get_value; 
         };
       } setting_res;
+      struct
+      {
+        uint32_t Manufacture_date;
+        uint8_t mac[6];
+        uint8_t major;
+        uint8_t minor;
+        uint8_t patch;
+        uint32_t active_time; // on 타임 시간 // 최초 활성화 일시
+        uint16_t battery_time; // 펌프 가동 시간 // 제품 사용 여부
+      } manufact_res;
+      struct
+      {
+        uint32_t Manufacture_date;
+        uint8_t major;
+        uint8_t minor;
+        uint8_t patch;
+        uint8_t reserved[12];
+      } factory_req;
+      struct
+      {
+        uint8_t ret;
+        uint8_t reserved[18];
+      } factory_res;
   };
 } Motion_Packet_t;
 #pragma pack(pop)

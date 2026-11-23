@@ -12,8 +12,8 @@
 #define FILTER_DEBRIS_BIT   (1<<8)
 #define PUMP_ERR_BIT        (1<<7)
 
-void LED_Bright_Set(uint8_t value);
-
+void LED_Bright_Set(bool sleep,uint8_t value);
+void button_press(void);
 bool led_bit_status(uint16_t status);
 void led_bit_disable(uint16_t disable);
 void led_bit_enable(uint16_t enable);
@@ -36,7 +36,7 @@ void Breathing_Setup_Debug(uint8_t enable, uint8_t step,
                             uint8_t target_w);
 
 void led_status_print(void);
-void LED_task_init(void);
+void LED_task_init(bool qc);
 bool ota_enable(void);
 bool hardware_error_enable(void);
 bool Water_low_enable(void);

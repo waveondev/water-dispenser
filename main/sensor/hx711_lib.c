@@ -59,22 +59,22 @@ static int32_t read_raw(gpio_num_t dout, gpio_num_t pd_sck, hx711_gain_t gain)
     for (size_t i = 0; i < 24; i++)
     {
         gpio_set_level(pd_sck, 1);
-        esp_rom_delay_us(1);
+        esp_rom_delay_us(2);
 
         data |= gpio_get_level(dout) << (23 - i);
 
         gpio_set_level(pd_sck, 0);
-        esp_rom_delay_us(1);
+        esp_rom_delay_us(2);
     }
 
     // gain/channel select
     for (size_t i = 0; i <= gain; i++)
     {
         gpio_set_level(pd_sck, 1);
-        esp_rom_delay_us(1);
+        esp_rom_delay_us(2);
 
         gpio_set_level(pd_sck, 0);
-        esp_rom_delay_us(1);
+        esp_rom_delay_us(2);
     }
 
     portEXIT_CRITICAL(&mux);
@@ -84,15 +84,18 @@ static int32_t read_raw(gpio_num_t dout, gpio_num_t pd_sck, hx711_gain_t gain)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
+#include "esp_log.h"
 esp_err_t hx711_init(hx711_t *dev)
 {
     CHECK_ARG(dev);
-
+    // 초기 gain 값 검증
+    CHECK_ARG(dev->gain == HX711_GAIN_A_128 ||
+              dev->gain == HX711_GAIN_B_32 ||
+              dev->gain == HX711_GAIN_A_64);
     gpio_config_t conf = {
         .pin_bit_mask = BIT64(dev->dout),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = 0,
+        .pull_up_en = 1,
         .pull_down_en = 0,
         .intr_type = GPIO_INTR_DISABLE,
     };
@@ -102,8 +105,22 @@ esp_err_t hx711_init(hx711_t *dev)
     conf.mode = GPIO_MODE_OUTPUT;
     CHECK(gpio_config(&conf));
 
-    CHECK(hx711_power_down(dev, false));
+    CHECK(gpio_set_level(dev->pd_sck, 0));
 
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    ESP_LOGI("HX711", "DOUT initial level: %d",
+             gpio_get_level(dev->dout));
+
+    esp_err_t ret = hx711_wait(dev, 1000);
+
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE("HX711", "HX711 not ready!");
+        return ret;
+    }
+
+    ESP_LOGI("HX711", "HX711 ready!");
     return hx711_set_gain(dev, dev->gain);
 }
 
@@ -154,6 +171,8 @@ esp_err_t hx711_wait(hx711_t *dev, size_t timeout_ms)
 esp_err_t hx711_read_data(hx711_t *dev, int32_t *data)
 {
     CHECK_ARG(dev && data);
+    
+    CHECK(hx711_wait(dev, 1000));
 
     int32_t raw = read_raw(dev->dout, dev->pd_sck, dev->gain);
     if (raw & 0x800000)

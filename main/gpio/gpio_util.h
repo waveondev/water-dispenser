@@ -39,8 +39,8 @@ typedef enum {
 #define BLINK_GPIO   5  // 네오픽셀 데이터 선이 연결된 GPIO 핀 번호
 
 
-#define PIN_PUMP_ADC  0
-#define PIN_PUMP_PWM  1
+#define PIN_PUMP_ADC  1
+#define PIN_PUMP_PWM  0
 #ifndef PIN_HX711_DOUT
   #define PIN_HX711_DOUT 19
 #endif

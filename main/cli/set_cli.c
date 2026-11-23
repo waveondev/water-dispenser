@@ -82,12 +82,9 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 
 			else if (!strncmp(ag[1], "moter", 5))
 			{
-				j = atoi(ag[2]);
-				set_motor_speed(&j);
-            }
-			else if (!strncmp(ag[1], "duty", 4))
-			{
-				set_motor_speed_percent(atoi(ag[2]));
+				void motor_start_set(int count,int off_time, int on_time);
+				motor_start_set(atoi(ag[2]),atoi(ag[3]),atoi(ag[4]));
+
             }
 			else if (!strncmp(ag[1], "ledr", 4))
 			{
@@ -126,6 +123,22 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
                 wifi_scan_start();
             }	
+			else if (!strncmp(ag[1], "ircal", 5))
+			{
+				void ir_calibration_enable(int dest);
+				ir_calibration_enable(0x03);
+			}			
+			else if (!strncmp(ag[1], "ircall", 6))
+			{
+				void ir_calibration_enable(int dest);
+				ir_calibration_enable(0x02);
+			}
+			else if (!strncmp(ag[1], "ircalr", 6))
+			{
+				void ir_calibration_enable(int dest);
+				ir_calibration_enable(0x01);
+			}			
+
 			else if (!strncmp(ag[1], "cal", 3))
 			{
                 HX711_cal_init(atoi(ag[2]));
@@ -180,7 +193,7 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 				}	
 				if (!strncmp(ag[2], "app", 3))
 				{
-					facto_set(atoi(ag[3])?true:false);							
+					facto_set(atoi(ag[3]));							
 				}		
 				if (!strncmp(ag[2], "facto", 5))
 					erase_facto_configuration();								
@@ -213,7 +226,11 @@ BaseType_t prvSetInformationCommand( char *pcWriteBuffer, size_t xWriteBufferLen
 			{
 				TPL0401_SetValue(atoi(ag[2]));
 			}				
-
+			else if (!strncmp(ag[1], "boot", 4))
+			{
+				void enter_download_mode(void);
+				enter_download_mode();
+			}	
 			/* There are more parameters to return after this one. */
 //			pcWriteBuffer[ 0 ] = 0x00;
 			xReturn = pdFALSE;

@@ -38,11 +38,11 @@ void Night_Mode(bool state)
     uint8_t LED_Value = 0;
     if(state)
     {
-        LED_Bright_Set(0);  
+        LED_Bright_Set(true,0);  
     }
     else 
     {
-        LED_Bright_Set(255);  
+        LED_Bright_Set(false, 255);  
     }
 }
 void Opmode_test_mode(void)
@@ -131,6 +131,7 @@ smart_state_t Time_ratio_state(void)
 static esp_timer_handle_t tracker_access_timer = NULL;
 static esp_timer_handle_t ir_access_timer = NULL;
 static esp_timer_handle_t none_access_timer = NULL;
+static esp_timer_handle_t Ontime_timer = NULL;
 static bool send_flag = false;
 static ACCESS_Packet_t ACCESS_Packet = {0};
 static float start_weight = 0;
@@ -153,6 +154,11 @@ static void none_access_callback(void* arg)
     ACCESS_Packet.detect_flag = 0;
     ACCESS_Packet.start_weight = 0;
     mqtt_queue_send(MESSEGE_ACCESS,&ACCESS_Packet,sizeof(ACCESS_Packet));
+}
+static uint32_t Ontime_value = 0;
+static void Ontime_callback(void* arg)
+{   
+        ontime_nvs_save_set();
 }
 
 void access_timer_Set(bool state, esp_timer_handle_t timer)
@@ -350,8 +356,17 @@ static void Opmode_task(void *pvParameter)
         .callback = &none_access_callback,
         .name = "none_access_timer"
     };
-    esp_timer_create(&ir_access_args, &none_access_timer);    
+    esp_timer_create(&none_access_args, &none_access_timer);    
+
+    const esp_timer_create_args_t on_time_args = {
+        .callback = &Ontime_callback,
+        .name = "Ontime_timer"
+    };
+    esp_timer_create(&on_time_args, &Ontime_timer);    
+
+    esp_timer_start_periodic(Ontime_timer,    MIN_TO_US(15));
     set_motor_speed(NULL);
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
 
     while (1) {
         DBG_Resister_t* DBG_Resister = Debug_Get();

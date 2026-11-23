@@ -248,27 +248,41 @@ static int privateKeySigningCallback(void* pContext,
 static void contextInit( MbedtlsPkcs11Context_t * pContext )
 {
     assert( pContext != NULL );
-
+    CK_RV pkcs11Ret;
     mbedtls_net_init( &( pContext->socketContext ) );
     mbedtls_ssl_init( &( pContext->context ) );
     mbedtls_ssl_config_init( &( pContext->config ) );
     mbedtls_x509_crt_init( &( pContext->rootCa ) );
     mbedtls_x509_crt_init( &( pContext->clientCert ) );
 
-    C_GetFunctionList( &( pContext->pP11FunctionList ) );
+    pkcs11Ret = C_GetFunctionList(&pContext->pP11FunctionList);
+
+    if(pkcs11Ret != CKR_OK)
+    {
+        LogError(("C_GetFunctionList failed: %lu",
+                (unsigned long)pkcs11Ret));
+
+        pContext->pP11FunctionList = NULL;
+    }
 }
 /*-----------------------------------------------------------*/
-
-static void contextFree( MbedtlsPkcs11Context_t * pContext )
+static void contextFree(MbedtlsPkcs11Context_t *pContext)
 {
-    if( pContext != NULL )
+    if(pContext == NULL)
     {
-        mbedtls_net_free( &( pContext->socketContext ) );
-        mbedtls_ssl_free( &( pContext->context ) );
-        mbedtls_ssl_config_free( &( pContext->config ) );
-        mbedtls_x509_crt_free( &( pContext->rootCa ) );
-        mbedtls_x509_crt_free( &( pContext->clientCert ) );
+        return;
     }
+
+    mbedtls_net_free(&pContext->socketContext);
+
+    mbedtls_ssl_free(&pContext->context);
+
+    mbedtls_ssl_config_free(&pContext->config);
+
+    mbedtls_x509_crt_free(&pContext->rootCa);
+
+    mbedtls_x509_crt_free(&pContext->clientCert);
+
 }
 
 /*-----------------------------------------------------------*/
@@ -367,15 +381,22 @@ static MbedtlsPkcs11Status_t configureMbedtls( MbedtlsPkcs11Context_t * pMbedtls
 
         returnStatus = configureMbedtlsFragmentLength( pMbedtlsPkcs11Context );
     }
-
-    if( returnStatus != MBEDTLS_PKCS11_SUCCESS )
+    if(returnStatus == MBEDTLS_PKCS11_SUCCESS)
     {
-        contextFree( pMbedtlsPkcs11Context );
+        LogDebug(("Configured MbedTLS context."));
     }
     else
     {
-        LogDebug( ( "Configured MbedTLS context." ) );
+        LogError(("MbedTLS configuration failed: %d", returnStatus));
     }
+
+    /*
+    * 여기서는 contextFree() 호출하지 않음.
+    *
+    * 모든 실패 리소스 정리는
+    * Mbedtls_Pkcs11_Connect()에서 담당.
+    */
+
 
     return returnStatus;
 }
@@ -813,130 +834,145 @@ static int privateKeySigningCallback(void* pContext,
 }
 
 /*-----------------------------------------------------------*/
-
-MbedtlsPkcs11Status_t Mbedtls_Pkcs11_Connect( NetworkContext_t * pNetworkContext,
-                                              const char * pHostName,
-                                              uint16_t port,
-                                              const MbedtlsPkcs11Credentials_t * pMbedtlsPkcs11Credentials,
-                                              uint32_t recvTimeoutMs )
+MbedtlsPkcs11Status_t Mbedtls_Pkcs11_Connect(
+    NetworkContext_t *pNetworkContext,
+    const char *pHostName,
+    uint16_t port,
+    const MbedtlsPkcs11Credentials_t *pCredentials,
+    uint32_t recvTimeoutMs)
 {
-    MbedtlsPkcs11Context_t * pMbedtlsPkcs11Context = NULL;
-    MbedtlsPkcs11Status_t returnStatus = MBEDTLS_PKCS11_SUCCESS;
+    MbedtlsPkcs11Context_t *pContext = NULL;
+
+    MbedtlsPkcs11Status_t returnStatus =
+        MBEDTLS_PKCS11_SUCCESS;
+
     int32_t mbedtlsError = 0;
-    char portStr[ 6 ] = { 0 };
 
-    if( ( pNetworkContext == NULL ) ||
-        ( pNetworkContext->pParams == NULL ) ||
-        ( pHostName == NULL ) ||
-        ( pMbedtlsPkcs11Credentials == NULL ) ||
-        ( pMbedtlsPkcs11Credentials->pRootCaPath == NULL ) ||
-        ( pMbedtlsPkcs11Credentials->pClientCertLabel == NULL ) ||
-        ( pMbedtlsPkcs11Credentials->pPrivateKeyLabel == NULL ) )
-    {
-        LogError( ( "Invalid input parameter(s): Arguments cannot be NULL. pNetworkContext=%p, "
-                    "pHostName=%p, pMbedtlsPkcs11Credentials=%p.",
-                    ( void * ) pNetworkContext,
-                    ( const void * ) pHostName,
-                    ( const void * ) pMbedtlsPkcs11Credentials ) );
-        returnStatus = MBEDTLS_PKCS11_INVALID_PARAMETER;
-    }
-    else
-    {
-        snprintf( portStr, sizeof( portStr ), "%u", port );
-        pMbedtlsPkcs11Context = pNetworkContext->pParams;
+    char portStr[6] = {0};
 
-        /* Configure MbedTLS. */
-        returnStatus = configureMbedtls( pMbedtlsPkcs11Context, pHostName, pMbedtlsPkcs11Credentials, recvTimeoutMs );
+    if((pNetworkContext == NULL) ||
+       (pNetworkContext->pParams == NULL) ||
+       (pHostName == NULL) ||
+       (pCredentials == NULL) ||
+       (pCredentials->pRootCaPath == NULL) ||
+       (pCredentials->pClientCertLabel == NULL) ||
+       (pCredentials->pPrivateKeyLabel == NULL))
+    {
+        return MBEDTLS_PKCS11_INVALID_PARAMETER;
     }
 
-    /* Establish a TCP connection with the server. */
-    if( returnStatus == MBEDTLS_PKCS11_SUCCESS )
-    {
-        mbedtlsError = mbedtls_net_connect( &( pMbedtlsPkcs11Context->socketContext ),
-                                            pHostName,
-                                            portStr,
-                                            MBEDTLS_NET_PROTO_TCP );
+    pContext = pNetworkContext->pParams;
 
-        if( mbedtlsError != 0 )
-        {
-            LogError( ( "Failed to connect to %s with error %"PRIu32".", pHostName, mbedtlsError ) );
-            returnStatus = MBEDTLS_PKCS11_CONNECT_FAILURE;
-        }
+    snprintf(portStr, sizeof(portStr), "%u", port);
+
+    /*
+     * 1. MbedTLS 초기화 및 설정
+     */
+    returnStatus = configureMbedtls(
+        pContext,
+        pHostName,
+        pCredentials,
+        recvTimeoutMs
+    );
+
+    if(returnStatus != MBEDTLS_PKCS11_SUCCESS)
+    {
+        goto cleanup;
     }
 
-    if( returnStatus == MBEDTLS_PKCS11_SUCCESS )
-    {
-        /* Perform the TLS handshake. */
-        do
-        {
-            mbedtlsError = mbedtls_ssl_handshake( &( pMbedtlsPkcs11Context->context ) );
-        } while( ( mbedtlsError == MBEDTLS_ERR_SSL_WANT_READ ) ||
-                 ( mbedtlsError == MBEDTLS_ERR_SSL_WANT_WRITE ) );
+    /*
+     * 2. TCP 연결
+     */
+    mbedtlsError = mbedtls_net_connect(
+        &pContext->socketContext,
+        pHostName,
+        portStr,
+        MBEDTLS_NET_PROTO_TCP
+    );
 
-        if( ( mbedtlsError != 0 ) || ( mbedtls_ssl_get_verify_result( &( pMbedtlsPkcs11Context->context ) ) != 0U ) )
-        {
-            LogError( ( "Failed to perform TLS handshake: mbedTLSError= %s : %s.",
-                        mbedtlsHighLevelCodeOrDefault( mbedtlsError ),
-                        mbedtlsLowLevelCodeOrDefault( mbedtlsError ) ) );
-            returnStatus = MBEDTLS_PKCS11_HANDSHAKE_FAILED;
-        }
+    if(mbedtlsError != 0)
+    {
+        LogError(("TCP connection failed: %d", mbedtlsError));
+
+        returnStatus = MBEDTLS_PKCS11_CONNECT_FAILURE;
+        goto cleanup;
     }
 
-    /* Clean up on failure. */
-    if( returnStatus != MBEDTLS_PKCS11_SUCCESS )
+    /*
+     * 3. TLS Handshake
+     */
+    do
     {
-        contextFree( pMbedtlsPkcs11Context );
-    }
-    else
+        mbedtlsError = mbedtls_ssl_handshake(
+            &pContext->context
+        );
+
+    } while(
+        (mbedtlsError == MBEDTLS_ERR_SSL_WANT_READ) ||
+        (mbedtlsError == MBEDTLS_ERR_SSL_WANT_WRITE)
+    );
+
+    if((mbedtlsError != 0) ||
+       (mbedtls_ssl_get_verify_result(&pContext->context) != 0U))
     {
-        LogInfo( ( "TLS Connection to %s established.", pHostName ) );
+        LogError((
+            "TLS handshake failed: %s : %s",
+            mbedtlsHighLevelCodeOrDefault(mbedtlsError),
+            mbedtlsLowLevelCodeOrDefault(mbedtlsError)
+        ));
+
+        returnStatus = MBEDTLS_PKCS11_HANDSHAKE_FAILED;
+        goto cleanup;
     }
+
+    LogInfo(("TLS connection established: %s", pHostName));
+
+    return MBEDTLS_PKCS11_SUCCESS;
+
+cleanup:
+
+    /*
+     * 실패 시 모든 부분 초기화 리소스 해제
+     */
+    contextFree(pContext);
 
     return returnStatus;
 }
 
 /*-----------------------------------------------------------*/
-
-void Mbedtls_Pkcs11_Disconnect( NetworkContext_t * pNetworkContext )
+void Mbedtls_Pkcs11_Disconnect(NetworkContext_t *pNetworkContext)
 {
-    MbedtlsPkcs11Context_t * pContext = NULL;
-    int tlsStatus = 0;
+    MbedtlsPkcs11Context_t *pContext = NULL;
 
-    if( ( pNetworkContext != NULL ) &&
-        ( pNetworkContext->pParams != NULL ) )
+    if(pNetworkContext == NULL)
     {
-        pContext = pNetworkContext->pParams;
-
-        // 중복 해제 방지: 먼저 포인터 제거
-        //pNetworkContext->pParams = NULL;
-
-        /*
-         * TLS close notify
-         */
-        tlsStatus = mbedtls_ssl_close_notify( &( pContext->context ) );
-
-        if( tlsStatus == 0 )
-        {
-            LogInfo( ( "TLS close-notify sent." ) );
-        }
-        else if( ( tlsStatus == MBEDTLS_ERR_SSL_WANT_READ ) ||
-                 ( tlsStatus == MBEDTLS_ERR_SSL_WANT_WRITE ) )
-        {
-            LogInfo( ( "TLS close-notify returned WANT_READ/WANT_WRITE." ) );
-        }
-        else
-        {
-            LogError( ( "TLS close-notify failed: %s",
-                        mbedtlsHighLevelCodeOrDefault( tlsStatus ) ) );
-        }
-
-        /*
-         * Release TLS resources (한 번만 호출)
-         */
-        contextFree( pContext );
+        return;
     }
-}
 
+    pContext = pNetworkContext->pParams;
+
+    if(pContext == NULL)
+    {
+        return;
+    }
+
+    /*
+     * 먼저 외부 포인터 제거
+     * 중복 정리 방지
+     */
+    pNetworkContext->pParams = NULL;
+
+    /*
+     * Context 내부 리소스 해제
+     *
+     * 주의:
+     * contextFree()가 부분 초기화 상태에서도 안전하게
+     * 호출 가능한지 구현 확인 필요
+     */
+    contextFree(pContext);
+
+    LogInfo(("TLS resources released"));
+}
 /*-----------------------------------------------------------*/
 
 int32_t Mbedtls_Pkcs11_Recv( NetworkContext_t * pNetworkContext,

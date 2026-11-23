@@ -111,7 +111,7 @@ void shadow_mqtt_send(shadow_set_e state)
         return;
     }
     app_config_t* app_config = get_app_config();
-    app_facto_config_t* facto_config = get_facto_config();
+
 
     switch (state)
     {

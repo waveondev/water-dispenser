@@ -51,12 +51,13 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd,  tracker_mqtt_packet_t
         return root;
     /* Root 레벨 필수 필드 추가 */
     char buffer[40];
-
+    app_config_t* app_config = get_app_config();
     if(TRACKER_MESSEGE_ACTIVITY <= cmd)
     {
         sprintf(buffer,"123e4567-e89b-12d3-5431-%012u", (unsigned int)client->start_res_seq);
         cJSON_AddStringToObject(root, "id", buffer); /* 실제로는 uuid 생성 함수 사용 */
-        cJSON_AddStringToObject(root, "env", "alpha");
+
+        cJSON_AddStringToObject(root, "env", app_config->env_mode);
         cJSON_AddStringToObject(root, "device_type", "tracker"); 
     }
     else
@@ -64,7 +65,7 @@ static cJSON* Get_cJSON_Header(messege_tx_mqtt_cmd_e cmd,  tracker_mqtt_packet_t
         sprintf(buffer,"123e4567-e89b-12d3-5431-%012u", (unsigned int)esp_log_timestamp());
         cJSON_AddStringToObject(root, "id", buffer); /* 실제로는 uuid 생성 함수 사용 */
         //cJSON_AddStringToObject(root, "id", "123e4567-e89b-12d3-a456-426614174000"); /* 실제로는 uuid 생성 함수 사용 */
-        cJSON_AddStringToObject(root, "env", "alpha");
+        cJSON_AddStringToObject(root, "env", app_config->env_mode);
         cJSON_AddStringToObject(root, "device_type", CONFIG_DEVICE_TYPE); 
     }
     

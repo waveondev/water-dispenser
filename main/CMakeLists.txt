@@ -36,6 +36,7 @@ idf_component_register(
         protocol_examples_common
         esp_https_ota
         spiffs
+        efuse
 
     PRIV_REQUIRES 
         bt 
@@ -63,8 +64,9 @@ idf_component_register(
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     WATER_MAJOR=1
     WATER_MINOR=1
-    WATER_PATCH=6
+    WATER_PATCH=7
     MOTOR_I2C_MODE=0
+    JIGMODE=0
 )
 # target_compile_definitions(${COMPONENT_LIB} PRIVATE
 #     "-DconfigGENERATE_RUN_TIME_STATS=1"

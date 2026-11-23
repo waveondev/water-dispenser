@@ -104,7 +104,9 @@ void Setting_callback(Motion_Packet_t* Motion_Packet)
             Motion_Packet_buf.setting_res.cmd_type = Beacon_SetValue;
             app_config->gate_way_rssi_th = Motion_Packet->setting_req.beacon_set_value.beacon_rssi;
             ble_send_data_to_queue(NULL,NULL,(uint8_t*)&Motion_Packet_buf,sizeof(Motion_Packet_t));        
-        break;              
+        break;  
+
+        
     }
 }
 

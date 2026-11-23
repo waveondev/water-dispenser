@@ -21,9 +21,11 @@ static const char *TAG = __FILE__;
 static uint16_t led_status_resister = 0;
 static int last_op_mode = -1; 
 static int wifi_conn_enable = 0;
+static int hardware_tick = 0;
+static bool hardware_flag = false;
 #define LED_TASK_DELAY 10
 static uint8_t LED_brightness_value = LED_BRIGHTNESS_MAX;
-
+static bool qc_mode = false;
 
 typedef struct {
     uint8_t used;
@@ -41,12 +43,19 @@ typedef struct {
 
 
 static Breathing_Setting_t Breathing_Setting;
-
-void LED_Bright_Set(uint8_t value)
+static bool sleep_mode = false;
+static int button_enable = 0;
+void LED_Bright_Set(bool sleep,uint8_t value)
 {
+    sleep_mode = sleep;
     LED_brightness_value = value;
 }
-
+void button_press(void)
+{
+    if(sleep_mode == false)
+        return;
+    button_enable = 100;
+}
 
 bool ota_enable(void)
 {
@@ -227,10 +236,9 @@ void app_tof_sensor_poll_100ms(void)
         tof_get_buf = tof_get;
     }
     app_config_t* app_config = get_app_config();
-    if(last_op_mode != app_config->op_mode && led_status_resister == 0)
+    if(last_op_mode != app_config->op_mode)
     {       
         last_op_mode = app_config->op_mode; 
-         ESP_LOGE(TAG, "last_op_mode = %08x",last_op_mode);
     }
 }
 
@@ -336,18 +344,27 @@ static void Breathing_LED(void)
 
 static void LED_task(void *pvParameter)
 {
-
-    app_config_t* app_config = get_app_config();
-    
-    uint8_t toggle_time = 0;
-    bool toggle_flag = false;
-
     init_led_strip();
-    set_rgb_len_no_Breathing(0,0,0,LED_brightness_value);
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    if(qc_mode == true)
+    {
+        set_rgb_len_no_Breathing(0,0,0,LED_brightness_value);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        set_rgb_len_no_Breathing(0,0,0,0);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        set_rgb_len_no_Breathing(0,0,0,LED_brightness_value);
+        vTaskDelay(pdMS_TO_TICKS(500));
+        set_rgb_len_no_Breathing(0,0,0,0);
+        vTaskDelay(pdMS_TO_TICKS(500));    
+    }
+    else
+    {
+        set_rgb_len_no_Breathing(0,0,0,LED_brightness_value);
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+
     ESP_LOGI(TAG, "Starting LED_task (Pure Event Driven Mode)");
     DBG_Resister_t *DBG_Resister = Debug_Get();
-    static uint16_t led_status_resister_buf = 0;
+
     while (1) {
 
         app_tof_sensor_poll_100ms(); 
@@ -361,7 +378,7 @@ static void LED_task(void *pvParameter)
             #if 1
             if(get_factory_flag())
             {
-                facto_set(false);
+                facto_set(get_factory_flag());
                 set_rgb_len_no_Breathing(COLOR_W100_BLUE);
                 vTaskDelay(pdMS_TO_TICKS(2000));
                 set_rgb_len_no_Breathing(COLOR_W100_RED);
@@ -373,12 +390,6 @@ static void LED_task(void *pvParameter)
                 esp_restart(); // ⚠️ 깨끗해진 구조 반영 및 안전한 재시작          
             }
             #endif
-            if(LED_brightness_value == 0)
-            {
-                set_rgb_len_no_Breathing(COLOR_W100_OFF); 
-                vTaskDelay(pdMS_TO_TICKS(LED_TASK_DELAY));
-                continue;
-            }
 #if 0
             int button_state = button_press_state();
             if(button_state)
@@ -390,68 +401,60 @@ static void LED_task(void *pvParameter)
                     default: break;
                 }
             }
-            else
-#endif
+#endif         
+            else if (ota_enable()) {
+                Breathing_Setup(1,2,0,LED_brightness_value,COLOR_W100_LIGHT_YELLOW);
+                Breathing_LED();
+            }                  
+            else if (pairing_enable()) {
+                Breathing_Setup(1,2,0,LED_brightness_value,COLOR_W100_BLUE);
+                Breathing_LED();
+            }    
+            else if(button_enable)
             {
-                if (led_status_resister != 0) {
-                    if(led_status_resister_buf != led_status_resister)
+                button_enable--;
+                set_rgb_len_no_Breathing(COLOR_W100_WHITE); 
+            }  
+            else if(wifi_conn_enable)
+            {
+                wifi_conn_enable--;
+                set_rgb_len_no_Breathing(COLOR_W100_GREEN); 
+            }            
+            else if(hardware_error_enable() || Pump_error_enable() || Loadcell_error_enable())
+            {
+                hardware_tick++;
+                if(hardware_tick > 20)
+                {
+                    hardware_tick = 0;
+                    if(hardware_flag == true)
                     {
-                        memset(&Breathing_Setting, 0, sizeof(Breathing_Setting_t));
-                        led_status_resister_buf = led_status_resister;
-                    }
-                    last_op_mode = -1; 
-                    #if 1               
-                    if(hardware_error_enable() || Pump_error_enable() || Loadcell_error_enable())
-                    {
+                        hardware_flag = false;
                         set_rgb_len_no_Breathing(COLOR_W100_RED); 
-                    }
-                    if(Filter_water_enable() || Filter_debris_enable())
-                    {
-                        set_rgb_len_no_Breathing(COLOR_W100_ORANGE); 
-                    }
-                    else if(Water_low_enable() || Water_empty_enable() )
-                    {
-                        set_rgb_len_no_Breathing(COLOR_W100_RED); 
-                    }
-                    else 
-                    #endif
-                    if (ota_enable()) {
-                        Breathing_Setup(1,2,0,LED_brightness_value,COLOR_W100_LIGHT_YELLOW);
-                        Breathing_LED();
-                    }                  
-   
-                    else if (pairing_enable()) {
-                        Breathing_Setup(1,2,0,LED_brightness_value,COLOR_W100_BLUE);
-                        Breathing_LED();
-                    }
-                    
-                }
-                // [우선순위 2] 비트가 다 꺼진 정상 상태라면 op_mode 적용
-                else {
-                    led_status_resister_buf = 0;
-                    if(wifi_conn_enable)
-                    {
-                        wifi_conn_enable--;
-                        set_rgb_len_no_Breathing(COLOR_W100_GREEN); 
                     }
                     else
                     {
-
-                        {
-                            switch(last_op_mode) {
-                                case OP_MODE_NORMAL: set_rgb_len_no_Breathing(COLOR_W100_WHITE); break;
-                                case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(COLOR_W100_OFF); break;
-                                default: set_rgb_len_no_Breathing(COLOR_W100_OFF); break;
-                            }
-                        }
+                        hardware_flag = true;
+                        set_rgb_len_no_Breathing(COLOR_W100_OFF); 
                     }
-
-                    
-                // ESP_LOGE(TAG, "last_op_mode = %08x",last_op_mode);
+                }
+            }
+            else if(Water_low_enable() || Water_empty_enable() )
+            {
+                set_rgb_len_no_Breathing(COLOR_W100_RED); 
+            }             
+            else if((Filter_water_enable() || Filter_debris_enable()) && sleep_mode == false)
+            {     
+                set_rgb_len_no_Breathing(COLOR_W100_ORANGE);         
+            }
+            else
+            {
+                switch(last_op_mode) {
+                    case OP_MODE_NORMAL: set_rgb_len_no_Breathing(COLOR_W100_WHITE); break;
+                    case OP_MODE_SLEEP:  set_rgb_len_no_Breathing(COLOR_W100_OFF); break;
+                    default: set_rgb_len_no_Breathing(COLOR_W100_OFF); break;
                 }
             }            
         }
-        // ⭐️ [중요] 처리가 다 끝난 시점에 마스터 버퍼를 업데이트하여 다음 외부 진입을 방어합니다.
         vTaskDelay(pdMS_TO_TICKS(LED_TASK_DELAY));
 
     }
@@ -462,8 +465,12 @@ static void LED_task(void *pvParameter)
 
 
 
-void LED_task_init(void)
+void LED_task_init(bool qc)
 {
+    DBG_Resister_t *DBG_Resister = Debug_Get();
+    qc_mode = qc;
+    if(qc_mode == true)
+        DBG_Resister->led = 1;
     static uint8_t ucParameterToPass;
     if (xTaskCreate(
             LED_task,                  // 태스크 함수

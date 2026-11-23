@@ -38,6 +38,8 @@
 #include "esp_mac.h"
 
 #include "device_config.h"
+
+#include "app_config_flash.h"
 /*-----------------------------------------------------------*/
 
 /**
@@ -265,7 +267,8 @@ bool generateRegisterThingRequest( uint8_t * pBuffer,
     }
     if( cborRet == CborNoError )
     {
-        cborRet = cbor_encode_text_stringz( &parametersEncoder, "alpha" );
+        app_config_t* app_config = get_app_config();
+        cborRet = cbor_encode_text_stringz( &parametersEncoder, app_config->env_mode );
     }
 
     /* ---------------- 3. firmware_version 파라미터 추가 ---------------- */
