@@ -12,6 +12,7 @@
 #include "debug_cli.h"
 #include <math.h>
 #include "aws_iot_task.h"
+#include "shadow_mqtt.h"
 static QueueHandle_t opModeQueue = NULL;
 #include "esp_timer.h"  // 👈 이 줄을 추가해 주세요!
 static const char* TAG = __FILE__;
@@ -29,6 +30,7 @@ static void opmode_timer_callback(void* arg)
 {
     //ESP_LOGI(TAG, "3초 동안 추가 입력이 없어 현재 모드로 확정합니다: %d", current_opmode);
     app_nvs_save_set();
+    shadow_mqtt_send(CURRUNT_MODE,&current_opmode,true);
      //   water_fault_enable(WATER_MODECHANGE);
     //water_fault_disable(WATER_MODECHANGE);
     // TODO: 여기에 모드가 최종 확정되었을 때 실행할 동작(예: 화면 갱신, 실제 하드웨어 제어 등)을 넣으세요.
@@ -315,13 +317,29 @@ void Smart_Water(void)
                 drink_end_tick = (current_tick - drink_start_tick);
                 smart_state = SMART_IDLE; // 완전히 끝내고 대기 상태로 복귀
                 float diff_weight = start_weight - loadcell_data_get();
+                #define duration_ceil(duration_ms) ((duration_ms + 999) / 1000)
                 if(diff_weight > 1)
                 {
+                        Tracker_Device_t* Drink_Tracker = NULL;                        
+                        int count = 0;
+                        for (int i = 0; i < TRACKER_DEVICE_MAX; i++) {
+  
+                            Drink_Tracker = Tracker_Diff_get_device(i);
+                            if (Drink_Tracker != NULL) {
+                                memcpy(DRINK_Packet.DRINK_Tracker[count].Device_ID,Drink_Tracker->Device_ID,sizeof(DRINK_Packet.DRINK_Tracker[count].Device_ID));
+                                DRINK_Packet.DRINK_Tracker[count].duration_sec = duration_ceil(Drink_Tracker->Device_Time);
+                                DRINK_Packet.DRINK_Tracker[count].rssi = Drink_Tracker->dev_info.rssi;
+                                count++;
+                            }
+                            if(count >= 5)
+                            break;
+                        }                        
+                        DRINK_Packet.Tracker_count = count;
                         Tracker_waterintake_end((uint32_t)(diff_weight));
                         DRINK_Packet.start_weight = start_weight;
                         DRINK_Packet.end_weight = loadcell_data_get();
                         DRINK_Packet.total_intake_ml = max(diff_weight,0);
-                        DRINK_Packet.duration_sec = drink_end_tick;
+                        DRINK_Packet.duration_sec = duration_ceil(drink_end_tick);
                         mqtt_queue_send(MESSEGE_DRINK,&DRINK_Packet,sizeof(DRINK_Packet_t));
                 }
                 ESP_LOGI(TAG, "음수 종료 end_weight = %.2fg, diff_weight = %.2fg",loadcell_data_get() ,diff_weight );

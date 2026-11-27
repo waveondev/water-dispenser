@@ -16,11 +16,20 @@ typedef enum {
     SMART_STOP_CHECK     // 모터는 껐지만, 3초 동안 계속 센서가 없는지 감시하는 상태 (모터 Off)
 } smart_state_t;
 
+
+typedef struct {
+    char Device_ID[32];
+    uint32_t duration_sec;
+    int rssi;
+}DRINK_Tracker_t;
+
 typedef struct {
     float start_weight;
     float end_weight;
     float total_intake_ml;
     uint32_t duration_sec;
+    uint32_t Tracker_count;
+    DRINK_Tracker_t DRINK_Tracker[5];
 }DRINK_Packet_t;
 
 typedef struct{

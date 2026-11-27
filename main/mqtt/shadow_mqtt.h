@@ -17,4 +17,5 @@ typedef enum{
 void shadow_mqtt_update_delta_rx_messege(MQTTPublishInfo_t * pPublishInfo);
 void shadow_mqtt_get_accepted_rx_messege(MQTTPublishInfo_t * pPublishInfo);
 bool Get_Accepted_Init_state(void);
+void shadow_mqtt_send(shadow_set_e state, void* data, bool server);
 #endif

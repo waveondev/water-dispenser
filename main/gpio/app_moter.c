@@ -51,9 +51,9 @@ static uint32_t* Filter_Used_Time;
 #define SECONDS_IN_DAYS    (24UL * 60UL * 60UL)
 static volatile bool filter_send_flag = false; // volatile 추가
 static volatile bool moter_send_flag = false; // volatile 추가
-static int start_count = 5;
+static int start_count = 1;
 static int start_off_time = 90;
-static int start_on_time = 3000;
+static int start_on_time = 5000;
 static uint32_t empty_count = 0;
 void motor_start_set(int count,int off_time, int on_time)
 {
@@ -163,6 +163,7 @@ static void motor_boost_task(void *pvParameters)
             if(current_target_percentage)
             {
                     gpio_set_level(MOTOR_IN1_GPIO, 1);   
+                    #if 0
                     vTaskDelay(pdMS_TO_TICKS(4000)); // 정확히 1초(1000ms)만 대기      
                     for(int z = 0; z < start_count;z++)
                     {   
@@ -172,13 +173,19 @@ static void motor_boost_task(void *pvParameters)
                         gpio_set_level(MOTOR_IN1_GPIO, 1);   
                         vTaskDelay(pdMS_TO_TICKS(start_on_time)); // 정확히 1초(1000ms)만 대기                            
                         ESP_LOGI(TAG,"z = %d", z);
-                    }            
+                    }    
+                    #endif        
             }
 
 
             #endif   
             if(current_target_percentage)
-                ESP_ERROR_CHECK(esp_timer_start_periodic(Motor_used_timer, 1000000));       
+            {
+                if (esp_timer_is_active(Motor_used_timer)) {
+                    esp_timer_stop(Motor_used_timer);
+                }
+                ESP_ERROR_CHECK(esp_timer_start_periodic(Motor_used_timer, 1000000));
+            }
         }
         #if MOTOR_I2C_MODE        
         if(current_target_percentage != 100)
@@ -233,6 +240,9 @@ void start_motor_with_boost(int target_percentage, int duration_sec)
     if (target_percentage <= 0) {
        // ESP_LOGI(TAG, "[PUMP] 🛑 모터 즉시 정지 (0%%)");
         gpio_set_level(MOTOR_IN1_GPIO, 0);   
+        if (esp_timer_is_active(Motor_used_timer)) {
+            esp_timer_stop(Motor_used_timer);
+        }
         current_target_percentage = 0;
         return; 
     }

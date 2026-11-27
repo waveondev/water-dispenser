@@ -12,7 +12,7 @@
 #define TAG __FILE__
 // 중복 실행 방지를 위한 직전 처리 UUID 캐시
 
-void shadow_mqtt_send(shadow_set_e state);
+
 typedef struct {
     // 공통 메타 필드
     uint32_t version;
@@ -73,7 +73,7 @@ static void shadow_send_reported(const char *json_reported_body)
 void set_filter_alert_enabled(bool state);
 void Set_tare_request(void)
 {
-    shadow_mqtt_send(TARE_REQUEST);
+    shadow_mqtt_send(TARE_REQUEST,NULL,false);
 }
 bool Get_Accepted_Init_state(void)
 {
@@ -101,7 +101,7 @@ void print_shadow_packet_info(const shadow_packet_info_t *info)
     ESP_LOGI(TAG, "└────────────────────────────────────────────────────┘");
 }
 
-void shadow_mqtt_send(shadow_set_e state)
+void shadow_mqtt_send(shadow_set_e state, void* data, bool server)
 {
     //   mqtt_queue_send(AWS_MESSEGE_JOBS_UPDATE,&JOBS_Update_Packet,sizeof(JOBS_Update_Packet_t)); 
     #define PAYLOAD_BUFFER_SIZE  256
@@ -111,7 +111,7 @@ void shadow_mqtt_send(shadow_set_e state)
         return;
     }
     app_config_t* app_config = get_app_config();
-
+    uint8_t* data_u8;
 
     switch (state)
     {
@@ -119,11 +119,25 @@ void shadow_mqtt_send(shadow_set_e state)
         /* B1. 작동 방식 변경 (current_mode echo: 0 또는 3)                     */
         /* ------------------------------------------------------------------ */
         case CURRUNT_MODE:
-            snprintf(payload, PAYLOAD_BUFFER_SIZE, 
-                    "{\"state\":{\"reported\":{\"current_mode\":%d}}}", 
-                    shadow_packet_info.current_mode);
-            mqtt_queue_send(AWS_MESSEGE_SHADOW_UPDATE, payload, strlen(payload) + 1);
-            break;
+            if(data != NULL)
+            {
+                data_u8 = (uint8_t*)data;
+                if(server == true)
+                {
+                        snprintf(payload, PAYLOAD_BUFFER_SIZE,
+                                "{\"state\":{\"desired\":{\"current_mode\":%d},\"reported\":{\"current_mode\":%d}},\"clientToken\":\"report-002\"}",
+                                *data_u8, *data_u8);
+                }
+                else 
+                {
+                        snprintf(payload, PAYLOAD_BUFFER_SIZE, 
+                        "{\"state\":{\"reported\":{\"current_mode\":%d}}}", 
+                        *data_u8);
+                }
+
+                mqtt_queue_send(AWS_MESSEGE_SHADOW_UPDATE, payload, strlen(payload) + 1);
+            }    
+        break;
 
         /* ------------------------------------------------------------------ */
         /* 필터 알림 활성화 여부 (설정 echo)                                     */
@@ -133,7 +147,7 @@ void shadow_mqtt_send(shadow_set_e state)
                     "{\"state\":{\"reported\":{\"filter_alert_enabled\":%s}}}", 
                     shadow_packet_info.filter_alert_enabled ? "true" : "false");
             mqtt_queue_send(AWS_MESSEGE_SHADOW_UPDATE, payload, strlen(payload) + 1);
-            break;
+        break;
 
         /* ------------------------------------------------------------------ */
         /* B9. 수면 모드 (sleep_mode echo)                                    */
@@ -510,33 +524,33 @@ void shadow_mqtt_update_delta_rx_messege(MQTTPublishInfo_t * pPublishInfo)
         ESP_LOGI(TAG, "새로운 Filter Alert 반영: %s", 
                  shadow_data.shadow_packet_info.filter_alert_enabled ? "true" : "false");
         set_filter_alert_enabled(shadow_packet_info.filter_alert_enabled?true:false);
-        shadow_mqtt_send(FILTER_ALERT_ENABLE);        
+        shadow_mqtt_send(FILTER_ALERT_ENABLE,NULL,false);        
     }
 
     if (shadow_data.valid.has_sleep_mode) {
         ESP_LOGI(TAG, "새로운 Sleep Mode 반영: %d", shadow_data.shadow_packet_info.sleep_mode);
         Night_Mode(shadow_packet_info.sleep_mode);
-        shadow_mqtt_send(SLEEP_MODE);        
+        shadow_mqtt_send(SLEEP_MODE,NULL,false);        
     }
 
     if (shadow_data.valid.has_current_mode) {
         ESP_LOGI(TAG, "새로운 Current Mode 반영: %d", shadow_data.shadow_packet_info.current_mode);
         shadow_packet_info.current_mode = shadow_data.shadow_packet_info.current_mode;
         Opmode_Set((uint32_t*)&shadow_packet_info.current_mode);        
-        shadow_mqtt_send(CURRUNT_MODE);
+        
         // shadow_send_reported("...");
     }
 
     if (shadow_data.valid.has_debris_filter_reset) {
         ESP_LOGI(TAG, "새로운 이물질 필터 리셋 요청 처리: %s", shadow_data.shadow_packet_info.debris_filter_reset_request);
         motor_change();
-        shadow_mqtt_send(DEBRIS_FILTER_RESET);      
+        shadow_mqtt_send(DEBRIS_FILTER_RESET,NULL,false);      
     }
 
     if (shadow_data.valid.has_water_filter_reset) {
         ESP_LOGI(TAG, "새로운 정수 필터 리셋 요청 처리: %s", shadow_data.shadow_packet_info.water_filter_reset_request);
         filter_change();
-        shadow_mqtt_send(WATER_FILETER_RESET);                      
+        shadow_mqtt_send(WATER_FILETER_RESET,NULL,false);                      
     }
 
     if (shadow_data.valid.has_tare_request) {
@@ -549,7 +563,7 @@ void shadow_mqtt_update_delta_rx_messege(MQTTPublishInfo_t * pPublishInfo)
     if (shadow_data.valid.has_reboot_request) {
         ESP_LOGI(TAG, "새로운 재부팅 요청 처리: %s", shadow_data.shadow_packet_info.reboot_request);
         set_reset_flag();
-        shadow_mqtt_send(REBOOT_REQUEST);  
+        shadow_mqtt_send(REBOOT_REQUEST,NULL,false);  
     }
 }
 

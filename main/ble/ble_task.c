@@ -769,7 +769,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
             if(data_len < sizeof(env_data))
             {
                 memcpy(env_data, (char*)p_data, data_len);
-                ESP_LOGI(TAG,"UUID: 0x%04X, Data Len: %d, Data: %s ", svc_uuid, data_len,env_data);
+
             }
             else 
             {
@@ -812,7 +812,7 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         }
         else if (svc_uuid == 0x4321)
         {
-            if (event->disc.rssi < -50)
+            if (event->disc.rssi < -55)
             {
                 return 0; // RSSI 기준 미달 차단
             }
@@ -830,39 +830,8 @@ static int ble_spp_server_gap_event(struct ble_gap_event *event, void *arg)
         // 최신 이름과 RSSI 데이터 업데이트 저장
         strcpy(dev_list.name, current_packet_name);
         dev_list.rssi = event->disc.rssi;
-
-
-        // -----------------------------------------------------------------
-        // 5. 🎯 최종 결과 콘솔 출력 (페이로드 파싱)
-        // -----------------------------------------------------------------
-        const uint8_t *actual_data = fields.svc_data_uuid16 + 2;
-        int actual_data_len = fields.svc_data_uuid16_len - 2;
-
-        if (actual_data_len > 0) {
-            char str_dump_buf[64] = {0}; 
-            int buf_idx = 0;
-
-            // 2. 원본 데이터 길이만큼 돌면서 필터링 후 버퍼에 적재
-            for (int i = 0; i < actual_data_len; i++) {
-                // ⚠️ 64바이트 버퍼가 가득 차는 것을 방지 (마지막 널 문자를 위해 62번 인덱스까지만 저장)
-                if (buf_idx >= (sizeof(str_dump_buf) - 1)) {
-                    break; 
-                }
-
-                char c = actual_data[i];
-                
-                // 출력 가능한 문자면 그대로 넣고, 아니면 점('.')으로 넣기
-                str_dump_buf[buf_idx] = (c >= 32 && c <= 126) ? c : '.';
-                buf_idx++;
-            }
-
-            // 3. 🌟 C언어 문자열의 완성: 맨 끝에 널 문자 강제 삽입 (안전장치)
-            str_dump_buf[buf_idx] = '\0';
-            Tracker_In_ID(&dev_list, str_dump_buf);
-            // 4. 결과 출력 테스트
-        } else {
-            ESP_LOGI(TAG,"HEX  : 서비스 데이터 페이로드가 비어있음\n");
-        }
+        //ESP_LOGI(TAG,"UUID: 0x%04X, Data Len: %d, Data: %s ", svc_uuid, data_len,env_data);
+        Tracker_In_ID(&dev_list, dev_list.name);
 
         return 0;
     }

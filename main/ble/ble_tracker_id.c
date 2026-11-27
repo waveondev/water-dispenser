@@ -16,7 +16,7 @@ void Tracker_Device_disable(int i);
 
 
 #define TRACKER_TASK_STACK_SIZE (configMINIMAL_STACK_SIZE * 1)
-#define TRACKER_DEVICE_MAX 20
+
 Tracker_Device_t* Tracker_Device[TRACKER_DEVICE_MAX];
 Tracker_Device_t Tracker_UNKNOWN = 
 {
@@ -195,11 +195,23 @@ bool Tracker_device_time_add(int i)
     return ret;
 }   
 
+Tracker_Device_t* Tracker_Diff_get_device(int i)
+{
+    // 🌟 배열을 처음부터 끝까지 스캔하며 중복 검사 및 빈자리 탐색
+    // 1. 자리가 채워져 있는 경우 -> ID 중복 검사 수행
+    if (Tracker_Device[i] != NULL) {
+        if(Tracker_Device[i]->Enable != 0)
+        {
+            return Tracker_Device[i];
+        }
+    }
+    return NULL;
+}
 void Tracker_In_ID(dev_info_t* dev_info, char* Tracker_ID)
 {
     int target_index = -1;
     Tracker_Device_t* Tracker_target = Get_Tracker_Device(dev_info->addr);
-#if 0
+#if 1
     ESP_LOGI(TAG, " addr             : %02X%02X%02X%02X%02X%02X",dev_info->addr[0],dev_info->addr[1],dev_info->addr[2],dev_info->addr[3],dev_info->addr[4],dev_info->addr[5]);
     ESP_LOGI(TAG, " name             : %s", dev_info->name);
     ESP_LOGI(TAG, " rssi             : %d", dev_info->rssi);
@@ -234,9 +246,7 @@ void Tracker_In_ID(dev_info_t* dev_info, char* Tracker_ID)
     memset(p_dev, 0, sizeof(Tracker_Device_t)); // 전체 0으로 초기화
 
     memcpy(&p_dev->dev_info,dev_info,sizeof(dev_info_t));
-    // 2. 데이터 초기화 (시간은 0ms부터 시작)
-// MAC 주소 6바이트 전체를 포함하여 Device_ID 조합
-    // 예: "MyDevice-A1B2C3D4E5F6"
+
     snprintf(p_dev->Device_ID, sizeof(p_dev->Device_ID), "%s-%02X%02X%02X%02X%02X%02X", 
             Tracker_ID,           
             p_dev->dev_info.addr[0], 

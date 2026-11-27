@@ -65,6 +65,15 @@ bool hardware_error_enable(void)
 {
     return (led_status_resister & HARDWARE_ERR_BIT);
 }
+bool IR_enable(void)
+{
+    return (led_status_resister & IR_BIT);
+}
+
+bool Beacon_enable(void)
+{
+    return (led_status_resister & BEACON_BIT);
+}
 bool pairing_enable(void)
 {
     return (led_status_resister & PAIRING_BIT);
@@ -96,6 +105,8 @@ bool Pump_error_enable(void)
 
 void led_status_print(void)
 {
+    if(Beacon_enable())
+        ESP_LOGI(TAG, "beacon_enable");    
     if(Pump_error_enable())
         ESP_LOGI(TAG, "Pump_error_enable");
     if(Filter_debris_enable())
@@ -234,6 +245,24 @@ void app_tof_sensor_poll_100ms(void)
     if(tof_get_buf != tof_get)
     {
         tof_get_buf = tof_get;
+        #if 0
+        if (tof_get_buf & TRACKER_ACCESS)
+        {
+            led_bit_enable(BEACON_BIT);
+        }        
+        else 
+        {
+            led_bit_disable(BEACON_BIT);
+        }
+        if (tof_get_buf & IR_ACCESS)
+        {
+            led_bit_enable(IR_BIT);
+        }        
+        else 
+        {
+            led_bit_disable(IR_BIT);
+        }
+        #endif
     }
     app_config_t* app_config = get_app_config();
     if(last_op_mode != app_config->op_mode)
@@ -389,6 +418,7 @@ static void LED_task(void *pvParameter)
                 vTaskDelay(pdMS_TO_TICKS(2000));                     
                 esp_restart(); // ⚠️ 깨끗해진 구조 반영 및 안전한 재시작          
             }
+
             #endif
 #if 0
             int button_state = button_press_state();
@@ -402,6 +432,14 @@ static void LED_task(void *pvParameter)
                 }
             }
 #endif         
+            else if(IR_enable())
+            {
+                set_rgb_len_no_Breathing(0,0,255,0);
+            }
+            else if(Beacon_enable())
+            {
+                set_rgb_len_no_Breathing(0,255,0,0);
+            }
             else if (ota_enable()) {
                 Breathing_Setup(1,2,0,LED_brightness_value,COLOR_W100_LIGHT_YELLOW);
                 Breathing_LED();

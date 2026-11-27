@@ -96,7 +96,7 @@ void detect_task(void)
     {
         animal_detect &= ~TRACKER_ACCESS;
     }
-    #if 1
+
     if (ir_count >= 5) 
     {
         animal_detect |= IR_ACCESS;
@@ -231,6 +231,4 @@ bool detect_object(void) {
     return false;
 }   
 
-#else
 
-#endif

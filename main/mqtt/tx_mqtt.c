@@ -233,32 +233,42 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
         break;
         case MESSEGE_DRINK:
             cJSON_AddStringToObject(data_obj, "drink_id", "550e8400-e29b-41d4-a716-446655440000");
-            cJSON_AddStringToObject(data_obj, "session_type", "unknown");
 
-            // 1. access_id_refs: 아이템을 추가하지 않고 빈 배열 그대로 루트에 전달
-            cJSON *access_id_refs = cJSON_CreateArray();
-            //cJSON_AddItemToArray(access_id_refs, cJSON_CreateString("acc_001"));
-            //cJSON_AddItemToArray(access_id_refs, cJSON_CreateString("acc_002"));
-            cJSON_AddItemToObject(data_obj, "access_id_refs", access_id_refs);
-
-            // 2. participants: 아이템을 추가하지 않고 빈 배열 그대로 루트에 전달
-            cJSON *participants = cJSON_CreateArray();
-            #if 0 
-            // 첫 번째 participant 객체 생성 및 입력
-            cJSON *pet1 = cJSON_CreateObject();
-            cJSON_AddStringToObject(pet1, "pet_id", "pet_001");
-            cJSON_AddNumberToObject(pet1, "duration_sec", 120);
-            cJSON_AddItemToArray(participants, pet1);
-            
-            // (필요 시) 두 번째 participant 객체 추가 예시 (최대 5개)
-            cJSON *pet2 = cJSON_CreateObject();
-            cJSON_AddStringToObject(pet2, "pet_id", "pet_002");
-            cJSON_AddNumberToObject(pet2, "duration_sec", 45);
-            cJSON_AddItemToArray(participants, pet2);            
-            #endif
-            cJSON_AddItemToObject(data_obj, "participants", participants);
             if(mqtt_packet->data != NULL)
             {
+                DRINK_Packet = (DRINK_Packet_t*)mqtt_packet->data;
+                cJSON *access_id_refs = cJSON_CreateArray();
+                cJSON *participants = cJSON_CreateArray();
+                
+                if (DRINK_Packet->Tracker_count == 0)
+                {
+                    cJSON_AddStringToObject(data_obj, "session_type", "unknown");
+                    cJSON_AddItemToObject(data_obj, "access_id_refs", access_id_refs);      
+                    cJSON_AddItemToObject(data_obj, "participants", participants);         
+                }
+                else
+                {
+                    cJSON_AddStringToObject(data_obj, "session_type", "normal");
+                    
+                    for (int i = 0; i < DRINK_Packet->Tracker_count; i++)
+                    {
+                        // 1. access_id_refs 배열에 문자열 추가
+                        cJSON_AddItemToArray(access_id_refs, cJSON_CreateString(DRINK_Packet->DRINK_Tracker[i].Device_ID));
+
+                        // 2. 루프가 돌 때마다 새로운 pet 객체를 동적으로 생성 (핵심 수정)
+                        cJSON *pet = cJSON_CreateObject();
+                        if (pet != NULL)
+                        {
+                            cJSON_AddStringToObject(pet, "pet_id", DRINK_Packet->DRINK_Tracker[i].Device_ID);
+                            cJSON_AddNumberToObject(pet, "duration_sec", DRINK_Packet->DRINK_Tracker[i].duration_sec);
+                            cJSON_AddNumberToObject(pet, "rssi", DRINK_Packet->DRINK_Tracker[i].rssi);
+                            cJSON_AddItemToArray(participants, pet);
+                        }
+                    }
+                    
+                    cJSON_AddItemToObject(data_obj, "access_id_refs", access_id_refs);
+                    cJSON_AddItemToObject(data_obj, "participants", participants);
+                }
                 DRINK_Packet = (DRINK_Packet_t*)mqtt_packet->data;
                 // 5. 나머지 숫자 및 선택 필드 추가
                 weight = round((double)DRINK_Packet->start_weight * 100.0) / 100.0;
@@ -271,6 +281,13 @@ static cJSON* Get_cJSON_Data(mqtt_packet_t* mqtt_packet)
             }
             else
             {
+                cJSON *access_id_refs = cJSON_CreateArray();
+                cJSON *participants = cJSON_CreateArray();
+                
+                cJSON_AddStringToObject(data_obj, "session_type", "unknown");
+                cJSON_AddItemToObject(data_obj, "access_id_refs", access_id_refs);      
+                cJSON_AddItemToObject(data_obj, "participants", participants);         
+
                 cJSON_AddNumberToObject(data_obj, "start_weight", 0);   // Float
                 cJSON_AddNumberToObject(data_obj, "end_weight", 0);     // Float
                 cJSON_AddNumberToObject(data_obj, "total_intake_ml", 0); // Float

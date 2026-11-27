@@ -12,6 +12,8 @@
 #define FILTER_DEBRIS_BIT   (1<<8)
 #define PUMP_ERR_BIT        (1<<7)
 
+#define IR_BIT              (1<<1)
+#define BEACON_BIT          (1<<0)
 void LED_Bright_Set(bool sleep,uint8_t value);
 void button_press(void);
 bool led_bit_status(uint16_t status);

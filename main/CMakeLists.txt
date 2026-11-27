@@ -64,7 +64,7 @@ idf_component_register(
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     WATER_MAJOR=1
     WATER_MINOR=1
-    WATER_PATCH=7
+    WATER_PATCH=9
     MOTOR_I2C_MODE=0
     JIGMODE=0
 )
